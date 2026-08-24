@@ -1,12 +1,15 @@
 #include "cluster/storage_user_projection_reconciler.h"
 
 #include "cluster/storage_user_projection_sync_state_store.h"
+#include "cluster/storage_user_projection_transition_store.h"
 #include "users_registry.h"
 
 #include <filesystem>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <string>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
 
@@ -74,6 +77,29 @@ fs::path make_test_directory() {
 
     return fs::path(result);
 }
+
+std::unique_ptr<
+    pqnas::cluster::StorageUserProjectionTransitionStore
+>
+load_transition_store(
+    const fs::path& path,
+    std::string* error
+) {
+    auto store =
+        std::make_unique<
+            pqnas::cluster::
+                StorageUserProjectionTransitionStore
+        >();
+
+    if (!store->load(
+            path.string(),
+            error)) {
+        return nullptr;
+    }
+
+    return store;
+}
+
 
 pqnas::UserRec make_user(
     char fingerprint_character,
@@ -218,6 +244,19 @@ int main() {
 
     std::vector<AuditRecord> audits;
 
+    auto transition_store =
+        load_transition_store(
+            directory /
+                "storage_projection_transition_journal.json",
+            &error
+        );
+
+    expect(
+        transition_store != nullptr,
+        "base transition journal loads: " +
+            error
+    );
+
     pqnas::cluster::
         StorageUserProjectionReconcilerConfig
             config;
@@ -227,6 +266,9 @@ int main() {
 
     config.state_store =
         &state_store;
+
+    config.transition_store =
+        transition_store.get();
 
     config.audit_emit =
         [&](const std::string& event,
@@ -667,6 +709,19 @@ int main() {
 
         std::size_t network_calls = 0;
 
+        auto conflict_transition_store =
+            load_transition_store(
+                directory /
+                    "conflict_transition_journal.json",
+                &error
+            );
+
+        expect(
+            conflict_transition_store != nullptr,
+            "conflict transition journal loads: " +
+                error
+        );
+
         pqnas::cluster::
             StorageUserProjectionReconcilerConfig
                 conflict_config;
@@ -676,6 +731,9 @@ int main() {
 
         conflict_config.state_store =
             &conflict_store;
+
+        conflict_config.transition_store =
+            conflict_transition_store.get();
 
         conflict_config.sync_projection =
             [&](const pqnas::cluster::
@@ -703,6 +761,212 @@ int main() {
             "same revision cannot silently migrate between Nodes"
         );
     }
+
+    // RT009 regression: pending B at the authoritative revision does not
+    // override conflicting confirmed A at that same revision. The conflict
+    // must fail closed before any live authorization reaches B.
+    {
+        const fs::path pending_conflict_users_path =
+            directory /
+            "pending_conflict_users.json";
+
+        const fs::path pending_conflict_state_path =
+            directory /
+            "pending_conflict_state.json";
+
+        const fs::path pending_conflict_transition_path =
+            directory /
+            "pending_conflict_transition_journal.json";
+
+        pqnas::UsersRegistry
+            pending_conflict_users;
+
+        pqnas::cluster::
+            StorageUserProjectionSyncStateStore
+                pending_conflict_store;
+
+        error.clear();
+
+        expect(
+            pending_conflict_store.load(
+                pending_conflict_state_path.string(),
+                &error
+            ),
+            "pending-conflict confirmed state loads: " +
+                error
+        );
+
+        const auto pending_conflict_user =
+            make_user(
+                'd',
+                "storage-02"
+            );
+
+        bool pending_conflict_changed = false;
+
+        error.clear();
+
+        expect(
+            pending_conflict_users.upsert_persisted(
+                pending_conflict_user,
+                pending_conflict_users_path.string(),
+                &pending_conflict_changed,
+                &error
+            ) &&
+            pending_conflict_changed,
+            "pending-conflict Director user persists"
+        );
+
+        const auto persisted_pending_conflict_user =
+            pending_conflict_users.get(
+                pending_conflict_user.fingerprint
+            );
+
+        expect(
+            persisted_pending_conflict_user.has_value(),
+            "pending-conflict Director user reloads"
+        );
+
+        pqnas::cluster::
+            StorageUserProjectionSyncState
+                conflicting_confirmed;
+
+        if (persisted_pending_conflict_user.has_value()) {
+            conflicting_confirmed.fingerprint =
+                pending_conflict_user.fingerprint;
+
+            conflicting_confirmed.home_node =
+                "storage-01";
+
+            conflicting_confirmed.revision =
+                persisted_pending_conflict_user->
+                    storage_projection_revision;
+        }
+
+        error.clear();
+
+        expect(
+            pending_conflict_store.mark_synced(
+                conflicting_confirmed,
+                &error
+            ) ==
+                pqnas::cluster::
+                    StorageUserProjectionSyncStateStoreResult::
+                        Applied,
+            "pending-conflict confirmed A persists: " +
+                error
+        );
+
+        auto pending_conflict_transition_store =
+            load_transition_store(
+                pending_conflict_transition_path,
+                &error
+            );
+
+        expect(
+            pending_conflict_transition_store != nullptr,
+            "pending-conflict journal loads: " +
+                error
+        );
+
+        pqnas::cluster::
+            StorageUserProjectionTransitionRecord
+                conflicting_pending;
+
+        if (persisted_pending_conflict_user.has_value()) {
+            conflicting_pending.fingerprint =
+                pending_conflict_user.fingerprint;
+
+            conflicting_pending.home_node =
+                "storage-02";
+
+            conflicting_pending.revision =
+                persisted_pending_conflict_user->
+                    storage_projection_revision;
+        }
+
+        error.clear();
+
+        expect(
+            pending_conflict_transition_store->
+                mark_pending(
+                    conflicting_pending,
+                    &error
+                ) ==
+                    pqnas::cluster::
+                        StorageUserProjectionSyncStateStoreResult::
+                            Applied,
+            "pending-conflict pending B persists: " +
+                error
+        );
+
+        std::size_t network_calls = 0;
+
+        pqnas::cluster::
+            StorageUserProjectionReconcilerConfig
+                pending_conflict_config;
+
+        pending_conflict_config.users =
+            &pending_conflict_users;
+
+        pending_conflict_config.state_store =
+            &pending_conflict_store;
+
+        pending_conflict_config.transition_store =
+            pending_conflict_transition_store.get();
+
+        pending_conflict_config.sync_projection =
+            [&](const pqnas::cluster::
+                    StorageUserProjection& projection) {
+                ++network_calls;
+
+                return sync_success(
+                    projection
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                pending_conflict_reconciler(
+                    pending_conflict_config
+                );
+
+        const auto result =
+            pending_conflict_reconciler.
+                reconcile_once();
+
+        const auto confirmed_after =
+            pending_conflict_store.get(
+                pending_conflict_user.fingerprint
+            );
+
+        const auto pending_after =
+            pending_conflict_transition_store->get(
+                pending_conflict_user.fingerprint
+            );
+
+        expect(
+            !result.ok &&
+            result.state_conflicts == 1 &&
+            result.failed == 1 &&
+            network_calls == 0 &&
+            confirmed_after.has_value() &&
+            confirmed_after->home_node ==
+                "storage-01" &&
+            pending_after.has_value() &&
+            pending_after->home_node ==
+                "storage-02" &&
+            persisted_pending_conflict_user.has_value() &&
+            confirmed_after->revision ==
+                persisted_pending_conflict_user->
+                    storage_projection_revision &&
+            pending_after->revision ==
+                persisted_pending_conflict_user->
+                    storage_projection_revision,
+            "equal-revision confirmed A plus pending B fails before network"
+        );
+    }
+
 
     // Explicit unplacement revokes the last confirmed Node at the newer
     // Director revision before removing persistent confirmed state.
@@ -759,6 +1023,19 @@ int main() {
         std::vector<AuditRecord>
             unplace_audits;
 
+        auto unplace_transition_store =
+            load_transition_store(
+                directory /
+                    "unplace_transition_journal.json",
+                &error
+            );
+
+        expect(
+            unplace_transition_store != nullptr,
+            "unplacement transition journal loads: " +
+                error
+        );
+
         pqnas::cluster::
             StorageUserProjectionReconcilerConfig
                 unplace_config;
@@ -768,6 +1045,9 @@ int main() {
 
         unplace_config.state_store =
             &unplace_store;
+
+        unplace_config.transition_store =
+            unplace_transition_store.get();
 
         unplace_config.audit_emit =
             [&](const std::string& event,
@@ -1030,6 +1310,10 @@ int main() {
             directory /
             "restart_move_state.json";
 
+        const fs::path restart_move_transition_path =
+            directory /
+            "restart_move_transition_journal.json";
+
         pqnas::UsersRegistry
             before_restart_users;
 
@@ -1071,6 +1355,18 @@ int main() {
 
         bool fail_new_node_sync = false;
 
+        auto before_restart_transition_store =
+            load_transition_store(
+                restart_move_transition_path,
+                &error
+            );
+
+        expect(
+            before_restart_transition_store != nullptr,
+            "restart move transition journal loads: " +
+                error
+        );
+
         pqnas::cluster::
             StorageUserProjectionReconcilerConfig
                 before_restart_config;
@@ -1080,6 +1376,9 @@ int main() {
 
         before_restart_config.state_store =
             &before_restart_store;
+
+        before_restart_config.transition_store =
+            before_restart_transition_store.get();
 
         before_restart_config.sync_projection =
             [&](const pqnas::cluster::
@@ -1152,6 +1451,11 @@ int main() {
                 restart_move_user.fingerprint
             );
 
+        const auto transition_after_partial_move =
+            before_restart_transition_store->get(
+                restart_move_user.fingerprint
+            );
+
         expect(
             !partial_move.ok &&
             partial_move.failed == 1 &&
@@ -1168,8 +1472,13 @@ int main() {
             state_after_partial_move->home_node ==
                 confirmed_before_move->home_node &&
             state_after_partial_move->revision ==
-                confirmed_before_move->revision,
-            "failed new-Node sync preserves old confirmed state for restart"
+                confirmed_before_move->revision &&
+            transition_after_partial_move.has_value() &&
+            transition_after_partial_move->home_node ==
+                "storage-02" &&
+            transition_after_partial_move->revision ==
+                before_restart_sent[1].revision,
+            "failed new-Node sync preserves confirmed A plus durable pending B"
         );
 
         // Simulate process loss: reconstruct both authoritative stores solely
@@ -1196,6 +1505,18 @@ int main() {
             "restart move sync-state reload"
         );
 
+        auto restarted_transition_store =
+            load_transition_store(
+                restart_move_transition_path,
+                &error
+            );
+
+        expect(
+            restarted_transition_store != nullptr,
+            "restart move transition journal reloads: " +
+                error
+        );
+
         const auto restarted_user =
             restarted_users.get(
                 restart_move_user.fingerprint
@@ -1203,6 +1524,11 @@ int main() {
 
         const auto restarted_state =
             restarted_store.get(
+                restart_move_user.fingerprint
+            );
+
+        const auto restarted_transition =
+            restarted_transition_store->get(
                 restart_move_user.fingerprint
             );
 
@@ -1215,8 +1541,14 @@ int main() {
                 "storage-01" &&
             restarted_state->revision <
                 restarted_user->
+                    storage_projection_revision &&
+            restarted_transition.has_value() &&
+            restarted_transition->home_node ==
+                "storage-02" &&
+            restarted_transition->revision ==
+                restarted_user->
                     storage_projection_revision,
-            "restart reload retains new Director placement and old confirmed Node"
+            "restart reload retains confirmed A plus pending B"
         );
 
         std::vector<
@@ -1233,6 +1565,9 @@ int main() {
 
         after_restart_config.state_store =
             &restarted_store;
+
+        after_restart_config.transition_store =
+            restarted_transition_store.get();
 
         after_restart_config.sync_projection =
             [&](const pqnas::cluster::
@@ -1264,18 +1599,12 @@ int main() {
         expect(
             completed_move.ok &&
             completed_move.moved == 1 &&
-            after_restart_sent.size() == 2 &&
+            after_restart_sent.size() == 1 &&
             after_restart_sent[0].home_node ==
-                "storage-01" &&
-            !after_restart_sent[0].enabled &&
-            !after_restart_sent[0].storage_allocated &&
-            after_restart_sent[1].home_node ==
                 "storage-02" &&
+            after_restart_sent[0].enabled &&
             restarted_user.has_value() &&
             after_restart_sent[0].revision ==
-                restarted_user->
-                    storage_projection_revision &&
-            after_restart_sent[1].revision ==
                 restarted_user->
                     storage_projection_revision &&
             final_move_state.has_value() &&
@@ -1283,8 +1612,423 @@ int main() {
                 "storage-02" &&
             final_move_state->revision ==
                 restarted_user->
+                    storage_projection_revision &&
+            !restarted_transition_store->get(
+                restart_move_user.fingerprint
+            ).has_value(),
+            "restart restores pending B, confirms it and clears the journal"
+        );
+    }
+
+
+    // RT009 regression: B accepts the new live projection, but Director
+    // confirmed-state persistence fails afterwards. The durable pending
+    // journal must remember B across restart so the intermediate authorization
+    // target cannot be stranded or forgotten.
+    {
+        const fs::path persist_fail_users_path =
+            directory /
+            "persist_fail_move_users.json";
+
+        const fs::path persist_fail_state_path =
+            directory /
+            "persist_fail_move_state.json";
+
+        const fs::path persist_fail_transition_path =
+            directory /
+            "persist_fail_move_transition_journal.json";
+
+        pqnas::UsersRegistry
+            before_restart_users;
+
+        pqnas::cluster::
+            StorageUserProjectionSyncStateStore
+                before_restart_store;
+
+        error.clear();
+
+        expect(
+            before_restart_store.load(
+                persist_fail_state_path.string(),
+                &error
+            ),
+            "RT009 confirmed state store loads: " +
+                error
+        );
+
+        auto before_restart_transition_store =
+            load_transition_store(
+                persist_fail_transition_path,
+                &error
+            );
+
+        expect(
+            before_restart_transition_store != nullptr,
+            "RT009 transition journal loads: " +
+                error
+        );
+
+        const auto persist_fail_user =
+            make_user(
+                '9',
+                "storage-01"
+            );
+
+        bool projection_changed = false;
+
+        error.clear();
+
+        expect(
+            before_restart_users.upsert_persisted(
+                persist_fail_user,
+                persist_fail_users_path.string(),
+                &projection_changed,
+                &error
+            ) &&
+            projection_changed,
+            "RT009 initial Director user persists"
+        );
+
+        std::vector<
+            pqnas::cluster::
+                StorageUserProjection
+        > before_restart_sent;
+
+        pqnas::cluster::
+            StorageUserProjectionReconcilerConfig
+                before_restart_config;
+
+        before_restart_config.users =
+            &before_restart_users;
+
+        before_restart_config.state_store =
+            &before_restart_store;
+
+        before_restart_config.transition_store =
+            before_restart_transition_store.get();
+
+        before_restart_config.sync_projection =
+            [&](const pqnas::cluster::
+                    StorageUserProjection& projection) {
+                before_restart_sent.push_back(
+                    projection
+                );
+
+                return sync_success(
+                    projection
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                before_restart_reconciler(
+                    before_restart_config
+                );
+
+        const auto initial_result =
+            before_restart_reconciler.
+                reconcile_once();
+
+        const auto confirmed_before_move =
+            before_restart_store.get(
+                persist_fail_user.fingerprint
+            );
+
+        expect(
+            initial_result.ok &&
+            initial_result.synced_current == 1 &&
+            confirmed_before_move.has_value() &&
+            confirmed_before_move->home_node ==
+                "storage-01" &&
+            !before_restart_transition_store->get(
+                persist_fail_user.fingerprint
+            ).has_value(),
+            "RT009 fixture starts with confirmed A and no pending journal"
+        );
+
+        bool move_changed = false;
+
+        error.clear();
+
+        expect(
+            before_restart_users.set_home_node_persisted(
+                persist_fail_user.fingerprint,
+                "storage-02",
+                persist_fail_users_path.string(),
+                &move_changed,
+                &error
+            ) &&
+            move_changed,
+            "RT009 A-to-B Director placement persists"
+        );
+
+        // Security test injection: make only the confirmed-state target fail
+        // private-file validation. The separate pending journal remains valid.
+        const bool made_confirmed_target_unsafe =
+            ::chmod(
+                persist_fail_state_path.c_str(),
+                0644
+            ) == 0;
+
+        expect(
+            made_confirmed_target_unsafe,
+            "RT009 confirmed target made unsafe for persistence injection"
+        );
+
+        before_restart_sent.clear();
+
+        const auto failed_confirm =
+            before_restart_reconciler.
+                reconcile_once();
+
+        const auto confirmed_after_failure =
+            before_restart_store.get(
+                persist_fail_user.fingerprint
+            );
+
+        const auto pending_after_failure =
+            before_restart_transition_store->get(
+                persist_fail_user.fingerprint
+            );
+
+        // Restore private permissions before simulating process restart so the
+        // persisted old confirmed snapshot can be loaded normally.
+        const bool restored_confirmed_target =
+            ::chmod(
+                persist_fail_state_path.c_str(),
+                0600
+            ) == 0;
+
+        expect(
+            restored_confirmed_target,
+            "RT009 confirmed target permissions restored"
+        );
+
+        expect(
+            !failed_confirm.ok &&
+            failed_confirm.persist_failures == 1 &&
+            failed_confirm.failed == 1 &&
+            failed_confirm.moved == 0 &&
+            before_restart_sent.size() == 2 &&
+            before_restart_sent[0].home_node ==
+                "storage-01" &&
+            !before_restart_sent[0].enabled &&
+            !before_restart_sent[0].storage_allocated &&
+            before_restart_sent[1].home_node ==
+                "storage-02" &&
+            before_restart_sent[1].enabled &&
+            confirmed_before_move.has_value() &&
+            confirmed_after_failure.has_value() &&
+            confirmed_after_failure->home_node ==
+                confirmed_before_move->home_node &&
+            confirmed_after_failure->revision ==
+                confirmed_before_move->revision &&
+            pending_after_failure.has_value() &&
+            pending_after_failure->home_node ==
+                "storage-02" &&
+            pending_after_failure->revision ==
+                before_restart_sent[1].revision,
+            "RT009 B acceptance plus confirmed persist failure retains durable pending B"
+        );
+
+        // Simulate Director process loss. Reconstruct all three authoritative
+        // inputs only from durable files.
+        pqnas::UsersRegistry
+            restarted_users;
+
+        expect(
+            restarted_users.load(
+                persist_fail_users_path.string()
+            ),
+            "RT009 users reload after simulated restart"
+        );
+
+        pqnas::cluster::
+            StorageUserProjectionSyncStateStore
+                restarted_store;
+
+        error.clear();
+
+        expect(
+            restarted_store.load(
+                persist_fail_state_path.string(),
+                &error
+            ),
+            "RT009 confirmed state reloads: " +
+                error
+        );
+
+        auto restarted_transition_store =
+            load_transition_store(
+                persist_fail_transition_path,
+                &error
+            );
+
+        expect(
+            restarted_transition_store != nullptr,
+            "RT009 pending journal reloads: " +
+                error
+        );
+
+        const auto restarted_user =
+            restarted_users.get(
+                persist_fail_user.fingerprint
+            );
+
+        const auto restarted_confirmed =
+            restarted_store.get(
+                persist_fail_user.fingerprint
+            );
+
+        const auto restarted_pending =
+            restarted_transition_store->get(
+                persist_fail_user.fingerprint
+            );
+
+        expect(
+            restarted_user.has_value() &&
+            restarted_user->home_node ==
+                "storage-02" &&
+            restarted_confirmed.has_value() &&
+            restarted_confirmed->home_node ==
+                "storage-01" &&
+            restarted_pending.has_value() &&
+            restarted_pending->home_node ==
+                "storage-02" &&
+            restarted_pending->revision ==
+                restarted_user->
                     storage_projection_revision,
-            "restart safely retries old-Node revoke before completing move"
+            "RT009 restart reconstructs confirmed A plus pending B"
+        );
+
+        // Reproduce the historical stranded-intermediate-Node window exactly:
+        // authoritative Director placement advances again before B has been
+        // durably promoted from pending to confirmed.
+        bool advance_to_c_changed = false;
+
+        error.clear();
+
+        expect(
+            restarted_users.set_home_node_persisted(
+                persist_fail_user.fingerprint,
+                "storage-03",
+                persist_fail_users_path.string(),
+                &advance_to_c_changed,
+                &error
+            ) &&
+            advance_to_c_changed,
+            "RT009 authoritative placement advances B-to-C"
+        );
+
+        const auto advanced_user =
+            restarted_users.get(
+                persist_fail_user.fingerprint
+            );
+
+        expect(
+            advanced_user.has_value() &&
+            advanced_user->home_node ==
+                "storage-03" &&
+            restarted_pending.has_value() &&
+            advanced_user->
+                storage_projection_revision >
+                    restarted_pending->revision,
+            "RT009 C revision is newer than pending B"
+        );
+
+        std::vector<
+            pqnas::cluster::
+                StorageUserProjection
+        > after_restart_sent;
+
+        pqnas::cluster::
+            StorageUserProjectionReconcilerConfig
+                after_restart_config;
+
+        after_restart_config.users =
+            &restarted_users;
+
+        after_restart_config.state_store =
+            &restarted_store;
+
+        after_restart_config.transition_store =
+            restarted_transition_store.get();
+
+        after_restart_config.sync_projection =
+            [&](const pqnas::cluster::
+                    StorageUserProjection& projection) {
+                after_restart_sent.push_back(
+                    projection
+                );
+
+                return sync_success(
+                    projection
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                after_restart_reconciler(
+                    after_restart_config
+                );
+
+        const auto recovered =
+            after_restart_reconciler.
+                reconcile_once();
+
+        const auto final_confirmed =
+            restarted_store.get(
+                persist_fail_user.fingerprint
+            );
+
+        const auto final_pending =
+            restarted_transition_store->get(
+                persist_fail_user.fingerprint
+            );
+
+        expect(
+            recovered.ok &&
+            recovered.moved == 1 &&
+            recovered.failed == 0 &&
+            after_restart_sent.size() == 3 &&
+
+            // First remove the possibly-authorized intermediate B.
+            after_restart_sent[0].home_node ==
+                "storage-02" &&
+            !after_restart_sent[0].enabled &&
+            !after_restart_sent[0].storage_allocated &&
+
+            // Then reconcile the older confirmed A knowledge.
+            after_restart_sent[1].home_node ==
+                "storage-01" &&
+            !after_restart_sent[1].enabled &&
+            !after_restart_sent[1].storage_allocated &&
+
+            // Only after both possible old authorization targets are disabled
+            // may the new authoritative C projection be established.
+            after_restart_sent[2].home_node ==
+                "storage-03" &&
+            after_restart_sent[2].enabled &&
+            advanced_user.has_value() &&
+
+            after_restart_sent[0].revision ==
+                advanced_user->
+                    storage_projection_revision &&
+            after_restart_sent[1].revision ==
+                advanced_user->
+                    storage_projection_revision &&
+            after_restart_sent[2].revision ==
+                advanced_user->
+                    storage_projection_revision &&
+
+            final_confirmed.has_value() &&
+            final_confirmed->home_node ==
+                "storage-03" &&
+            final_confirmed->revision ==
+                advanced_user->
+                    storage_projection_revision &&
+            !final_pending.has_value(),
+            "RT009 restart revokes pending B and confirmed A before authorizing C"
         );
     }
 
@@ -1300,6 +2044,10 @@ int main() {
         const fs::path restart_unplace_state_path =
             directory /
             "restart_unplace_state.json";
+
+        const fs::path restart_unplace_transition_path =
+            directory /
+            "restart_unplace_transition_journal.json";
 
         pqnas::UsersRegistry
             before_restart_users;
@@ -1342,6 +2090,18 @@ int main() {
 
         bool fail_revoke = false;
 
+        auto before_restart_unplace_transition_store =
+            load_transition_store(
+                restart_unplace_transition_path,
+                &error
+            );
+
+        expect(
+            before_restart_unplace_transition_store != nullptr,
+            "restart unplacement transition journal loads: " +
+                error
+        );
+
         pqnas::cluster::
             StorageUserProjectionReconcilerConfig
                 before_restart_config;
@@ -1351,6 +2111,9 @@ int main() {
 
         before_restart_config.state_store =
             &before_restart_store;
+
+        before_restart_config.transition_store =
+            before_restart_unplace_transition_store.get();
 
         before_restart_config.sync_projection =
             [&](const pqnas::cluster::
@@ -1468,6 +2231,18 @@ int main() {
             "restart unplacement sync-state reload"
         );
 
+        auto restarted_unplace_transition_store =
+            load_transition_store(
+                restart_unplace_transition_path,
+                &error
+            );
+
+        expect(
+            restarted_unplace_transition_store != nullptr,
+            "restart unplacement transition journal reloads: " +
+                error
+        );
+
         const auto restarted_user =
             restarted_users.get(
                 restart_unplace_user.fingerprint
@@ -1504,6 +2279,9 @@ int main() {
 
         after_restart_config.state_store =
             &restarted_store;
+
+        after_restart_config.transition_store =
+            restarted_unplace_transition_store.get();
 
         after_restart_config.sync_projection =
             [&](const pqnas::cluster::
@@ -1599,6 +2377,19 @@ int main() {
                 StorageUserProjection
         > ambiguous_sent;
 
+        auto ambiguous_transition_store =
+            load_transition_store(
+                directory /
+                    "ambiguous_unplace_transition_journal.json",
+                &error
+            );
+
+        expect(
+            ambiguous_transition_store != nullptr,
+            "ambiguous transition journal loads: " +
+                error
+        );
+
         pqnas::cluster::
             StorageUserProjectionReconcilerConfig
                 ambiguous_config;
@@ -1608,6 +2399,9 @@ int main() {
 
         ambiguous_config.state_store =
             &ambiguous_store;
+
+        ambiguous_config.transition_store =
+            ambiguous_transition_store.get();
 
         ambiguous_config.sync_projection =
             [&](const pqnas::cluster::
@@ -1755,6 +2549,19 @@ int main() {
 
         std::size_t network_calls = 0;
 
+        auto orphan_transition_store =
+            load_transition_store(
+                directory /
+                    "orphan_transition_journal.json",
+                &error
+            );
+
+        expect(
+            orphan_transition_store != nullptr,
+            "orphan transition journal loads: " +
+                error
+        );
+
         pqnas::cluster::
             StorageUserProjectionReconcilerConfig
                 orphan_config;
@@ -1764,6 +2571,9 @@ int main() {
 
         orphan_config.state_store =
             &orphan_store;
+
+        orphan_config.transition_store =
+            orphan_transition_store.get();
 
         orphan_config.sync_projection =
             [&](const pqnas::cluster::

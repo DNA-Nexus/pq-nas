@@ -36,7 +36,13 @@ require(
 
 require(
     "confirmed_revision_ahead" in module,
-    "startup consistency must report aggregate rollback count",
+    "startup consistency must report aggregate confirmed rollback count",
+)
+
+require(
+    "pending.revision >" in module and
+    "pending_revision_ahead" in module,
+    "startup consistency must detect pending revision ahead of users.json",
 )
 
 
@@ -71,8 +77,12 @@ require(
     "startup consistency check must be production-wired Director-only",
 )
 
-load_pos = director_block.find(
+confirmed_load_pos = director_block.find(
     "director_storage_projection_sync_state_store.load("
+)
+
+pending_load_pos = director_block.find(
+    "director_storage_projection_transition_store.load("
 )
 
 check_pos = director_block.find(
@@ -80,8 +90,13 @@ check_pos = director_block.find(
 )
 
 require(
-    load_pos >= 0,
+    confirmed_load_pos >= 0,
     "Director must load confirmed state before consistency check",
+)
+
+require(
+    pending_load_pos >= 0,
+    "Director must load pending journal before consistency check",
 )
 
 require(
@@ -89,16 +104,22 @@ require(
     "Director consistency call must exist",
 )
 
-if load_pos >= 0 and check_pos >= 0:
+if (
+    confirmed_load_pos >= 0 and
+    pending_load_pos >= 0 and
+    check_pos >= 0
+):
     require(
-        load_pos < check_pos,
-        "startup consistency check must run after confirmed-state load",
+        confirmed_load_pos < check_pos and
+        pending_load_pos < check_pos,
+        "startup consistency must run after both durable-state loads",
     )
 
 require(
     "confirmed_revision_ahead" in director_block and
+    "pending_revision_ahead" in director_block and
     "return 3;" in director_block,
-    "newer confirmed state must fail Director startup closed",
+    "newer confirmed or pending state must fail Director startup closed",
 )
 
 

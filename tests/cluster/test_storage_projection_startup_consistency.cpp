@@ -1,6 +1,7 @@
 #include "cluster/storage_projection_startup_consistency.h"
 
 #include "cluster/storage_user_projection_sync_state_store.h"
+#include "cluster/storage_user_projection_transition_store.h"
 #include "users_registry.h"
 
 #include <filesystem>
@@ -120,11 +121,19 @@ int main() {
         directory /
         "storage_projection_sync_state.json";
 
+    const fs::path transition_path =
+        directory /
+        "storage_projection_transition_journal.json";
+
     pqnas::UsersRegistry users;
 
     pqnas::cluster::
         StorageUserProjectionSyncStateStore
             state_store;
+
+    pqnas::cluster::
+        StorageUserProjectionTransitionStore
+            transition_store;
 
     std::string error;
 
@@ -156,6 +165,16 @@ int main() {
         "confirmed-state store loads"
     );
 
+    error.clear();
+
+    expect(
+        transition_store.load(
+            transition_path.string(),
+            &error
+        ),
+        "pending transition store loads"
+    );
+
     const auto current =
         users.get(
             user.fingerprint
@@ -177,14 +196,17 @@ int main() {
             pqnas::cluster::
                 check_storage_projection_startup_consistency(
                     users,
-                    state_store
+                    state_store,
+                    transition_store
                 );
 
         expect(
             result.ok &&
             result.confirmed_states_checked == 0 &&
-            result.confirmed_revision_ahead == 0,
-            "empty confirmed state is startup-consistent"
+            result.pending_states_checked == 0 &&
+            result.confirmed_revision_ahead == 0 &&
+            result.pending_revision_ahead == 0,
+            "empty durable projection state is startup-consistent"
         );
     }
 
@@ -218,16 +240,113 @@ int main() {
             pqnas::cluster::
                 check_storage_projection_startup_consistency(
                     users,
-                    state_store
+                    state_store,
+                    transition_store
                 );
 
         expect(
             result.ok &&
             result.confirmed_states_checked == 1 &&
-            result.confirmed_revision_ahead == 0,
+            result.pending_states_checked == 0 &&
+            result.confirmed_revision_ahead == 0 &&
+            result.pending_revision_ahead == 0,
             "equal confirmed revision is startup-consistent"
         );
     }
+
+    pqnas::cluster::
+        StorageUserProjectionTransitionRecord
+            pending;
+
+    pending.fingerprint =
+        user.fingerprint;
+
+    pending.home_node =
+        "storage-02";
+
+    pending.revision =
+        current->storage_projection_revision;
+
+    error.clear();
+
+    expect(
+        transition_store.mark_pending(
+            pending,
+            &error
+        ) ==
+            pqnas::cluster::
+                StorageUserProjectionSyncStateStoreResult::
+                    Applied,
+        "equal pending revision persists"
+    );
+
+    {
+        const auto result =
+            pqnas::cluster::
+                check_storage_projection_startup_consistency(
+                    users,
+                    state_store,
+                    transition_store
+                );
+
+        expect(
+            result.ok &&
+            result.confirmed_states_checked == 1 &&
+            result.pending_states_checked == 1 &&
+            result.confirmed_revision_ahead == 0 &&
+            result.pending_revision_ahead == 0,
+            "equal pending revision is startup-consistent"
+        );
+    }
+
+    ++pending.revision;
+
+    error.clear();
+
+    expect(
+        transition_store.mark_pending(
+            pending,
+            &error
+        ) ==
+            pqnas::cluster::
+                StorageUserProjectionSyncStateStoreResult::
+                    Applied,
+        "newer pending revision fixture persists"
+    );
+
+    {
+        const auto result =
+            pqnas::cluster::
+                check_storage_projection_startup_consistency(
+                    users,
+                    state_store,
+                    transition_store
+                );
+
+        expect(
+            !result.ok &&
+            result.confirmed_revision_ahead == 0 &&
+            result.pending_states_checked == 1 &&
+            result.pending_revision_ahead == 1,
+            "pending revision newer than users.json fails closed"
+        );
+    }
+
+    bool pending_expectation_matched = false;
+
+    error.clear();
+
+    expect(
+        transition_store.erase_if_current(
+            pending.fingerprint,
+            pending.home_node,
+            pending.revision,
+            &pending_expectation_matched,
+            &error
+        ) &&
+        pending_expectation_matched,
+        "pending rollback fixture clears"
+    );
 
     ++confirmed.revision;
 
@@ -249,13 +368,16 @@ int main() {
             pqnas::cluster::
                 check_storage_projection_startup_consistency(
                     users,
-                    state_store
+                    state_store,
+                    transition_store
                 );
 
         expect(
             !result.ok &&
             result.confirmed_states_checked == 1 &&
-            result.confirmed_revision_ahead == 1,
+            result.pending_states_checked == 0 &&
+            result.confirmed_revision_ahead == 1 &&
+            result.pending_revision_ahead == 0,
             "confirmed revision newer than users.json fails closed"
         );
     }

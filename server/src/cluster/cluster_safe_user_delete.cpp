@@ -1,6 +1,7 @@
 #include "cluster/cluster_safe_user_delete.h"
 
 #include "cluster/storage_user_projection_sync_state_store.h"
+#include "cluster/storage_user_projection_transition_store.h"
 #include "users_registry.h"
 
 
@@ -9,6 +10,7 @@ namespace pqnas::cluster {
 bool erase_user_persisted_cluster_safe(
     pqnas::UsersRegistry& users,
     StorageUserProjectionSyncStateStore& state_store,
+    StorageUserProjectionTransitionStore& transition_store,
     const std::shared_ptr<std::mutex>& transition_mutex,
     const std::string& users_path,
     const std::string& fingerprint,
@@ -72,21 +74,26 @@ bool erase_user_persisted_cluster_safe(
 
     std::string durability_error;
 
-    // Security: absence from confirmed state is trustworthy for physical
-    // deletion only when that sync-state snapshot itself is durable.
+    // Security: absence from confirmed and pending state is trustworthy
+    // for physical deletion only when both authorization snapshots are durable.
     if (!state_store.ensure_durable(
+            &durability_error) ||
+        !transition_store.ensure_durable(
             &durability_error)) {
         durability_error.clear();
 
         if (error) {
             *error =
-                "projection sync-state persistence failed";
+                "projection authorization-state persistence failed";
         }
 
         return false;
     }
 
     if (state_store
+            .get(fingerprint)
+            .has_value() ||
+        transition_store
             .get(fingerprint)
             .has_value()) {
         if (cluster_revoke_pending) {

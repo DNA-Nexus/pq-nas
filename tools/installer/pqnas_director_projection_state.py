@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit Director projection sync-state provisioning."""
+"""Explicit Director durable projection authorization-state provisioning."""
 
 from __future__ import annotations
 
@@ -20,6 +20,9 @@ DIRECTOR_PROJECTION_SYNC_STATE_FILENAME = (
     "storage_projection_sync_state.json"
 )
 DIRECTOR_PROJECTION_SYNC_STATE_SCHEMA_VERSION = 1
+DIRECTOR_PROJECTION_TRANSITION_JOURNAL_FILENAME = (
+    "storage_projection_transition_journal.json"
+)
 DIRECTOR_PROJECTION_BOOTSTRAP_CONFIRM_SUFFIX = (
     "BOOTSTRAP DIRECTOR STATE"
 )
@@ -56,6 +59,19 @@ def director_projection_sync_state_path(root: str) -> str:
     )
 
 
+def director_projection_transition_journal_path(
+    root: str,
+) -> str:
+    sync_state_path = (
+        director_projection_sync_state_path(root)
+    )
+
+    return os.path.join(
+        os.path.dirname(sync_state_path),
+        DIRECTOR_PROJECTION_TRANSITION_JOURNAL_FILENAME,
+    )
+
+
 def director_projection_bootstrap_confirmation_required(
     root: str,
     install_mode: str,
@@ -83,8 +99,15 @@ def director_projection_bootstrap_confirmation_required(
             "invalid install mode for Director projection bootstrap"
         )
 
-    return not os.path.lexists(
-        director_projection_sync_state_path(root)
+    return (
+        not os.path.lexists(
+            director_projection_sync_state_path(root)
+        )
+        or not os.path.lexists(
+            director_projection_transition_journal_path(
+                root
+            )
+        )
     )
 
 
@@ -128,37 +151,52 @@ def ensure_director_projection_sync_state(
     owner_gid: int,
 ) -> str:
     """
-    Preserve or explicitly create the Director projection sync-state.
+    Preserve or explicitly create Director projection authorization state.
 
-    Existing authoritative state is never replaced here. Missing state is
-    created only after an explicit operator acknowledgement.
+    Confirmed state and the RT-009 pending transition journal form one durable
+    authorization-state pair. Existing files are never replaced here. Missing
+    state is created only after an explicit operator acknowledgement.
     """
     selected = validate_cluster_config(selected_config)
 
     if selected.role != "director":
         return "not-applicable"
 
+    confirmed_target = (
+        director_projection_sync_state_path(root)
+    )
+    transition_target = (
+        director_projection_transition_journal_path(
+            root
+        )
+    )
+
+    confirmed_exists = os.path.lexists(
+        confirmed_target
+    )
+    transition_exists = os.path.lexists(
+        transition_target
+    )
+
+    # Security: both files are authorization knowledge. Never silently invent
+    # either half of the durable state pair on an existing Director.
+    if confirmed_exists and transition_exists:
+        return "preserved"
+
+    # Security: preflight approval before creating even one of the two files.
+    # This avoids partially bootstrapping Director authorization state merely
+    # because one file was missing.
+    if not bootstrap_approved:
+        raise DirectorProjectionStateError(
+            "Director projection authorization state is missing; "
+            "explicit Director bootstrap approval is required"
+        )
+
     config_dir = prepare_mutable_config_directory(
         root,
         owner_uid=owner_uid,
         owner_gid=owner_gid,
     )
-    target = os.path.join(
-        config_dir,
-        DIRECTOR_PROJECTION_SYNC_STATE_FILENAME,
-    )
-
-    # Security: never rewrite, reset, migrate, or reinterpret an existing
-    # authoritative confirmed-sync snapshot from the bootstrap path. Runtime
-    # performs the strict schema/ownership/symlink validation before use.
-    if os.path.lexists(target):
-        return "preserved"
-
-    if not bootstrap_approved:
-        raise DirectorProjectionStateError(
-            "Director projection sync-state is missing; "
-            "explicit Director bootstrap approval is required"
-        )
 
     contents = json.dumps(
         {
@@ -169,16 +207,43 @@ def ensure_director_projection_sync_state(
         indent=2,
     ) + "\n"
 
-    # Security: create-only atomic persistence prevents bootstrap from
-    # overwriting a state file that appears concurrently. Mode 0600 matches
-    # the runtime requirement that no group/world permission bits are set.
-    created = atomic_write_managed_text(
-        target,
-        contents,
-        owner_uid=owner_uid,
-        owner_gid=owner_gid,
-        file_mode=0o600,
-        replace_existing=False,
-    )
+    created_any = False
 
-    return "created" if created else "preserved"
+    for filename in (
+        DIRECTOR_PROJECTION_SYNC_STATE_FILENAME,
+        DIRECTOR_PROJECTION_TRANSITION_JOURNAL_FILENAME,
+    ):
+        target = os.path.join(
+            config_dir,
+            filename,
+        )
+
+        # Security: existing control-plane state is never reset, migrated or
+        # reinterpreted by bootstrap. Runtime performs strict validation.
+        if os.path.lexists(target):
+            continue
+
+        # Create-only atomic persistence also closes the race where another
+        # process creates the missing state after our preflight.
+        created = atomic_write_managed_text(
+            target,
+            contents,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
+            file_mode=0o600,
+            replace_existing=False,
+        )
+
+        created_any = (
+            created_any
+            or created
+        )
+
+    # "created" is intentionally returned if either file was newly created.
+    # Binary rollback must then not auto-start code that may not understand
+    # the newly introduced durable authorization state.
+    return (
+        "created"
+        if created_any
+        else "preserved"
+    )

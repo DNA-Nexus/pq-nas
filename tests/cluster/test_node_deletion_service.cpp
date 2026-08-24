@@ -7,6 +7,7 @@
 #include "cluster/node_registry.h"
 #include "cluster/node_tls_trust_store.h"
 #include "cluster/storage_user_projection_sync_state_store.h"
+#include "cluster/storage_user_projection_transition_store.h"
 
 #include <filesystem>
 #include <iostream>
@@ -232,6 +233,24 @@ int main() {
             error
     );
 
+    pqnas::cluster::
+        StorageUserProjectionTransitionStore
+            projection_transition_store;
+
+    error.clear();
+
+    expect(
+        projection_transition_store.load(
+            (
+                directory /
+                "storage_projection_transition_journal.json"
+            ).string(),
+            &error
+        ),
+        "load projection transition journal: " +
+            error
+    );
+
     auto projection_transition_mutex =
         std::make_shared<std::mutex>();
 
@@ -247,6 +266,8 @@ int main() {
         &tls_trust_store;
     config.projection_sync_state_store =
         &projection_sync_state_store;
+    config.projection_transition_store =
+        &projection_transition_store;
     config.projection_transition_mutex =
         projection_transition_mutex;
 
@@ -533,6 +554,171 @@ int main() {
                     NodeEnrollmentState::Pending &&
             !still_pending->token_hash.empty(),
             "confirmed projection must preserve pending enrollment"
+        );
+    }
+
+    // RT009/RT010 regression: a Node referenced only by the durable pending
+    // transition journal may already have accepted authorization. Deletion
+    // must therefore fail before bootstrap, bearer, TLS or registry mutation.
+    {
+        error.clear();
+
+        expect(
+            create_node(
+                node_registry,
+                "node-pending-projection",
+                "https://node-pending-projection.internal",
+                &error
+            ),
+            "create pending-projection node: " +
+                error
+        );
+
+        error.clear();
+
+        expect(
+            tls_trust_store.bind_if_absent(
+                "node-pending-projection",
+                "sha256/lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=",
+                &error
+            ) ==
+                pqnas::cluster::
+                    NodeTlsTrustStoreResult::Ok,
+            "create pending-projection TLS trust: " +
+                error
+        );
+
+        const std::string credential(
+            pqnas::cluster::
+                kInternalAuthTokenChars,
+            'A'
+        );
+
+        error.clear();
+
+        expect(
+            credential_registry.create_if_absent(
+                "node-pending-projection",
+                credential,
+                &error
+            ) ==
+                pqnas::cluster::
+                    NodeCredentialRegistryResult::Ok,
+            "create pending-projection credential: " +
+                error
+        );
+
+        error.clear();
+
+        const PendingFixture enrollment =
+            create_pending(
+                enrollment_registry,
+                std::string(32, 'M'),
+                "node-pending-projection",
+                "https://node-pending-projection.internal",
+                'N',
+                &error
+            );
+
+        pqnas::cluster::
+            StorageUserProjectionTransitionRecord
+                pending_projection;
+
+        pending_projection.fingerprint =
+            std::string(128, 'c');
+
+        pending_projection.home_node =
+            "node-pending-projection";
+
+        pending_projection.revision = 43;
+
+        error.clear();
+
+        expect(
+            projection_transition_store.mark_pending(
+                pending_projection,
+                &error
+            ) ==
+                pqnas::cluster::
+                    StorageUserProjectionSyncStateStoreResult::
+                        Applied,
+            "persist pending projection state: " +
+                error
+        );
+
+        expect(
+            !projection_sync_state_store.get(
+                pending_projection.fingerprint
+            ).has_value(),
+            "pending-only fixture has no confirmed projection"
+        );
+
+        const auto result =
+            service.erase_unassigned_node_locked(
+                "node-pending-projection",
+                "2026-08-23T05:11:30Z"
+            );
+
+        expect(
+            result.result ==
+                pqnas::cluster::
+                    NodeDeletionServiceResult::
+                        ConfirmedProjectionActive &&
+            result.revoked_pending_enrollments == 0 &&
+            !result.credential_removed &&
+            !result.tls_trust_removed &&
+            !result.node_removed,
+            "pending projection must block deletion before mutation"
+        );
+
+        expect(
+            node_registry.get(
+                "node-pending-projection"
+            ).has_value(),
+            "pending projection must preserve NodeRegistry"
+        );
+
+        bool credential_present = false;
+        error.clear();
+
+        expect(
+            credential_registry.contains(
+                "node-pending-projection",
+                &credential_present,
+                &error
+            ) ==
+                pqnas::cluster::
+                    NodeCredentialRegistryResult::Ok &&
+            credential_present,
+            "pending projection must preserve credential"
+        );
+
+        std::string persisted_tls_pin;
+        error.clear();
+
+        expect(
+            tls_trust_store.get(
+                "node-pending-projection",
+                &persisted_tls_pin,
+                &error
+            ) ==
+                pqnas::cluster::
+                    NodeTlsTrustStoreResult::Ok,
+            "pending projection must preserve TLS trust"
+        );
+
+        const auto still_pending =
+            enrollment_registry.get(
+                enrollment.record.enrollment_id
+            );
+
+        expect(
+            still_pending.has_value() &&
+            still_pending->state ==
+                pqnas::cluster::
+                    NodeEnrollmentState::Pending &&
+            !still_pending->token_hash.empty(),
+            "pending projection must preserve pending enrollment"
         );
     }
 

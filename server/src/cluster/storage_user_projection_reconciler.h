@@ -16,6 +16,7 @@ class UsersRegistry;
 namespace pqnas::cluster {
 
 class StorageUserProjectionSyncStateStore;
+class StorageUserProjectionTransitionStore;
 
 using StorageUserProjectionReconcileSyncInvoke =
     std::function<
@@ -59,6 +60,11 @@ struct StorageUserProjectionReconcilerConfig {
 
     StorageUserProjectionSyncStateStore*
         state_store = nullptr;
+
+    // Security: RT-009 durable write-ahead record for a Node/revision that
+    // may accept authorization before confirmed state can be committed.
+    StorageUserProjectionTransitionStore*
+        transition_store = nullptr;
 
     StorageUserProjectionReconcileSyncInvoke
         sync_projection;

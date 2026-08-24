@@ -147,6 +147,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/storage_node_enrollment_https.h"
 #include "cluster/node_heartbeat_worker.h"
 #include "cluster/storage_user_projection_sync_state_store.h"
+#include "cluster/storage_user_projection_transition_store.h"
 #include "cluster/storage_user_projection_sync_client.h"
 #include "cluster/storage_user_projection_sync_https.h"
 #include "cluster/storage_user_projection_reconciler.h"
@@ -10484,6 +10485,10 @@ auto maybe_auto_rotate_before_append = [&]() {
         StorageUserProjectionSyncStateStore
             director_storage_projection_sync_state_store;
 
+    pqnas::cluster::
+        StorageUserProjectionTransitionStore
+            director_storage_projection_transition_store;
+
     if (cluster_config.is_director()) {
         const std::filesystem::path
             projection_sync_state_path =
@@ -10535,11 +10540,57 @@ auto maybe_auto_rotate_before_append = [&]() {
             return 3;
         }
 
+        const std::filesystem::path
+            projection_transition_journal_path =
+                pqnas::config_root_path() /
+                "storage_projection_transition_journal.json";
+
+        // Security: RT-009 pending transition knowledge may identify a Node
+        // that accepted authorization but was not yet durably confirmed.
+        // Production must never replace a lost journal with an empty one.
+        std::error_code
+            projection_transition_journal_status_error;
+
+        const auto projection_transition_journal_status =
+            std::filesystem::symlink_status(
+                projection_transition_journal_path,
+                projection_transition_journal_status_error
+            );
+
+        if (projection_transition_journal_status_error ||
+            !std::filesystem::exists(
+                projection_transition_journal_status)) {
+            std::cerr
+                << "[cluster] FATAL: Director storage projection "
+                   "transition journal is missing or inaccessible"
+                << std::endl;
+
+            return 3;
+        }
+
+        std::string
+            projection_transition_journal_error;
+
+        if (!director_storage_projection_transition_store.load(
+                projection_transition_journal_path.string(),
+                &projection_transition_journal_error)) {
+            // Security: malformed or unsafe pending authorization knowledge
+            // must fail closed. Do not log the configured path or contents.
+            std::cerr
+                << "[cluster] FATAL: Director storage projection "
+                   "transition journal load failed: "
+                << projection_transition_journal_error
+                << std::endl;
+
+            return 3;
+        }
+
         const auto projection_startup_consistency =
             pqnas::cluster::
                 check_storage_projection_startup_consistency(
                     users,
-                    director_storage_projection_sync_state_store
+                    director_storage_projection_sync_state_store,
+                    director_storage_projection_transition_store
                 );
 
         if (!projection_startup_consistency.ok) {
@@ -10548,19 +10599,26 @@ auto maybe_auto_rotate_before_append = [&]() {
             // Aggregate counts only; never log user fingerprints.
             std::cerr
                 << "[cluster] FATAL: Director authoritative user "
-                   "projection state is older than confirmed sync state"
+                   "projection state is older than durable authorization state"
                 << " newer_confirmed_entries="
                 << projection_startup_consistency
                        .confirmed_revision_ahead
+                << " newer_pending_entries="
+                << projection_startup_consistency
+                       .pending_revision_ahead
                 << std::endl;
 
             return 3;
         }
 
         std::cerr
-            << "[cluster] Director storage projection sync-state "
-               "loaded entries="
+            << "[cluster] Director storage projection state loaded"
+            << " confirmed_entries="
             << director_storage_projection_sync_state_store
+                   .snapshot()
+                   .size()
+            << " pending_entries="
+            << director_storage_projection_transition_store
                    .snapshot()
                    .size()
             << std::endl;
@@ -10585,6 +10643,9 @@ auto maybe_auto_rotate_before_append = [&]() {
 
     director_node_deletion_service_config.projection_sync_state_store =
         &director_storage_projection_sync_state_store;
+
+    director_node_deletion_service_config.projection_transition_store =
+        &director_storage_projection_transition_store;
 
     director_node_deletion_service_config.projection_transition_mutex =
         director_storage_projection_transition_mutex;
@@ -10635,6 +10696,9 @@ auto maybe_auto_rotate_before_append = [&]() {
 
     director_storage_projection_reconciler_config.state_store =
         &director_storage_projection_sync_state_store;
+
+    director_storage_projection_reconciler_config.transition_store =
+        &director_storage_projection_transition_store;
 
     director_storage_projection_reconciler_config.audit_emit =
         [](
@@ -10812,6 +10876,7 @@ auto maybe_auto_rotate_before_append = [&]() {
             [
                 &users,
                 &director_storage_projection_sync_state_store,
+                &director_storage_projection_transition_store,
                 director_storage_projection_transition_mutex,
                 users_path
             ](
@@ -10825,6 +10890,7 @@ auto maybe_auto_rotate_before_append = [&]() {
                     erase_user_persisted_cluster_safe(
                         users,
                         director_storage_projection_sync_state_store,
+                        director_storage_projection_transition_store,
                         director_storage_projection_transition_mutex,
                         users_path,
                         fingerprint,

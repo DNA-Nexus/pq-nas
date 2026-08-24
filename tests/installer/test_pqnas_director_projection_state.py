@@ -79,6 +79,14 @@ class DirectorProjectionStateTests(unittest.TestCase):
                     )
                 ).exists()
             )
+            self.assertFalse(
+                Path(
+                    director_state
+                    .director_projection_transition_journal_path(
+                        str(root)
+                    )
+                ).exists()
+            )
 
     def test_missing_director_state_requires_approval(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -97,6 +105,23 @@ class DirectorProjectionStateTests(unittest.TestCase):
                         owner_gid=self.gid,
                     )
                 )
+
+            self.assertFalse(
+                Path(
+                    director_state
+                    .director_projection_sync_state_path(
+                        str(root)
+                    )
+                ).exists()
+            )
+            self.assertFalse(
+                Path(
+                    director_state
+                    .director_projection_transition_journal_path(
+                        str(root)
+                    )
+                ).exists()
+            )
 
     def test_approved_bootstrap_creates_empty_private_state(
         self,
@@ -143,6 +168,42 @@ class DirectorProjectionStateTests(unittest.TestCase):
             self.assertEqual(metadata.st_uid, self.uid)
             self.assertEqual(metadata.st_gid, self.gid)
 
+            journal_path = Path(
+                director_state
+                .director_projection_transition_journal_path(
+                    str(root)
+                )
+            )
+            journal_payload = json.loads(
+                journal_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+
+            self.assertEqual(
+                journal_payload,
+                {
+                    "version": 1,
+                    "states": [],
+                },
+            )
+
+            journal_metadata = journal_path.stat()
+            self.assertEqual(
+                stat.S_IMODE(
+                    journal_metadata.st_mode
+                ),
+                0o600,
+            )
+            self.assertEqual(
+                journal_metadata.st_uid,
+                self.uid,
+            )
+            self.assertEqual(
+                journal_metadata.st_gid,
+                self.gid,
+            )
+
     def test_existing_state_is_never_reset(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.storage_root(Path(directory))
@@ -175,6 +236,26 @@ class DirectorProjectionStateTests(unittest.TestCase):
             path.chmod(0o600)
             inode = path.stat().st_ino
 
+            journal_path = (
+                config
+                / director_state
+                .DIRECTOR_PROJECTION_TRANSITION_JOURNAL_FILENAME
+            )
+            journal_original = (
+                '{\n'
+                '  "version": 1,\n'
+                '  "states": []\n'
+                '}\n'
+            )
+            journal_path.write_text(
+                journal_original,
+                encoding="utf-8",
+            )
+            journal_path.chmod(0o600)
+            journal_inode = (
+                journal_path.stat().st_ino
+            )
+
             action = (
                 director_state
                 .ensure_director_projection_sync_state(
@@ -192,6 +273,130 @@ class DirectorProjectionStateTests(unittest.TestCase):
                 original,
             )
             self.assertEqual(path.stat().st_ino, inode)
+            self.assertEqual(
+                journal_path.read_text(
+                    encoding="utf-8"
+                ),
+                journal_original,
+            )
+            self.assertEqual(
+                journal_path.stat().st_ino,
+                journal_inode,
+            )
+
+    def test_existing_confirmed_state_missing_journal_requires_approval(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.storage_root(
+                Path(directory)
+            )
+            config = root / "config"
+            config.mkdir(mode=0o700)
+
+            confirmed_path = (
+                config
+                / director_state
+                .DIRECTOR_PROJECTION_SYNC_STATE_FILENAME
+            )
+            confirmed_original = (
+                '{\n'
+                '  "version": 1,\n'
+                '  "states": []\n'
+                '}\n'
+            )
+            confirmed_path.write_text(
+                confirmed_original,
+                encoding="utf-8",
+            )
+            confirmed_path.chmod(0o600)
+            confirmed_inode = (
+                confirmed_path.stat().st_ino
+            )
+
+            self.assertTrue(
+                director_state
+                .director_projection_bootstrap_confirmation_required(
+                    str(root),
+                    "existing",
+                    self.director(),
+                )
+            )
+
+            with self.assertRaises(
+                director_state.DirectorProjectionStateError
+            ):
+                (
+                    director_state
+                    .ensure_director_projection_sync_state(
+                        str(root),
+                        self.director(),
+                        bootstrap_approved=False,
+                        owner_uid=self.uid,
+                        owner_gid=self.gid,
+                    )
+                )
+
+            journal_path = Path(
+                director_state
+                .director_projection_transition_journal_path(
+                    str(root)
+                )
+            )
+
+            self.assertFalse(
+                journal_path.exists()
+            )
+            self.assertEqual(
+                confirmed_path.stat().st_ino,
+                confirmed_inode,
+            )
+
+            action = (
+                director_state
+                .ensure_director_projection_sync_state(
+                    str(root),
+                    self.director(),
+                    bootstrap_approved=True,
+                    owner_uid=self.uid,
+                    owner_gid=self.gid,
+                )
+            )
+
+            self.assertEqual(
+                action,
+                "created",
+            )
+            self.assertTrue(
+                journal_path.exists()
+            )
+            self.assertEqual(
+                confirmed_path.stat().st_ino,
+                confirmed_inode,
+            )
+            self.assertEqual(
+                confirmed_path.read_text(
+                    encoding="utf-8"
+                ),
+                confirmed_original,
+            )
+
+            self.assertFalse(
+                director_state
+                .binary_rollback_restart_allowed(
+                    "existing",
+                    action,
+                )
+            )
+
+            self.assertFalse(
+                director_state
+                .director_projection_bootstrap_confirmation_required(
+                    str(root),
+                    "existing",
+                    self.director(),
+                )
+            )
 
     def test_existing_preserved_state_allows_binary_rollback_restart(
         self,
