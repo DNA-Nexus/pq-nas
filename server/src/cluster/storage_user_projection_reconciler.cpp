@@ -1,12 +1,17 @@
 #include "cluster/storage_user_projection_reconciler.h"
 
+#include "cluster/cluster_identity_validation.h"
+#include "cluster/storage_user_projection_audit.h"
 #include "cluster/storage_user_projection_builder.h"
 #include "cluster/storage_user_projection_sync_state_store.h"
 #include "cluster/storage_user_projection_transition_store.h"
+#include "storage_metadata_validation.h"
 #include "users_registry.h"
 
 #include <algorithm>
+#include <map>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -22,6 +27,195 @@ bool sync_succeeded(
             StorageUserProjectionSyncClientCode::Applied ||
         code ==
             StorageUserProjectionSyncClientCode::Unchanged;
+}
+
+bool valid_digest_hex(
+    const std::string& value
+) {
+    if (value.size() !=
+        kStorageUserProjectionDigestHexChars) {
+        return false;
+    }
+
+    for (unsigned char character : value) {
+        const bool valid =
+            (character >= '0' && character <= '9') ||
+            (character >= 'a' && character <= 'f');
+
+        if (!valid) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool fingerprint_in_audit_range(
+    const std::string& fingerprint,
+    const StorageUserProjectionAuditRequest& request
+) {
+    return
+        (request.range_start.empty() ||
+         fingerprint >= request.range_start) &&
+        (request.range_end.empty() ||
+         fingerprint < request.range_end);
+}
+
+const StorageUserProjectionAuditExpected*
+find_expected(
+    const StorageUserProjectionAuditRequest& request,
+    const std::string& fingerprint
+) {
+    const auto found =
+        std::lower_bound(
+            request.expected.begin(),
+            request.expected.end(),
+            fingerprint,
+            [](
+                const StorageUserProjectionAuditExpected& entry,
+                const std::string& value
+            ) {
+                return entry.fingerprint < value;
+            }
+        );
+
+    if (found == request.expected.end() ||
+        found->fingerprint != fingerprint) {
+        return nullptr;
+    }
+
+    return &*found;
+}
+
+// Security: the production HTTPS parser is strict, but the reconciler accepts
+// an injected callback. Re-validate the typed proof so a future callback bug
+// cannot turn malformed/incomplete evidence into authorization convergence.
+bool audit_result_consistent(
+    const StorageUserProjectionAuditRequest& request,
+    const StorageUserProjectionAuditResult& result
+) {
+    if (!result.complete ||
+        result.matched > request.expected.size() ||
+        result.mismatches.size() >
+            kStorageUserProjectionAuditMaxMismatches) {
+        return false;
+    }
+
+    std::string previous_fingerprint;
+    bool have_previous = false;
+    std::size_t expected_mismatches = 0;
+
+    for (const auto& mismatch :
+         result.mismatches) {
+        if (!pqnas::valid_storage_user_fingerprint_hex(
+                mismatch.fingerprint) ||
+            !fingerprint_in_audit_range(
+                mismatch.fingerprint,
+                request) ||
+            (have_previous &&
+             mismatch.fingerprint <=
+                 previous_fingerprint)) {
+            return false;
+        }
+
+        const auto* expected =
+            find_expected(
+                request,
+                mismatch.fingerprint
+            );
+
+        switch (mismatch.code) {
+            case StorageUserProjectionAuditMismatchCode::Missing:
+                if (!expected ||
+                    mismatch.expected_revision !=
+                        expected->revision ||
+                    mismatch.actual_revision != 0) {
+                    return false;
+                }
+
+                ++expected_mismatches;
+                break;
+
+            case StorageUserProjectionAuditMismatchCode::Stale:
+                if (!expected ||
+                    mismatch.expected_revision !=
+                        expected->revision ||
+                    mismatch.actual_revision == 0 ||
+                    mismatch.actual_revision >=
+                        expected->revision) {
+                    return false;
+                }
+
+                ++expected_mismatches;
+                break;
+
+            case StorageUserProjectionAuditMismatchCode::Conflict:
+                if (!expected ||
+                    mismatch.expected_revision !=
+                        expected->revision ||
+                    mismatch.actual_revision !=
+                        expected->revision) {
+                    return false;
+                }
+
+                ++expected_mismatches;
+                break;
+
+            case StorageUserProjectionAuditMismatchCode::Newer:
+                if (!expected ||
+                    mismatch.expected_revision !=
+                        expected->revision ||
+                    mismatch.actual_revision <=
+                        expected->revision) {
+                    return false;
+                }
+
+                ++expected_mismatches;
+                break;
+
+            case StorageUserProjectionAuditMismatchCode::WrongNodeState:
+                if (mismatch.actual_revision == 0) {
+                    return false;
+                }
+
+                if (expected) {
+                    if (mismatch.expected_revision !=
+                        expected->revision) {
+                        return false;
+                    }
+
+                    ++expected_mismatches;
+                } else if (
+                    mismatch.expected_revision != 0
+                ) {
+                    return false;
+                }
+
+                break;
+
+            case StorageUserProjectionAuditMismatchCode::
+                    UnexpectedAuthorization:
+                if (expected ||
+                    mismatch.expected_revision != 0 ||
+                    mismatch.actual_revision == 0) {
+                    return false;
+                }
+
+                break;
+
+            default:
+                return false;
+        }
+
+        previous_fingerprint =
+            mismatch.fingerprint;
+        have_previous = true;
+    }
+
+    return
+        result.matched +
+            expected_mismatches ==
+        request.expected.size();
 }
 
 StorageUserProjection previous_node_tombstone(
@@ -348,6 +542,114 @@ bool heal_confirmed_state_durability(
 
 } // namespace
 
+bool build_storage_user_projection_reconcile_audit_requests(
+    const std::string& node_id,
+    std::vector<StorageUserProjectionAuditExpected> expected,
+    std::vector<StorageUserProjectionAuditRequest>* requests
+) {
+    if (!requests ||
+        !valid_cluster_node_id(node_id) ||
+        kStorageUserProjectionAuditMaxExpected == 0) {
+        return false;
+    }
+
+    std::sort(
+        expected.begin(),
+        expected.end(),
+        [](
+            const StorageUserProjectionAuditExpected& left,
+            const StorageUserProjectionAuditExpected& right
+        ) {
+            return
+                left.fingerprint <
+                right.fingerprint;
+        }
+    );
+
+    std::string previous_fingerprint;
+    bool have_previous = false;
+
+    for (const auto& entry :
+         expected) {
+        if (!pqnas::valid_storage_user_fingerprint_hex(
+                entry.fingerprint) ||
+            entry.revision == 0 ||
+            !valid_digest_hex(
+                entry.digest_hex) ||
+            (have_previous &&
+             entry.fingerprint ==
+                 previous_fingerprint)) {
+            return false;
+        }
+
+        previous_fingerprint =
+            entry.fingerprint;
+        have_previous = true;
+    }
+
+    std::vector<StorageUserProjectionAuditRequest>
+        candidate;
+
+    if (expected.empty()) {
+        StorageUserProjectionAuditRequest request;
+        request.node_id = node_id;
+
+        candidate.push_back(
+            std::move(request)
+        );
+
+        *requests =
+            std::move(candidate);
+
+        return true;
+    }
+
+    for (std::size_t offset = 0;
+         offset < expected.size();
+         offset +=
+            kStorageUserProjectionAuditMaxExpected) {
+        const std::size_t next =
+            std::min(
+                expected.size(),
+                offset +
+                    kStorageUserProjectionAuditMaxExpected
+            );
+
+        StorageUserProjectionAuditRequest request;
+        request.node_id = node_id;
+
+        if (offset != 0) {
+            request.range_start =
+                expected[offset].fingerprint;
+        }
+
+        if (next < expected.size()) {
+            request.range_end =
+                expected[next].fingerprint;
+        }
+
+        request.expected.assign(
+            expected.begin() +
+                static_cast<std::ptrdiff_t>(
+                    offset
+                ),
+            expected.begin() +
+                static_cast<std::ptrdiff_t>(
+                    next
+                )
+        );
+
+        candidate.push_back(
+            std::move(request)
+        );
+    }
+
+    *requests =
+        std::move(candidate);
+
+    return true;
+}
+
 StorageUserProjectionReconciler::
 StorageUserProjectionReconciler(
     StorageUserProjectionReconcilerConfig config
@@ -363,6 +665,24 @@ StorageUserProjectionReconciler::reconcile_once() const {
         !config_.transition_store ||
         !config_.sync_projection) {
         result.failed = 1;
+        return result;
+    }
+
+    const bool has_audit_node_list =
+        static_cast<bool>(
+            config_.list_audit_capable_nodes
+        );
+
+    const bool has_audit_invoke =
+        static_cast<bool>(
+            config_.audit_projection_range
+        );
+
+    if (has_audit_node_list !=
+        has_audit_invoke) {
+        // Security: never partially enable RT-008 proof mode.
+        ++result.state_conflicts;
+        ++result.failed;
         return result;
     }
 
@@ -418,6 +738,48 @@ StorageUserProjectionReconciler::reconcile_once() const {
 
     const auto transitions =
         config_.transition_store->snapshot();
+
+    std::vector<std::string>
+        audit_nodes;
+
+    std::unordered_set<std::string>
+        audit_capable_nodes;
+
+    if (has_audit_node_list) {
+        try {
+            audit_nodes =
+                config_.list_audit_capable_nodes();
+        } catch (...) {
+            ++result.failed;
+            return result;
+        }
+
+        std::sort(
+            audit_nodes.begin(),
+            audit_nodes.end()
+        );
+
+        for (const auto& node_id :
+             audit_nodes) {
+            if (!valid_cluster_node_id(
+                    node_id) ||
+                !audit_capable_nodes.insert(
+                    node_id
+                ).second) {
+                ++result.state_conflicts;
+                ++result.failed;
+                return result;
+            }
+        }
+    }
+
+    // Equal confirmed/current entries on audit-capable Nodes are intentionally
+    // deferred until full-range proof succeeds. Legacy Nodes are verified
+    // immediately with an idempotent current projection POST.
+    std::unordered_map<
+        std::string,
+        StorageUserProjection
+    > deferred_equal;
 
     std::unordered_set<std::string>
         current_fingerprints;
@@ -880,9 +1242,45 @@ StorageUserProjectionReconciler::reconcile_once() const {
                 continue;
             }
 
-            // Even a no-op is passed through mark_synced(): if an earlier
-            // rename succeeded but parent fsync failed, this re-attempts
-            // durable persistence without performing network I/O.
+            if (audit_capable_nodes.find(
+                    current.home_node) !=
+                audit_capable_nodes.end()) {
+                // RT-008: Director durable state is not proof that Storage
+                // currently has this projection. Defer success until the
+                // authenticated full-range audit at the end of this pass.
+                if (!deferred_equal.emplace(
+                        fingerprint,
+                        current
+                    ).second) {
+                    ++result.state_conflicts;
+                    ++result.failed;
+                }
+
+                continue;
+            }
+
+            // Rolling-upgrade fallback: legacy Storage has no readback proof,
+            // so verify the exact current authorization with an idempotent
+            // authenticated POST. Applied or Unchanged is current Storage
+            // evidence; local confirmed state alone is never sufficient.
+            StorageUserProjectionSyncResult verification_result;
+
+            try {
+                verification_result =
+                    config_.sync_projection(
+                        current
+                    );
+            } catch (...) {
+                ++result.failed;
+                continue;
+            }
+
+            if (!sync_succeeded(
+                    verification_result.code)) {
+                ++result.failed;
+                continue;
+            }
+
             if (heal_confirmed_state_durability(
                     config_.state_store,
                     *confirmed,
@@ -1022,6 +1420,378 @@ StorageUserProjectionReconciler::reconcile_once() const {
             );
 
             ++result.synced_current;
+        }
+    }
+
+    // RT-008 range proof runs only after ordinary RT-009 recovery/move/revoke
+    // work completed successfully. Pre-auditing could mistake a known pending
+    // authorization for an orphan and block the revoke needed to converge it.
+    if (result.failed == 0 &&
+        !audit_nodes.empty()) {
+        std::map<
+            std::string,
+            std::vector<
+                StorageUserProjectionAuditExpected
+            >
+        > expected_by_node;
+
+        for (const auto& node_id :
+             audit_nodes) {
+            expected_by_node.emplace(
+                node_id,
+                std::vector<
+                    StorageUserProjectionAuditExpected
+                >{}
+            );
+        }
+
+        bool expected_build_failed = false;
+
+        for (const auto& entry :
+             users) {
+            const pqnas::UserRec& user =
+                entry.second;
+
+            if (user.home_node.empty() ||
+                audit_capable_nodes.find(
+                    user.home_node) ==
+                    audit_capable_nodes.end()) {
+                continue;
+            }
+
+            StorageUserProjection projection;
+            std::string build_error;
+
+            if (!build_storage_user_projection(
+                    user,
+                    &projection,
+                    &build_error)) {
+                build_error.clear();
+                ++result.state_conflicts;
+                ++result.failed;
+                expected_build_failed = true;
+                break;
+            }
+
+            std::string digest;
+            std::string digest_error;
+
+            if (!storage_user_projection_digest_v1(
+                    projection,
+                    &digest,
+                    &digest_error)) {
+                digest_error.clear();
+                ++result.state_conflicts;
+                ++result.failed;
+                expected_build_failed = true;
+                break;
+            }
+
+            StorageUserProjectionAuditExpected expected;
+            expected.fingerprint =
+                projection.fingerprint;
+            expected.revision =
+                projection.revision;
+            expected.digest_hex =
+                std::move(digest);
+
+            expected_by_node[
+                projection.home_node
+            ].push_back(
+                std::move(expected)
+            );
+        }
+
+        struct AuditObservation {
+            StorageUserProjectionAuditRequest request;
+            StorageUserProjectionAuditResult result;
+        };
+
+        std::vector<AuditObservation>
+            observations;
+
+        bool audit_failed =
+            expected_build_failed;
+
+        if (!audit_failed) {
+            for (const auto& node_id :
+                 audit_nodes) {
+                std::vector<
+                    StorageUserProjectionAuditRequest
+                > requests;
+
+                if (!build_storage_user_projection_reconcile_audit_requests(
+                        node_id,
+                        expected_by_node[node_id],
+                        &requests)) {
+                    ++result.state_conflicts;
+                    ++result.failed;
+                    audit_failed = true;
+                    break;
+                }
+
+                for (const auto& request :
+                     requests) {
+                    StorageUserProjectionAuditClientResult
+                        audit_result;
+
+                    try {
+                        audit_result =
+                            config_.audit_projection_range(
+                                request
+                            );
+                    } catch (...) {
+                        ++result.failed;
+                        audit_failed = true;
+                        break;
+                    }
+
+                    if (audit_result.code !=
+                            StorageUserProjectionAuditClientCode::Ok ||
+                        !audit_result.result.complete) {
+                        ++result.failed;
+                        audit_failed = true;
+                        break;
+                    }
+
+                    if (!audit_result_consistent(
+                            request,
+                            audit_result.result)) {
+                        ++result.state_conflicts;
+                        ++result.failed;
+                        audit_failed = true;
+                        break;
+                    }
+
+                    observations.push_back(
+                        AuditObservation{
+                            request,
+                            std::move(
+                                audit_result.result
+                            )
+                        }
+                    );
+                }
+
+                if (audit_failed) {
+                    break;
+                }
+            }
+        }
+
+        std::unordered_set<std::string>
+            repair_fingerprints;
+
+        if (!audit_failed) {
+            for (const auto& observation :
+                 observations) {
+                for (const auto& mismatch :
+                     observation.result.mismatches) {
+                    switch (mismatch.code) {
+                        case StorageUserProjectionAuditMismatchCode::Missing:
+                        case StorageUserProjectionAuditMismatchCode::Stale: {
+                            const auto deferred =
+                                deferred_equal.find(
+                                    mismatch.fingerprint
+                                );
+
+                            if (deferred ==
+                                    deferred_equal.end() ||
+                                deferred->second.home_node !=
+                                    observation.request.node_id ||
+                                deferred->second.revision !=
+                                    mismatch.expected_revision ||
+                                !repair_fingerprints.insert(
+                                    mismatch.fingerprint
+                                ).second) {
+                                ++result.state_conflicts;
+                                ++result.failed;
+                                audit_failed = true;
+                            }
+
+                            break;
+                        }
+
+                        case StorageUserProjectionAuditMismatchCode::Conflict:
+                        case StorageUserProjectionAuditMismatchCode::
+                                WrongNodeState:
+                            ++result.state_conflicts;
+                            ++result.failed;
+                            audit_failed = true;
+                            break;
+
+                        case StorageUserProjectionAuditMismatchCode::Newer:
+                            ++result.stale_states;
+                            ++result.failed;
+                            audit_failed = true;
+                            break;
+
+                        case StorageUserProjectionAuditMismatchCode::
+                                UnexpectedAuthorization:
+                            if (current_fingerprints.find(
+                                    mismatch.fingerprint) ==
+                                current_fingerprints.end()) {
+                                ++result.orphaned_states;
+                            } else {
+                                ++result.state_conflicts;
+                            }
+
+                            ++result.failed;
+                            audit_failed = true;
+                            break;
+
+                        default:
+                            ++result.state_conflicts;
+                            ++result.failed;
+                            audit_failed = true;
+                            break;
+                    }
+
+                    if (audit_failed) {
+                        break;
+                    }
+                }
+
+                if (audit_failed) {
+                    break;
+                }
+            }
+        }
+
+        // Missing/stale is auto-healed only for a projection that was already
+        // confirmed equal on this exact Node/revision before the audit. This is
+        // the original RT-008 rollback case and does not authorize a new Node.
+        if (!audit_failed &&
+            !repair_fingerprints.empty()) {
+            std::vector<std::string>
+                repairs(
+                    repair_fingerprints.begin(),
+                    repair_fingerprints.end()
+                );
+
+            std::sort(
+                repairs.begin(),
+                repairs.end()
+            );
+
+            for (const auto& fingerprint :
+                 repairs) {
+                const auto deferred =
+                    deferred_equal.find(
+                        fingerprint
+                    );
+
+                if (deferred ==
+                    deferred_equal.end()) {
+                    ++result.state_conflicts;
+                    ++result.failed;
+                    audit_failed = true;
+                    break;
+                }
+
+                StorageUserProjectionSyncResult
+                    repair_result;
+
+                try {
+                    repair_result =
+                        config_.sync_projection(
+                            deferred->second
+                        );
+                } catch (...) {
+                    ++result.failed;
+                    audit_failed = true;
+                    break;
+                }
+
+                if (!sync_succeeded(
+                        repair_result.code)) {
+                    ++result.failed;
+                    audit_failed = true;
+                    break;
+                }
+
+                const auto state =
+                    projection_state_from_projection(
+                        deferred->second
+                    );
+
+                if (!heal_confirmed_state_durability(
+                        config_.state_store,
+                        state,
+                        &result)) {
+                    audit_failed = true;
+                    break;
+                }
+
+                emit_reconcile_audit_best_effort(
+                    config_,
+                    "cluster.storage_projection.synced",
+                    fingerprint,
+                    deferred->second.revision,
+                    deferred->second.revision,
+                    deferred->second.home_node,
+                    deferred->second.home_node
+                );
+
+                ++result.synced_current;
+            }
+        }
+
+        // Equal/current projections with no mismatch are already synchronized
+        // only now: the Storage range proof, not Director durable memory,
+        // establishes their current authorization state.
+        if (!audit_failed) {
+            std::vector<std::string>
+                deferred_fingerprints;
+
+            deferred_fingerprints.reserve(
+                deferred_equal.size()
+            );
+
+            for (const auto& entry :
+                 deferred_equal) {
+                deferred_fingerprints.push_back(
+                    entry.first
+                );
+            }
+
+            std::sort(
+                deferred_fingerprints.begin(),
+                deferred_fingerprints.end()
+            );
+
+            for (const auto& fingerprint :
+                 deferred_fingerprints) {
+                if (repair_fingerprints.find(
+                        fingerprint) !=
+                    repair_fingerprints.end()) {
+                    continue;
+                }
+
+                const auto deferred =
+                    deferred_equal.find(
+                        fingerprint
+                    );
+
+                if (deferred ==
+                    deferred_equal.end()) {
+                    ++result.state_conflicts;
+                    ++result.failed;
+                    break;
+                }
+
+                const auto state =
+                    projection_state_from_projection(
+                        deferred->second
+                    );
+
+                if (heal_confirmed_state_durability(
+                        config_.state_store,
+                        state,
+                        &result)) {
+                    ++result.already_synced;
+                }
+            }
         }
     }
 

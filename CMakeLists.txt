@@ -5269,6 +5269,7 @@ endif()
 target_link_libraries(pqnas_storage_user_projection_reconciler PUBLIC
         pqnas_storage_user_projection_builder
         pqnas_storage_user_projection_sync_state_store
+        pqnas_storage_user_projection_audit
 )
 
 
