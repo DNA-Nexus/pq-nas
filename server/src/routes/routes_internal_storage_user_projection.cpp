@@ -25,6 +25,32 @@ namespace {
 
 using json = nlohmann::json;
 
+static_assert(
+    kStorageUserProjectionAuditMaxExpected > 0,
+    "RT-008 audit batch size must be non-zero"
+);
+
+constexpr std::size_t
+    kStorageUserProjectionAuditFullPassRequests =
+        (
+            kStorageUserProjectionStoreMaxEntries +
+            kStorageUserProjectionAuditMaxExpected -
+            1
+        ) /
+        kStorageUserProjectionAuditMaxExpected;
+
+static_assert(
+    kInternalStorageUserProjectionAuditRateLimitRequests >=
+        kStorageUserProjectionAuditFullPassRequests,
+    "RT-008 audit rate limit must permit one worst-case full projection pass"
+);
+
+static_assert(
+    kInternalStorageUserProjectionAuditRateLimitRequests <=
+        kInternalStorageUserProjectionRateLimitRequests,
+    "RT-008 audit readback budget must remain no wider than mutation budget"
+);
+
 constexpr std::size_t
     kMaximumAuthorizationHeaderBytes = 128;
 

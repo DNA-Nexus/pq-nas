@@ -26,8 +26,11 @@ inline constexpr std::size_t
     kInternalStorageUserProjectionAuditMaxRequestBytes =
         256u * 1024u;
 
+// A full worst-case RT-008 audit needs 128 contiguous range requests:
+// 65,536 stored projections / 512 expected identities per request.
+// Keep 25% headroom while retaining a bounded authenticated readback budget.
 inline constexpr std::size_t
-    kInternalStorageUserProjectionAuditRateLimitRequests = 64;
+    kInternalStorageUserProjectionAuditRateLimitRequests = 160;
 
 inline constexpr long
     kInternalStorageUserProjectionAuditRateLimitWindowSeconds = 10;

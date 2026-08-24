@@ -237,6 +237,43 @@ json audit_request_json(
 } // namespace
 
 int main() {
+    constexpr std::size_t full_audit_pass_requests =
+        (
+            pqnas::cluster::
+                kStorageUserProjectionStoreMaxEntries +
+            pqnas::cluster::
+                kStorageUserProjectionAuditMaxExpected -
+            1
+        ) /
+        pqnas::cluster::
+            kStorageUserProjectionAuditMaxExpected;
+
+    expect(
+        full_audit_pass_requests == 128,
+        "RT-008 worst-case full audit requires 128 range requests"
+    );
+
+    expect(
+        pqnas::cluster::
+            kInternalStorageUserProjectionAuditRateLimitRequests >=
+                full_audit_pass_requests,
+        "audit limiter permits one complete worst-case projection audit"
+    );
+
+    expect(
+        pqnas::cluster::
+            kInternalStorageUserProjectionAuditRateLimitRequests == 160,
+        "audit limiter remains bounded at 160 requests per window"
+    );
+
+    expect(
+        pqnas::cluster::
+            kInternalStorageUserProjectionAuditRateLimitWindowSeconds == 10 &&
+        pqnas::cluster::
+            kInternalStorageUserProjectionAuditRateLimitTrackedPeers == 64,
+        "audit limiter keeps the 10-second window and 64-peer bound"
+    );
+
     if (sodium_init() < 0) {
         std::cerr
             << "FAIL: sodium_init failed\n";
