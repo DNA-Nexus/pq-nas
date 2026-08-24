@@ -412,6 +412,81 @@ int main() {
         "heartbeat must preserve Director-owned capacity ceiling"
     );
 
+    pqnas::cluster::NodeStatusSnapshot upgraded_status =
+        status;
+
+    upgraded_status.protocol_version =
+        pqnas::cluster::
+            kNodeStatusProtocolVersionCurrent;
+
+    upgraded_status.timestamp =
+        "2026-07-28T06:04:10Z";
+
+    error.clear();
+
+    expect(
+        reloaded.apply_status(
+            upgraded_status,
+            "2026-07-28T06:04:11Z",
+            &error
+        ),
+        "legacy v1 node may upgrade to audit-capable v2: " + error
+    );
+
+    const auto upgraded =
+        reloaded.get("node-01");
+
+    expect(
+        upgraded.has_value() &&
+        upgraded->protocol_version ==
+            pqnas::cluster::
+                kNodeStatusProtocolVersionCurrent &&
+        upgraded->last_seen_at ==
+            "2026-07-28T06:04:11Z" &&
+        upgraded->node_reported_at ==
+            "2026-07-28T06:04:10Z",
+        "registry persists authenticated v1 to v2 protocol upgrade"
+    );
+
+    pqnas::cluster::NodeStatusSnapshot downgrade_status =
+        upgraded_status;
+
+    downgrade_status.protocol_version =
+        pqnas::cluster::
+            kNodeStatusProtocolVersionLegacy;
+
+    downgrade_status.timestamp =
+        "2026-07-28T06:04:20Z";
+
+    error.clear();
+
+    expect(
+        !reloaded.apply_status(
+            downgrade_status,
+            "2026-07-28T06:04:21Z",
+            &error
+        ) &&
+        error ==
+            "node status protocol downgrade rejected",
+        "audit capability must not silently downgrade from v2 to v1"
+    );
+
+    const auto after_downgrade =
+        reloaded.get("node-01");
+
+    expect(
+        after_downgrade.has_value() &&
+        after_downgrade->health == "online" &&
+        after_downgrade->protocol_version ==
+            pqnas::cluster::
+                kNodeStatusProtocolVersionCurrent &&
+        after_downgrade->last_seen_at ==
+            "2026-07-28T06:04:11Z" &&
+        after_downgrade->node_reported_at ==
+            "2026-07-28T06:04:10Z",
+        "rejected downgrade must leave registry observation unchanged"
+    );
+
     pqnas::cluster::NodeStatusSnapshot invalid_protocol_status =
         status;
 

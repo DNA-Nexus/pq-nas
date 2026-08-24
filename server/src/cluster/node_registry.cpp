@@ -1569,6 +1569,21 @@ bool NodeRegistry::apply_status(
         return false;
     }
 
+    // Security: once Director has authenticated the RT-008 range-audit
+    // capability for this node, a later heartbeat may not silently downgrade
+    // it to the legacy POST-only protocol. Explicit administration is required
+    // for any rollback of that security capability.
+    if (node_status_protocol_supports_projection_audit(
+            record.protocol_version) &&
+        !node_status_protocol_supports_projection_audit(
+            status.protocol_version)) {
+        set_error(
+            err,
+            "node status protocol downgrade rejected"
+        );
+        return false;
+    }
+
     const bool became_online =
         record.health != "online";
 

@@ -5395,6 +5395,8 @@ add_custom_target(run_test_storage_user_projection_reconcile_worker_guards
 target_link_libraries(pqnas_server PRIVATE
         pqnas_node_credential_rotation_https
         pqnas_storage_user_projection_sync_https
+        pqnas_storage_user_projection_audit_client
+        pqnas_storage_user_projection_audit_https
         pqnas_storage_user_projection_reconcile_worker
 )
 
