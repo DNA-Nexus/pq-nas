@@ -1320,6 +1320,185 @@ bool UsersRegistry::upsert_persisted(
   return true;
 }
 
+
+bool UsersRegistry::set_profile_persisted(
+    const std::string& fp_hex,
+    const UserProfileUpdate& update,
+    const std::string& path,
+    bool* changed,
+    UserRec* updated,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (updated) {
+    *updated = UserRec{};
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) {
+      *error = "fingerprint is empty";
+    }
+
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) {
+      *error = "users registry path is empty";
+    }
+
+    return false;
+  }
+
+  const std::string normalized_role =
+      norm_role(update.role);
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before another
+  // persisted user mutation is allowed to proceed.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  auto iterator =
+      by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) {
+      *error = "user not found";
+    }
+
+    return false;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  // Security: start from the CURRENT registry-owned record. Never write a
+  // request-local UserRec snapshot back into users.json, because that snapshot
+  // may contain placement/projection state older than a concurrent mutation.
+  UserRec candidate =
+      previous;
+
+  candidate.name =
+      update.name;
+
+  candidate.notes =
+      update.notes;
+
+  candidate.email =
+      update.email;
+
+  candidate.address =
+      update.address;
+
+  candidate.group =
+      update.group;
+
+  candidate.avatar_url =
+      update.avatar_url;
+
+  if (update.update_role) {
+    candidate.role =
+        normalized_role;
+  }
+
+  // Defense in depth: profile mutation must never alter Storage authorization
+  // or Director-owned placement/version state, even after future maintenance.
+  if (!storage_projection_semantics_equal(
+          previous,
+          candidate) ||
+      !storage_metadata_fields_equal(
+          previous,
+          candidate) ||
+      candidate.status !=
+          previous.status ||
+      candidate.home_node !=
+          previous.home_node ||
+      candidate.placement_policy_id !=
+          previous.placement_policy_id ||
+      candidate.storage_projection_revision !=
+          previous.storage_projection_revision) {
+    if (error) {
+      *error =
+          "profile mutation changed protected user state";
+    }
+
+    return false;
+  }
+
+  const bool profile_changed =
+      candidate.name != previous.name ||
+      candidate.notes != previous.notes ||
+      candidate.email != previous.email ||
+      candidate.address != previous.address ||
+      candidate.group != previous.group ||
+      candidate.avatar_url != previous.avatar_url ||
+      candidate.role != previous.role;
+
+  if (!profile_changed) {
+    if (updated) {
+      *updated = previous;
+    }
+
+    return true;
+  }
+
+  iterator->second =
+      candidate;
+
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      // Security/correctness: rename already made candidate authoritative.
+      // Never restore stale process memory after a directory-fsync failure.
+      if (updated) {
+        *updated = candidate;
+      }
+
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    iterator->second =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  if (updated) {
+    *updated = candidate;
+  }
+
+  return true;
+}
+
+
 /*
 set_status(), set_role()
   - Small mutation helpers used by admin operations.
