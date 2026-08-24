@@ -3161,6 +3161,65 @@ add_custom_target(run_test_storage_user_projection_store
 )
 
 # -----------------------------------------------------------------------------
+# Storage user projection audit primitives (RT-008)
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_user_projection_audit STATIC
+        server/src/cluster/storage_user_projection_audit.cpp
+        server/src/cluster/storage_user_projection_audit.h
+)
+
+target_include_directories(pqnas_storage_user_projection_audit PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_user_projection_audit
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_user_projection_audit PUBLIC
+        pqnas_cluster_identity_validation
+        pqnas_storage_path_validation
+        OpenSSL::Crypto
+)
+
+# -----------------------------------------------------------------------------
+# Test: Storage user projection audit primitives
+# -----------------------------------------------------------------------------
+add_executable(test_storage_user_projection_audit
+        tests/cluster/test_storage_user_projection_audit.cpp
+)
+
+target_include_directories(test_storage_user_projection_audit PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_user_projection_audit
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_user_projection_audit PRIVATE
+        pqnas_storage_user_projection_audit
+)
+
+set_target_properties(test_storage_user_projection_audit PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_user_projection_audit
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_user_projection_audit"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_user_projection_audit
+)
+
+# -----------------------------------------------------------------------------
 # Storage pool runtime registry
 # -----------------------------------------------------------------------------
 add_library(pqnas_storage_pool_runtime STATIC
