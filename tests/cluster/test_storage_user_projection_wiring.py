@@ -79,6 +79,27 @@ require(
     "handoff ticket route is still not production-registered",
 )
 
+# RT010: physical Node deletion must share the exact durable confirmed-state
+# store and transition boundary used by reconciliation.
+require(
+    "director_node_deletion_service_config.projection_sync_state_store =\n"
+    "        &director_storage_projection_sync_state_store;" in main,
+    "Node deletion must inspect Director confirmed projection sync-state",
+)
+
+require(
+    "director_node_deletion_service_config.projection_transition_mutex =\n"
+    "        director_storage_projection_transition_mutex;" in main,
+    "Node deletion must share the reconciliation transition mutex",
+)
+
+require(
+    "pqnas_node_deletion_service PUBLIC\n"
+    "        pqnas_storage_user_projection_sync_state_store" in cmake,
+    "Node deletion service must link durable projection sync-state support",
+)
+
+
 # Post-commit projection changes must wake the running Director reconciler.
 worker_start_pos = main.find(
     "if (!director_storage_projection_reconcile_worker.start("

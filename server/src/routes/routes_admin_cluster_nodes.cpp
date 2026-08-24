@@ -2463,6 +2463,29 @@ void handle_admin_cluster_nodes_delete(
         }
 
         if (deletion_result.result ==
+            NodeDeletionServiceResult::
+                ConfirmedProjectionActive) {
+            // Security: never destroy a Node lifecycle while durable
+            // confirmed Storage authorization still references that Node.
+            // Do not expose user fingerprints.
+            reply_json_local(
+                context,
+                res,
+                409,
+                json{
+                    {"ok", false},
+                    {"error", "conflict"},
+                    {
+                        "message",
+                        "node still has confirmed Storage projection state"
+                    }
+                }
+            );
+
+            return;
+        }
+
+        if (deletion_result.result ==
             NodeDeletionServiceResult::NotFound) {
             reply_json_local(
                 context,

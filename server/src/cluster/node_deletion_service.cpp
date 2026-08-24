@@ -5,6 +5,7 @@
 #include "cluster/node_enrollment_registry.h"
 #include "cluster/node_registry.h"
 #include "cluster/node_tls_trust_store.h"
+#include "cluster/storage_user_projection_sync_state_store.h"
 
 #include <utility>
 #include <vector>
@@ -32,6 +33,14 @@ const char* node_deletion_service_result_code(
         case NodeDeletionServiceResult::
                 ProvisioningActive:
             return "node_deletion_provisioning_active";
+
+        case NodeDeletionServiceResult::
+                ConfirmedProjectionActive:
+            return "node_deletion_confirmed_projection_active";
+
+        case NodeDeletionServiceResult::
+                ProjectionStateCheckFailed:
+            return "node_deletion_projection_state_check_failed";
 
         case NodeDeletionServiceResult::
                 EnrollmentCleanupFailed:
@@ -64,7 +73,9 @@ bool NodeDeletionService::config_valid()
         config_.node_registry &&
         config_.enrollment_registry &&
         config_.credential_registry &&
-        config_.tls_trust_store;
+        config_.tls_trust_store &&
+        config_.projection_sync_state_store &&
+        config_.projection_transition_mutex;
 }
 
 NodeDeletionResult
@@ -91,6 +102,52 @@ NodeDeletionService::erase_unassigned_node_locked(
              .has_value()) {
         output.result =
             NodeDeletionServiceResult::NotFound;
+
+        return output;
+    }
+
+    // Security: serialize this decision with reconciliation before touching
+    // bootstrap, bearer or TLS identity state. Otherwise an in-flight
+    // reconciler could confirm authorization on this Node after a stale
+    // deletion preflight.
+    std::lock_guard<std::mutex>
+        projection_transition_lock(
+            *config_.projection_transition_mutex
+        );
+
+    std::string projection_state_error;
+
+    // Security: absence from confirmed state is authoritative only when the
+    // visible sync-state snapshot is known durable.
+    if (!config_.projection_sync_state_store
+             ->ensure_durable(
+                 &projection_state_error
+             )) {
+        output.result =
+            NodeDeletionServiceResult::
+                ProjectionStateCheckFailed;
+
+        return output;
+    }
+
+    const std::vector<
+        StorageUserProjectionSyncState
+    > confirmed_states =
+        config_.projection_sync_state_store
+            ->snapshot();
+
+    for (const auto& state :
+         confirmed_states) {
+        if (state.home_node != node_id) {
+            continue;
+        }
+
+        // Security: reconciliation must first revoke this confirmed Storage
+        // authorization and remove its durable state before Node lifecycle
+        // credentials or identity may be destroyed.
+        output.result =
+            NodeDeletionServiceResult::
+                ConfirmedProjectionActive;
 
         return output;
     }
