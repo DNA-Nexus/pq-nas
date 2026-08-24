@@ -60,7 +60,7 @@ pqnas::cluster::NodeRegistryRecord make_online_node(
 
     node.protocol_version =
         pqnas::cluster::
-            kNodeStatusProtocolVersion;
+            kNodeStatusProtocolVersionCurrent;
 
     node.storage_total_bytes = 1000;
     node.storage_free_bytes = free_bytes;
@@ -96,6 +96,57 @@ int main() {
             result.considered_nodes == 0 &&
             result.eligible_nodes == 0,
             "empty input should fail closed"
+        );
+    }
+
+    {
+        NodeRegistryRecord legacy =
+            make_online_node(
+                "node-legacy",
+                500
+            );
+
+        legacy.protocol_version =
+            pqnas::cluster::
+                kNodeStatusProtocolVersionLegacy;
+
+        const auto result =
+            select_user_home_node(
+                {legacy},
+                {}
+            );
+
+        expect(
+            result.ok &&
+            result.node_id == "node-legacy",
+            "legacy protocol v1 remains placement-compatible during rollout"
+        );
+    }
+
+    {
+        NodeRegistryRecord unsupported =
+            make_online_node(
+                "node-unsupported",
+                500
+            );
+
+        unsupported.protocol_version =
+            pqnas::cluster::
+                kNodeStatusProtocolVersionCurrent + 1;
+
+        const auto result =
+            select_user_home_node(
+                {unsupported},
+                {}
+            );
+
+        expect(
+            !result.ok &&
+            rejection_count(
+                result,
+                "missing_status"
+            ) == 1,
+            "unsupported protocol remains placement-ineligible"
         );
     }
 

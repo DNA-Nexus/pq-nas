@@ -1052,7 +1052,9 @@ bool validate_status_snapshot(
     const NodeStatusSnapshot& status,
     std::string* err
 ) {
-    if (!valid_cluster_node_id(status.node_id) ||
+    if (!node_status_protocol_version_supported(
+            status.protocol_version) ||
+        !valid_cluster_node_id(status.node_id) ||
         !valid_metadata_token(status.hostname, 253) ||
         !valid_version_string(status.server_version) ||
         !valid_metadata_token(status.storage.fstype, 32) ||
@@ -1567,14 +1569,34 @@ bool NodeRegistry::apply_status(
         return false;
     }
 
+    // Security: once Director has authenticated the RT-008 range-audit
+    // capability for this node, a later heartbeat may not silently downgrade
+    // it to the legacy POST-only protocol. Explicit administration is required
+    // for any rollback of that security capability.
+    if (node_status_protocol_supports_projection_audit(
+            record.protocol_version) &&
+        !node_status_protocol_supports_projection_audit(
+            status.protocol_version)) {
+        set_error(
+            err,
+            "node status protocol downgrade rejected"
+        );
+        return false;
+    }
+
     const bool became_online =
         record.health != "online";
 
     record.health = "online";
     record.last_seen_at = received_at;
     record.node_reported_at = status.timestamp;
+
+    // RT-008 rolling upgrade: preserve the exact authenticated heartbeat
+    // protocol so Director can distinguish legacy POST verification from
+    // v2 range-audit capability.
     record.protocol_version =
-        kNodeStatusProtocolVersion;
+        status.protocol_version;
+
     record.hostname = status.hostname;
     record.server_version = status.server_version;
     record.uptime_s = status.uptime_s;

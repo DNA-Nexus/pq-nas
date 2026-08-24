@@ -150,6 +150,8 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/storage_user_projection_transition_store.h"
 #include "cluster/storage_user_projection_sync_client.h"
 #include "cluster/storage_user_projection_sync_https.h"
+#include "cluster/storage_user_projection_audit_client.h"
+#include "cluster/storage_user_projection_audit_https.h"
 #include "cluster/storage_user_projection_reconciler.h"
 #include "cluster/storage_projection_startup_consistency.h"
 #include "cluster/cluster_safe_user_delete.h"
@@ -10688,6 +10690,38 @@ auto maybe_auto_rotate_before_append = [&]() {
             );
 
     pqnas::cluster::
+        StorageUserProjectionAuditClientConfig
+            director_storage_projection_audit_client_config;
+
+    director_storage_projection_audit_client_config
+        .node_registry =
+            &director_node_registry;
+
+    director_storage_projection_audit_client_config
+        .credential_registry =
+            &director_node_credential_registry;
+
+    // Security: RT-008 readback follows the same trust-before-bearer boundary
+    // as projection mutation. No reusable bearer is materialized before the
+    // exact Storage node has an authoritative SPKI identity binding.
+    director_storage_projection_audit_client_config
+        .tls_trust_store =
+            &director_node_tls_trust_store;
+
+    director_storage_projection_audit_client_config
+        .transport =
+            pqnas::cluster::
+                make_https_storage_user_projection_audit_transport();
+
+    pqnas::cluster::
+        StorageUserProjectionAuditClient
+            director_storage_projection_audit_client(
+                std::move(
+                    director_storage_projection_audit_client_config
+                )
+            );
+
+    pqnas::cluster::
         StorageUserProjectionReconcilerConfig
             director_storage_projection_reconciler_config;
 
@@ -10732,6 +10766,43 @@ auto maybe_auto_rotate_before_append = [&]() {
                     projection
                 );
         };
+
+    director_storage_projection_reconciler_config
+        .list_audit_capable_nodes =
+            [&director_node_registry]() {
+                std::vector<std::string> node_ids;
+
+                const auto nodes =
+                    director_node_registry.snapshot();
+
+                node_ids.reserve(nodes.size());
+
+                for (const auto& node : nodes) {
+                    // Security: capability comes only from the authenticated
+                    // heartbeat protocol recorded by Director. Health or
+                    // enabled state must not downgrade a known v2 node into
+                    // the legacy POST path.
+                    if (pqnas::cluster::
+                            node_status_protocol_supports_projection_audit(
+                                node.protocol_version)) {
+                        node_ids.push_back(node.node_id);
+                    }
+                }
+
+                return node_ids;
+            };
+
+    director_storage_projection_reconciler_config
+        .audit_projection_range =
+            [&director_storage_projection_audit_client](
+                const pqnas::cluster::
+                    StorageUserProjectionAuditRequest& request
+            ) {
+                return
+                    director_storage_projection_audit_client.audit(
+                        request
+                    );
+            };
 
     pqnas::cluster::
         StorageUserProjectionReconciler

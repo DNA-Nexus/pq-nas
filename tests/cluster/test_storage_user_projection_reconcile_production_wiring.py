@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
+import re
 
 from production_translation_unit import (
     read_main_translation_unit_text,
@@ -32,6 +33,8 @@ for header in (
     "storage_user_projection_sync_state_store.h",
     "storage_user_projection_sync_client.h",
     "storage_user_projection_sync_https.h",
+    "storage_user_projection_audit_client.h",
+    "storage_user_projection_audit_https.h",
     "storage_user_projection_reconciler.h",
     "storage_user_projection_reconcile_worker.h",
 ):
@@ -65,6 +68,11 @@ require(
 )
 
 require(
+    "make_https_storage_user_projection_audit_transport()" in main,
+    "Director production audit must use hardened HTTPS transport",
+)
+
+require(
     ".node_registry =" in main and
     "&director_node_registry" in main,
     "projection sync client must use Director NodeRegistry",
@@ -73,7 +81,14 @@ require(
 require(
     ".credential_registry =" in main and
     "&director_node_credential_registry" in main,
-    "projection sync client must use Director per-node credentials",
+    "projection clients must use Director per-node credentials",
+)
+
+require(
+    "director_storage_projection_audit_client_config" in main and
+    ".tls_trust_store =" in main and
+    "&director_node_tls_trust_store" in main,
+    "projection audit client must use Director SPKI trust store",
 )
 
 require(
@@ -89,7 +104,23 @@ require(
 
 require(
     "director_storage_projection_sync_client.sync(" in main,
-    "reconciler network callback must delegate to production sync client",
+    "reconciler mutation callback must delegate to production sync client",
+)
+
+require(
+    "director_storage_projection_reconciler_config"
+    "\n        .list_audit_capable_nodes =" in main and
+    "director_node_registry.snapshot()" in main and
+    "node_status_protocol_supports_projection_audit(" in main and
+    "node.protocol_version" in main,
+    "reconciler audit capability must come from recorded v2 heartbeat protocol",
+)
+
+require(
+    "director_storage_projection_reconciler_config"
+    "\n        .audit_projection_range =" in main and
+    "director_storage_projection_audit_client.audit(" in main,
+    "reconciler audit callback must delegate to production audit client",
 )
 
 require(
@@ -148,12 +179,33 @@ require(
     "Storage handoff route must remain unregistered",
 )
 
+pqnas_server_link_blocks = re.findall(
+    r"target_link_libraries\(pqnas_server PRIVATE\n.*?\n\)",
+    cmake,
+    flags=re.DOTALL,
+)
+
+projection_link_block = next(
+    (
+        block
+        for block in pqnas_server_link_blocks
+        if (
+            "pqnas_storage_user_projection_sync_https"
+                in block and
+            "pqnas_storage_user_projection_reconcile_worker"
+                in block
+        )
+    ),
+    "",
+)
+
 require(
-    '''target_link_libraries(pqnas_server PRIVATE
-        pqnas_storage_user_projection_sync_https
-        pqnas_storage_user_projection_reconcile_worker
-)''' in cmake,
-    "pqnas_server must link Director projection HTTPS + reconcile worker",
+    projection_link_block and
+    "pqnas_storage_user_projection_audit_client"
+        in projection_link_block and
+    "pqnas_storage_user_projection_audit_https"
+        in projection_link_block,
+    "pqnas_server must link projection sync, audit client/HTTPS and worker",
 )
 
 if errors:

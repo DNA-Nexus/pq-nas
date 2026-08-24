@@ -40,8 +40,9 @@ int main() {
     expect(json["ok"] == true, "ok field");
     expect(
         json["protocol_version"] ==
-            pqnas::cluster::kNodeStatusProtocolVersion,
-        "protocol version"
+            pqnas::cluster::
+                kNodeStatusProtocolVersionCurrent,
+        "current protocol version is emitted"
     );
 
     expect(json["node_id"] == "node-01", "node ID");
@@ -120,6 +121,9 @@ int main() {
         );
 
         expect(
+            parsed.protocol_version ==
+                pqnas::cluster::
+                    kNodeStatusProtocolVersionCurrent &&
             parsed.node_id == status.node_id &&
             parsed.hostname == status.hostname &&
             parsed.server_version ==
@@ -145,10 +149,30 @@ int main() {
             "wrong node role must be rejected"
         );
 
+        auto legacy_protocol = json;
+        legacy_protocol["protocol_version"] =
+            pqnas::cluster::
+                kNodeStatusProtocolVersionLegacy;
+
+        expect(
+            pqnas::cluster::parse_node_status_json(
+                legacy_protocol,
+                &parsed,
+                &parse_error
+            ) &&
+            parsed.protocol_version ==
+                pqnas::cluster::
+                    kNodeStatusProtocolVersionLegacy &&
+            !pqnas::cluster::
+                node_status_protocol_supports_projection_audit(
+                    parsed.protocol_version),
+            "legacy protocol v1 remains accepted without audit capability"
+        );
+
         auto wrong_protocol = json;
         wrong_protocol["protocol_version"] =
             pqnas::cluster::
-                kNodeStatusProtocolVersion + 1;
+                kNodeStatusProtocolVersionCurrent + 1;
 
         expect(
             !pqnas::cluster::parse_node_status_json(
@@ -156,7 +180,19 @@ int main() {
                 &parsed,
                 &parse_error
             ),
-            "wrong protocol version must be rejected"
+            "unsupported future protocol version must be rejected"
+        );
+
+        auto zero_protocol = json;
+        zero_protocol["protocol_version"] = 0;
+
+        expect(
+            !pqnas::cluster::parse_node_status_json(
+                zero_protocol,
+                &parsed,
+                &parse_error
+            ),
+            "zero protocol version must be rejected"
         );
 
         auto unknown_field = json;
