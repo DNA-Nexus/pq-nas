@@ -246,6 +246,68 @@ int main() {
     );
 
     // ---------------------------------------------------------------------
+    // Deletion lifecycle regression
+    // ---------------------------------------------------------------------
+
+    error.clear();
+
+    check(
+        store.erase(
+            "",
+            &error
+        ) ==
+            NodeTlsTrustStoreResult::InvalidInput,
+        "reject invalid TLS trust deletion node ID"
+    );
+
+    error.clear();
+
+    check(
+        store.erase(
+            "storage-test-01",
+            &error
+        ) ==
+            NodeTlsTrustStoreResult::Ok,
+        "erase TLS trust binding: " + error
+    );
+
+    pin.clear();
+    error.clear();
+
+    check(
+        store.get(
+            "storage-test-01",
+            &pin,
+            &error
+        ) ==
+            NodeTlsTrustStoreResult::NotFound,
+        "erased TLS trust binding must be absent"
+    );
+
+    error.clear();
+
+    check(
+        store.erase(
+            "storage-test-01",
+            &error
+        ) ==
+            NodeTlsTrustStoreResult::NotFound,
+        "repeated TLS trust deletion must be idempotent"
+    );
+
+    error.clear();
+
+    check(
+        store.bind_if_absent(
+            "storage-test-01",
+            kPinB,
+            &error
+        ) ==
+            NodeTlsTrustStoreResult::Ok,
+        "deleted Node ID may bind a new TLS identity: " + error
+    );
+
+    // ---------------------------------------------------------------------
     // Durability regression
     // ---------------------------------------------------------------------
 

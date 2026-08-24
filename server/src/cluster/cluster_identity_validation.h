@@ -40,4 +40,19 @@ bool normalize_cluster_https_base_url(
     std::string* error
 );
 
+struct ClusterHttpsAuthority {
+    std::string host;
+    int port = 443;
+};
+
+// Parses the already security-constrained cluster HTTPS base authority.
+//
+// Security: this uses the same canonical base-URL validation as persisted
+// cluster configuration and rejects malformed ports and unbracketed IPv6.
+bool parse_cluster_https_authority(
+    const std::string& raw,
+    ClusterHttpsAuthority* authority,
+    std::string* error
+);
+
 } // namespace pqnas::cluster

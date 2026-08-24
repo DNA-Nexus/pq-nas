@@ -29,11 +29,14 @@ Generated: 2026-06-10 12:10:46
 | `GET` | `/api/v4/admin/cluster/nodes` | Admin session | `server/src/routes/routes_admin_cluster_nodes.cpp` |
 | `POST` | `/api/v4/admin/cluster/nodes` | Admin session | `server/src/routes/routes_admin_cluster_nodes.cpp` |
 | `PATCH` | `/api/v4/admin/cluster/nodes` | Admin session | `server/src/routes/routes_admin_cluster_nodes.cpp` |
+| `POST` | `/api/v4/admin/cluster/nodes/credential/rotation` | Admin session | `server/src/routes/routes_admin_cluster_nodes.cpp` |
+| `POST` | `/api/v4/admin/cluster/nodes/tls-trust/migration` | Admin session | `server/src/routes/routes_admin_cluster_nodes.cpp` |
 | `DELETE` | `/api/v4/admin/cluster/nodes` | Admin session | `server/src/routes/routes_admin_cluster_nodes.cpp` |
 | `GET` | `/api/v4/admin/cluster/placement-policies` | Admin session | `server/src/routes/routes_admin_cluster_placement_policies.cpp` |
 | `POST` | `/api/v4/admin/cluster/placement-policies` | Admin session | `server/src/routes/routes_admin_cluster_placement_policies.cpp` |
 | `DELETE` | `/api/v4/admin/cluster/placement-policies` | Admin session | `server/src/routes/routes_admin_cluster_placement_policies.cpp` |
 | `POST` | `/api/v4/admin/cluster/users/home-node` | Admin session | `server/src/routes/routes_admin_cluster_user_placement.cpp` |
+| `DELETE` | `/api/v4/admin/cluster/users/home-node` | Admin session | `server/src/routes/routes_admin_cluster_user_placement.cpp` |
 | `POST` | `/api/v4/admin/cluster/users/placement-policy` | Admin session | `server/src/routes/routes_admin_cluster_user_policy.cpp` |
 | `POST` | `/api/v4/admin/cluster/users/placement-preview` | Admin session | `server/src/routes/routes_admin_cluster_user_placement_preview.cpp` |
 | `POST` | `/api/v4/admin/cluster/users/placement-apply` | Admin session | `server/src/routes/routes_admin_cluster_user_placement_apply.cpp` |

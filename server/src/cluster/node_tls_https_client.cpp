@@ -1,6 +1,7 @@
 #include "cluster/node_tls_https_client.h"
 
 #include "cluster/node_tls_identity.h"
+#include "cluster/cluster_identity_validation.h"
 
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
@@ -19,6 +20,7 @@ void set_error(
         *error = message;
     }
 }
+
 
 } // namespace
 
@@ -124,6 +126,62 @@ make_pinned_node_https_client(
     );
 
     return client;
+}
+
+bool verify_pinned_node_https_endpoint(
+    const std::string& api_base_url,
+    const std::string& expected_spki_sha256_pin,
+    std::string* error
+) {
+    if (error) {
+        error->clear();
+    }
+
+    ClusterHttpsAuthority authority;
+
+    if (!parse_cluster_https_authority(
+            api_base_url,
+            &authority,
+            error)) {
+        return false;
+    }
+
+    auto client =
+        make_pinned_node_https_client(
+            authority.host,
+            authority.port,
+            expected_spki_sha256_pin,
+            error
+        );
+
+    if (!client) {
+        return false;
+    }
+
+    // Security: this probe proves the candidate endpoint before its identity
+    // is persisted. It deliberately carries no bearer or other cluster secret.
+    client->set_follow_location(false);
+    client->set_keep_alive(false);
+    client->set_decompress(false);
+
+    client->set_connection_timeout(5, 0);
+    client->set_read_timeout(5, 0);
+    client->set_write_timeout(5, 0);
+
+    const httplib::Result result =
+        client->Head("/");
+
+    if (!result) {
+        set_error(
+            error,
+            "node HTTPS identity verification failed"
+        );
+        return false;
+    }
+
+    // Any HTTP response is sufficient here. Authentication and application
+    // semantics are not being tested; the verified TLS channel is.
+    return true;
 }
 
 } // namespace pqnas::cluster

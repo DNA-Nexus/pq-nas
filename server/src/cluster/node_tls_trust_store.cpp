@@ -1282,4 +1282,160 @@ NodeTlsTrustStore::bind_if_absent(
         );
 }
 
+NodeTlsTrustStoreResult
+NodeTlsTrustStore::erase(
+    const std::string& node_id,
+    std::string* error
+) {
+    if (error) {
+        error->clear();
+    }
+
+    if (!valid_cluster_node_id(
+            node_id)) {
+        set_error(
+            error,
+            "invalid node TLS trust deletion"
+        );
+
+        return
+            NodeTlsTrustStoreResult::
+                InvalidInput;
+    }
+
+    std::lock_guard<std::mutex>
+        lock(mutex_);
+
+    if (directory_.empty()) {
+        set_error(
+            error,
+            "node TLS trust store is not loaded"
+        );
+
+        return
+            NodeTlsTrustStoreResult::
+                StorageUnsafe;
+    }
+
+    UniqueFd descriptor;
+
+    const DirectoryOpenResult
+        open_result =
+            open_trust_directory(
+                directory_,
+                true,
+                &descriptor,
+                error
+            );
+
+    if (open_result ==
+        DirectoryOpenResult::Unsafe) {
+        return
+            NodeTlsTrustStoreResult::
+                StorageUnsafe;
+    }
+
+    if (open_result !=
+        DirectoryOpenResult::Ok) {
+        return
+            NodeTlsTrustStoreResult::
+                IoFailed;
+    }
+
+    const std::string filename =
+        pin_filename(node_id);
+
+    std::string current_pin;
+
+    const PinFileResult file_result =
+        read_pin(
+            descriptor.get(),
+            filename,
+            &current_pin,
+            error
+        );
+
+    if (file_result ==
+        PinFileResult::Missing) {
+        // Security: NotFound is an idempotent deletion result only after
+        // the containing directory confirms that absence durably.
+        if (::fsync(
+                descriptor.get()
+            ) != 0) {
+            set_error(
+                error,
+                "failed to sync absent node TLS trust binding"
+            );
+
+            return
+                NodeTlsTrustStoreResult::
+                    PersistFailed;
+        }
+
+        return
+            NodeTlsTrustStoreResult::
+                NotFound;
+    }
+
+    if (file_result !=
+        PinFileResult::Ok) {
+        return
+            map_pin_result(
+                file_result
+            );
+    }
+
+    if (::unlinkat(
+            descriptor.get(),
+            filename.c_str(),
+            0
+        ) != 0) {
+        if (errno == ENOENT) {
+            if (::fsync(
+                    descriptor.get()
+                ) != 0) {
+                set_error(
+                    error,
+                    "failed to sync absent node TLS trust binding"
+                );
+
+                return
+                    NodeTlsTrustStoreResult::
+                        PersistFailed;
+            }
+
+            return
+                NodeTlsTrustStoreResult::
+                    NotFound;
+        }
+
+        set_error(
+            error,
+            "failed to delete node TLS trust binding"
+        );
+
+        return
+            NodeTlsTrustStoreResult::
+                PersistFailed;
+    }
+
+    // Security: TLS identity revocation is complete only when the directory
+    // deletion is durable across a crash or power loss.
+    if (::fsync(
+            descriptor.get()
+        ) != 0) {
+        set_error(
+            error,
+            "failed to sync node TLS trust deletion"
+        );
+
+        return
+            NodeTlsTrustStoreResult::
+                PersistFailed;
+    }
+
+    return
+        NodeTlsTrustStoreResult::Ok;
+}
+
 } // namespace pqnas::cluster

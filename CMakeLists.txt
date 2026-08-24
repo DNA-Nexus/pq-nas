@@ -2457,6 +2457,11 @@ target_include_directories(test_admin_cluster_node_routes PRIVATE
         ${CMAKE_SOURCE_DIR}/server/third_party
 )
 
+# RT014: admin Node TLS migration validates canonical SPKI pins.
+target_link_libraries(test_admin_cluster_node_routes PRIVATE
+        pqnas_node_tls_identity
+)
+
 set_target_properties(test_admin_cluster_node_routes PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
@@ -4217,6 +4222,7 @@ target_link_libraries(
         pqnas_node_tls_https_client
         PUBLIC
         pqnas_node_tls_identity
+        pqnas_cluster_identity_validation
         OpenSSL::SSL
         OpenSSL::Crypto
 )
@@ -4322,6 +4328,14 @@ target_link_libraries(
         PUBLIC
         pqnas_node_tls_identity
         pqnas_cluster_identity_validation
+)
+
+# RT014 lifecycle: deleting a configured Node must also revoke its durable
+# TLS identity before NodeRegistry is removed.
+target_link_libraries(
+        pqnas_node_deletion_service
+        PUBLIC
+        pqnas_node_tls_trust_store
 )
 
 

@@ -8,6 +8,7 @@ namespace pqnas::cluster {
 class NodeCredentialRegistry;
 class NodeEnrollmentRegistry;
 class NodeRegistry;
+class NodeTlsTrustStore;
 
 enum class NodeDeletionServiceResult {
     Ok,
@@ -17,6 +18,7 @@ enum class NodeDeletionServiceResult {
     ProvisioningActive,
     EnrollmentCleanupFailed,
     CredentialCleanupFailed,
+    TlsTrustCleanupFailed,
     RegistryCleanupFailed
 };
 
@@ -30,6 +32,7 @@ struct NodeDeletionResult {
 
     std::size_t revoked_pending_enrollments = 0;
     bool credential_removed = false;
+    bool tls_trust_removed = false;
     bool node_removed = false;
 
     bool ok() const noexcept {
@@ -53,6 +56,9 @@ struct NodeDeletionServiceConfig {
 
     NodeCredentialRegistry* credential_registry =
         nullptr;
+
+    NodeTlsTrustStore* tls_trust_store =
+        nullptr;
 };
 
 class NodeDeletionService {
@@ -67,8 +73,8 @@ public:
     //
     // The node registry is removed last. A crash or persistence failure
     // before that point therefore leaves either the old node intact or a
-    // registered node whose reusable bootstrap/bearer credentials have
-    // already been revoked.
+    // registered node whose reusable bootstrap, bearer and TLS identity
+    // state has already been revoked.
     NodeDeletionResult erase_unassigned_node_locked(
         const std::string& node_id,
         const std::string& revoked_at

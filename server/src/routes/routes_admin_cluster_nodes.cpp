@@ -1,6 +1,7 @@
 #include "routes_admin_cluster_nodes.h"
 #include "cluster/cluster_identity_validation.h"
 #include "cluster/cluster_timestamp.h"
+#include "cluster/node_tls_identity.h"
 
 #include "audit_log.h"
 #include "cluster/node_registry.h"
@@ -183,6 +184,9 @@ bool context_ok(
     return
         context.registry &&
         context.placement_mutex &&
+        static_cast<bool>(context.get_node_tls_trust) &&
+        static_cast<bool>(context.bind_node_tls_trust) &&
+        static_cast<bool>(context.verify_node_tls_endpoint) &&
         static_cast<bool>(context.assigned_user_counts) &&
         static_cast<bool>(context.rotation_in_progress) &&
         static_cast<bool>(context.rotate_node_credential) &&
@@ -1337,6 +1341,504 @@ void handle_admin_cluster_nodes_update(
     );
 }
 
+void handle_admin_cluster_node_tls_trust_migration(
+    const httplib::Request& req,
+    httplib::Response& res,
+    const AdminClusterNodeRoutesContext& context
+) {
+    std::string actor_fp;
+
+    if (!authorize_mutation(
+            context,
+            req,
+            res,
+            &actor_fp)) {
+        return;
+    }
+
+    json body;
+
+    if (!parse_json_object(
+            context,
+            req,
+            res,
+            &body)) {
+        audit_mutation(
+            context,
+            req,
+            actor_fp,
+            "admin.cluster_node.tls_trust_migration",
+            "",
+            "fail"
+        );
+        return;
+    }
+
+    if (!has_only_keys(
+            body,
+            {
+                "node_id",
+                "api_base_url",
+                "tls_spki_sha256_pin"
+            })) {
+        audit_mutation(
+            context,
+            req,
+            actor_fp,
+            "admin.cluster_node.tls_trust_migration",
+            "",
+            "fail"
+        );
+
+        reply_json_local(
+            context,
+            res,
+            400,
+            json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {"message", "unsupported request field"}
+            }
+        );
+        return;
+    }
+
+    const auto node_id_iterator =
+        body.find("node_id");
+
+    if (node_id_iterator == body.end() ||
+        !node_id_iterator->is_string()) {
+        audit_mutation(
+            context,
+            req,
+            actor_fp,
+            "admin.cluster_node.tls_trust_migration",
+            "",
+            "fail"
+        );
+
+        reply_json_local(
+            context,
+            res,
+            400,
+            json{
+                {"ok", false},
+                {"error", "bad_request"},
+                {"message", "node_id is required"}
+            }
+        );
+        return;
+    }
+
+    const std::string node_id =
+        node_id_iterator->get<std::string>();
+
+    const auto fail =
+        [&](int status,
+            const char* code,
+            const char* message) {
+            audit_mutation(
+                context,
+                req,
+                actor_fp,
+                "admin.cluster_node.tls_trust_migration",
+                node_id,
+                "fail"
+            );
+
+            reply_json_local(
+                context,
+                res,
+                status,
+                json{
+                    {"ok", false},
+                    {"error", code},
+                    {"message", message}
+                }
+            );
+        };
+
+    if (!valid_cluster_node_id(node_id)) {
+        fail(
+            400,
+            "bad_request",
+            "invalid node ID"
+        );
+        return;
+    }
+
+    const auto url_iterator =
+        body.find("api_base_url");
+
+    if (url_iterator == body.end() ||
+        !url_iterator->is_string()) {
+        fail(
+            400,
+            "bad_request",
+            "api_base_url is required"
+        );
+        return;
+    }
+
+    std::string normalized_url;
+
+    if (!normalize_cluster_https_base_url(
+            url_iterator->get<std::string>(),
+            &normalized_url,
+            nullptr)) {
+        fail(
+            400,
+            "bad_request",
+            "invalid node API URL"
+        );
+        return;
+    }
+
+    const auto pin_iterator =
+        body.find("tls_spki_sha256_pin");
+
+    if (pin_iterator == body.end() ||
+        !pin_iterator->is_string()) {
+        fail(
+            400,
+            "bad_request",
+            "tls_spki_sha256_pin is required"
+        );
+        return;
+    }
+
+    const std::string requested_pin =
+        pin_iterator->get<std::string>();
+
+    std::string normalized_pin;
+
+    if (!normalize_node_tls_spki_sha256_pin(
+            requested_pin,
+            &normalized_pin,
+            nullptr) ||
+        normalized_pin != requested_pin) {
+        fail(
+            400,
+            "bad_request",
+            "invalid node TLS SPKI pin"
+        );
+        return;
+    }
+
+    NodeRegistryRecord snapshot;
+
+    {
+        std::scoped_lock lock(
+            *context.placement_mutex,
+            g_cluster_node_mutation_mutex
+        );
+
+        const auto current =
+            context.registry->get(node_id);
+
+        if (!current.has_value()) {
+            fail(
+                404,
+                "not_found",
+                "node not found"
+            );
+            return;
+        }
+
+        bool rotation_busy = false;
+
+        if (!query_rotation_in_progress(
+                context,
+                node_id,
+                &rotation_busy)) {
+            fail(
+                500,
+                "server_error",
+                "failed to check node credential rotation state"
+            );
+            return;
+        }
+
+        if (rotation_busy) {
+            fail(
+                409,
+                "conflict",
+                "node credential rotation is in progress"
+            );
+            return;
+        }
+
+        std::string existing_pin;
+        std::string trust_error;
+
+        NodeTlsTrustStoreResult trust_result =
+            NodeTlsTrustStoreResult::IoFailed;
+
+        try {
+            trust_result =
+                context.get_node_tls_trust(
+                    node_id,
+                    &existing_pin,
+                    &trust_error
+                );
+        } catch (...) {
+            fail(
+                503,
+                "service_unavailable",
+                "node TLS trust store is unavailable"
+            );
+            return;
+        }
+
+        if (trust_result ==
+                NodeTlsTrustStoreResult::Ok &&
+            existing_pin != requested_pin) {
+            fail(
+                409,
+                "conflict",
+                "node TLS identity is already bound"
+            );
+            return;
+        }
+
+        if (trust_result !=
+                NodeTlsTrustStoreResult::Ok &&
+            trust_result !=
+                NodeTlsTrustStoreResult::NotFound) {
+            fail(
+                503,
+                "service_unavailable",
+                "node TLS trust store is unavailable"
+            );
+            return;
+        }
+
+        snapshot = *current;
+    }
+
+    // Security: never hold lifecycle/placement locks during network I/O.
+    // No bearer credential is attached to this verification probe.
+    std::string verification_error;
+    bool verified = false;
+
+    try {
+        verified =
+            context.verify_node_tls_endpoint(
+                normalized_url,
+                requested_pin,
+                &verification_error
+            );
+    } catch (...) {
+        verified = false;
+    }
+
+    if (!verified) {
+        fail(
+            502,
+            "bad_gateway",
+            "node TLS identity verification failed"
+        );
+        return;
+    }
+
+    std::optional<NodeRegistryRecord>
+        updated;
+
+    {
+        std::scoped_lock lock(
+            *context.placement_mutex,
+            g_cluster_node_mutation_mutex
+        );
+
+        const auto current =
+            context.registry->get(node_id);
+
+        if (!current.has_value()) {
+            fail(
+                409,
+                "conflict",
+                "node changed during TLS verification"
+            );
+            return;
+        }
+
+        bool rotation_busy = false;
+
+        if (!query_rotation_in_progress(
+                context,
+                node_id,
+                &rotation_busy) ||
+            rotation_busy) {
+            fail(
+                409,
+                "conflict",
+                "node lifecycle changed during TLS verification"
+            );
+            return;
+        }
+
+        // Security: added_at identifies this registered Node incarnation,
+        // while updated_at plus the Director-owned configuration fields detect
+        // concurrent administrative mutation. Heartbeat observation fields may
+        // legitimately change while the network probe is in progress.
+        if (current->added_at !=
+                snapshot.added_at ||
+            current->updated_at !=
+                snapshot.updated_at ||
+            current->api_base_url !=
+                snapshot.api_base_url ||
+            current->enabled !=
+                snapshot.enabled ||
+            current->capacity_ceiling_bytes !=
+                snapshot.capacity_ceiling_bytes) {
+            fail(
+                409,
+                "conflict",
+                "node configuration changed during TLS verification"
+            );
+            return;
+        }
+
+        std::string existing_pin;
+        std::string trust_error;
+
+        NodeTlsTrustStoreResult trust_result =
+            NodeTlsTrustStoreResult::IoFailed;
+
+        try {
+            trust_result =
+                context.get_node_tls_trust(
+                    node_id,
+                    &existing_pin,
+                    &trust_error
+                );
+        } catch (...) {
+            fail(
+                503,
+                "service_unavailable",
+                "node TLS trust store is unavailable"
+            );
+            return;
+        }
+
+        if (trust_result ==
+                NodeTlsTrustStoreResult::Ok &&
+            existing_pin != requested_pin) {
+            fail(
+                409,
+                "conflict",
+                "node TLS identity changed during verification"
+            );
+            return;
+        }
+
+        if (trust_result ==
+            NodeTlsTrustStoreResult::NotFound) {
+            NodeTlsTrustStoreResult bind_result =
+                NodeTlsTrustStoreResult::IoFailed;
+
+            try {
+                bind_result =
+                    context.bind_node_tls_trust(
+                        node_id,
+                        requested_pin,
+                        &trust_error
+                    );
+            } catch (...) {
+                fail(
+                    503,
+                    "service_unavailable",
+                    "failed to persist node TLS identity"
+                );
+                return;
+            }
+
+            if (bind_result ==
+                NodeTlsTrustStoreResult::TrustConflict) {
+                fail(
+                    409,
+                    "conflict",
+                    "node TLS identity changed during verification"
+                );
+                return;
+            }
+
+            if (bind_result !=
+                NodeTlsTrustStoreResult::Ok) {
+                fail(
+                    503,
+                    "service_unavailable",
+                    "failed to persist node TLS identity"
+                );
+                return;
+            }
+        } else if (
+            trust_result !=
+                NodeTlsTrustStoreResult::Ok) {
+            fail(
+                503,
+                "service_unavailable",
+                "node TLS trust store is unavailable"
+            );
+            return;
+        }
+
+        std::string registry_error;
+
+        // Security: if registry persistence fails after the immutable binding
+        // becomes durable, the same verified pin remains safe and the admin
+        // operation can be retried idempotently.
+        if (!context.registry->upsert_configured_node(
+                node_id,
+                normalized_url,
+                current->enabled,
+                canonicalize_cluster_runtime_timestamp(
+                    context.now_iso_utc()
+                ),
+                &registry_error,
+                std::nullopt)) {
+            fail(
+                500,
+                "server_error",
+                "failed to update node API URL"
+            );
+            return;
+        }
+
+        updated =
+            context.registry->get(node_id);
+
+        if (!updated.has_value()) {
+            fail(
+                500,
+                "server_error",
+                "updated node is unavailable"
+            );
+            return;
+        }
+    }
+
+    audit_mutation(
+        context,
+        req,
+        actor_fp,
+        "admin.cluster_node.tls_trust_migration",
+        node_id,
+        "ok"
+    );
+
+    reply_json_local(
+        context,
+        res,
+        200,
+        json{
+            {"ok", true},
+            {"tls_trust_bound", true},
+            {"node", node_record_to_json(*updated)}
+        }
+    );
+}
+
 void handle_admin_cluster_node_credential_rotation(
     const httplib::Request& req,
     httplib::Response& res,
@@ -2055,6 +2557,20 @@ void register_admin_cluster_node_routes(
             httplib::Response& res
         ) {
             handle_admin_cluster_nodes_update(
+                req,
+                res,
+                captured
+            );
+        }
+    );
+
+    server.Post(
+        "/api/v4/admin/cluster/nodes/tls-trust/migration",
+        [captured](
+            const httplib::Request& req,
+            httplib::Response& res
+        ) {
+            handle_admin_cluster_node_tls_trust_migration(
                 req,
                 res,
                 captured

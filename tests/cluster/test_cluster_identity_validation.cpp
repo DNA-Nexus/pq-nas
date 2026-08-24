@@ -82,6 +82,84 @@ void expect_url_error(
     );
 }
 
+void expect_authority_ok(
+    const std::string& raw,
+    const std::string& expected_host,
+    int expected_port,
+    const std::string& message
+) {
+    pqnas::cluster::ClusterHttpsAuthority
+        authority;
+
+    authority.host = "unchanged";
+    authority.port = 123;
+
+    std::string error = "stale";
+
+    const bool ok =
+        pqnas::cluster::
+            parse_cluster_https_authority(
+                raw,
+                &authority,
+                &error
+            );
+
+    expect(
+        ok,
+        message + ": should be accepted"
+    );
+
+    expect(
+        authority.host == expected_host &&
+        authority.port == expected_port,
+        message + ": unexpected authority"
+    );
+
+    expect(
+        error.empty(),
+        message + ": success should clear error"
+    );
+}
+
+void expect_authority_error(
+    const std::string& raw,
+    const std::string& message
+) {
+    pqnas::cluster::ClusterHttpsAuthority
+        authority;
+
+    authority.host = "unchanged";
+    authority.port = 123;
+
+    std::string error;
+
+    const bool ok =
+        pqnas::cluster::
+            parse_cluster_https_authority(
+                raw,
+                &authority,
+                &error
+            );
+
+    expect(
+        !ok,
+        message + ": should be rejected"
+    );
+
+    // Security: failure must not partially replace a trusted authority.
+    expect(
+        authority.host == "unchanged" &&
+        authority.port == 123,
+        message + ": failure changed output"
+    );
+
+    expect(
+        !error.empty(),
+        message + ": failure should return an error"
+    );
+}
+
+
 } // namespace
 
 int main() {
@@ -253,6 +331,59 @@ int main() {
         std::string("https://node-") +
             static_cast<char>(0xc3),
         "non-ASCII authority"
+    );
+
+    expect_authority_ok(
+        "https://node-01.internal",
+        "node-01.internal",
+        443,
+        "default HTTPS authority port"
+    );
+
+    expect_authority_ok(
+        "https://node-01.internal:8443/",
+        "node-01.internal",
+        8443,
+        "custom HTTPS authority port"
+    );
+
+    expect_authority_ok(
+        "https://192.168.1.107:443",
+        "192.168.1.107",
+        443,
+        "IPv4 HTTPS authority"
+    );
+
+    expect_authority_ok(
+        "https://[2001:db8::1]:8443",
+        "2001:db8::1",
+        8443,
+        "bracketed IPv6 HTTPS authority"
+    );
+
+    expect_authority_error(
+        "https://node-01.internal:0",
+        "zero HTTPS port"
+    );
+
+    expect_authority_error(
+        "https://node-01.internal:65536",
+        "oversized HTTPS port"
+    );
+
+    expect_authority_error(
+        "https://node-01.internal:abc",
+        "non-numeric HTTPS port"
+    );
+
+    expect_authority_error(
+        "https://2001:db8::1",
+        "unbracketed IPv6 authority"
+    );
+
+    expect_authority_error(
+        "https://[2001:db8::1",
+        "unterminated IPv6 authority"
     );
 
     {

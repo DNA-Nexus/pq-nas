@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -140,6 +141,122 @@ int main() {
         context;
 
     context.registry = &registry;
+
+    std::unordered_map<
+        std::string,
+        std::string
+    > tls_trust;
+
+    int tls_trust_bind_calls = 0;
+
+    context.get_node_tls_trust =
+        [&](const std::string& node_id,
+            std::string* pin,
+            std::string* error) {
+            if (error) {
+                error->clear();
+            }
+
+            const auto iterator =
+                tls_trust.find(node_id);
+
+            if (iterator ==
+                tls_trust.end()) {
+                if (pin) {
+                    pin->clear();
+                }
+
+                return
+                    pqnas::cluster::
+                        NodeTlsTrustStoreResult::
+                            NotFound;
+            }
+
+            if (pin) {
+                *pin = iterator->second;
+            }
+
+            return
+                pqnas::cluster::
+                    NodeTlsTrustStoreResult::Ok;
+        };
+
+    context.bind_node_tls_trust =
+        [&](const std::string& node_id,
+            const std::string& pin,
+            std::string* error) {
+            ++tls_trust_bind_calls;
+
+            if (error) {
+                error->clear();
+            }
+
+            const auto iterator =
+                tls_trust.find(node_id);
+
+            if (iterator ==
+                tls_trust.end()) {
+                tls_trust.emplace(
+                    node_id,
+                    pin
+                );
+
+                return
+                    pqnas::cluster::
+                        NodeTlsTrustStoreResult::Ok;
+            }
+
+            return
+                iterator->second == pin
+                    ? pqnas::cluster::
+                          NodeTlsTrustStoreResult::Ok
+                    : pqnas::cluster::
+                          NodeTlsTrustStoreResult::
+                              TrustConflict;
+        };
+
+    bool tls_verify_allowed = true;
+    bool tls_verify_throws = false;
+    std::function<void()> tls_verify_hook;
+    int tls_verify_calls = 0;
+    std::string last_tls_verify_url;
+    std::string last_tls_verify_pin;
+
+    context.verify_node_tls_endpoint =
+        [&](const std::string& api_base_url,
+            const std::string& pin,
+            std::string* error) {
+            ++tls_verify_calls;
+
+            last_tls_verify_url =
+                api_base_url;
+
+            last_tls_verify_pin =
+                pin;
+
+            if (tls_verify_throws) {
+                throw 1;
+            }
+
+            if (tls_verify_hook) {
+                tls_verify_hook();
+            }
+
+            if (!tls_verify_allowed) {
+                if (error) {
+                    *error =
+                        "simulated TLS verification failure";
+                }
+
+                return false;
+            }
+
+            if (error) {
+                error->clear();
+            }
+
+            return true;
+        };
 
     context.placement_mutex =
         std::make_shared<std::mutex>();
@@ -772,6 +889,289 @@ int main() {
                 "admin.cluster_node.update" &&
             audits.back().outcome == "ok",
             "successful update should be audited"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // RT014 legacy Node TLS trust migration.
+    // -----------------------------------------------------------------
+
+    constexpr char kMigrationPinA[] =
+        "sha256/"
+        "lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=";
+
+    constexpr char kMigrationPinB[] =
+        "sha256/"
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
+    {
+        const auto before =
+            registry.get("node-01");
+
+        const int binds_before =
+            tls_trust_bind_calls;
+
+        tls_verify_allowed = false;
+
+        httplib::Request request =
+            request_with_body(
+                std::string(
+                    R"({"node_id":"node-01","api_base_url":"https://node-01.migrated.internal","tls_spki_sha256_pin":")"
+                ) +
+                kMigrationPinA +
+                R"("})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_node_tls_trust_migration(
+                request,
+                response,
+                context
+            );
+
+        tls_verify_allowed = true;
+
+        const auto after =
+            registry.get("node-01");
+
+        expect(
+            response.status == 502,
+            "failed TLS verification should return 502"
+        );
+
+        expect(
+            tls_trust.find("node-01") ==
+                tls_trust.end() &&
+            tls_trust_bind_calls ==
+                binds_before,
+            "failed TLS verification must not persist trust"
+        );
+
+        expect(
+            before.has_value() &&
+            after.has_value() &&
+            before->api_base_url ==
+                after->api_base_url,
+            "failed TLS verification must preserve node URL"
+        );
+    }
+
+    {
+        const auto before =
+            registry.get("node-01");
+
+        expect(
+            before.has_value(),
+            "TLS migration race fixture should exist"
+        );
+
+        tls_verify_hook =
+            [&]() {
+                const auto current =
+                    registry.get("node-01");
+
+                if (!current.has_value()) {
+                    expect(
+                        false,
+                        "TLS migration race Node disappeared unexpectedly"
+                    );
+                    return;
+                }
+
+                std::string race_error;
+
+                expect(
+                    registry.erase(
+                        "node-01",
+                        &race_error
+                    ),
+                    "erase race fixture Node: " +
+                        race_error
+                );
+
+                race_error.clear();
+
+                expect(
+                    registry.upsert_configured_node(
+                        "node-01",
+                        current->api_base_url,
+                        current->enabled,
+                        "2026-08-24T03:39:59Z",
+                        &race_error,
+                        current->
+                            capacity_ceiling_bytes
+                    ),
+                    "recreate race fixture Node: " +
+                        race_error
+                );
+            };
+
+        httplib::Request request =
+            request_with_body(
+                std::string(
+                    R"({"node_id":"node-01","api_base_url":"https://node-01.migrated.internal","tls_spki_sha256_pin":")"
+                ) +
+                kMigrationPinA +
+                R"("})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_node_tls_trust_migration(
+                request,
+                response,
+                context
+            );
+
+        tls_verify_hook = {};
+
+        expect(
+            response.status == 409,
+            "delete/recreate during TLS verification should return 409"
+        );
+
+        expect(
+            tls_trust.find("node-01") ==
+                tls_trust.end(),
+            "stale Node incarnation must not receive TLS trust"
+        );
+    }
+
+    {
+        const int verifies_before =
+            tls_verify_calls;
+
+        httplib::Request request =
+            request_with_body(
+                std::string(
+                    R"({"node_id":"node-01","api_base_url":"https://node-01.migrated.internal/","tls_spki_sha256_pin":")"
+                ) +
+                kMigrationPinA +
+                R"("})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_node_tls_trust_migration(
+                request,
+                response,
+                context
+            );
+
+        const auto migrated =
+            registry.get("node-01");
+
+        expect(
+            response.status == 200,
+            "verified TLS migration should return 200"
+        );
+
+        expect(
+            tls_verify_calls ==
+                verifies_before + 1 &&
+            last_tls_verify_url ==
+                "https://node-01.migrated.internal" &&
+            last_tls_verify_pin ==
+                kMigrationPinA,
+            "migration should verify normalized URL and exact pin"
+        );
+
+        expect(
+            tls_trust["node-01"] ==
+                kMigrationPinA,
+            "migration should persist verified TLS identity"
+        );
+
+        expect(
+            migrated.has_value() &&
+            migrated->api_base_url ==
+                "https://node-01.migrated.internal",
+            "migration should switch Node API URL"
+        );
+
+        expect(
+            !audits.empty() &&
+            audits.back().event ==
+                "admin.cluster_node.tls_trust_migration" &&
+            audits.back().outcome == "ok",
+            "successful TLS migration should be audited"
+        );
+    }
+
+    {
+        const int verifies_before =
+            tls_verify_calls;
+
+        const int binds_before =
+            tls_trust_bind_calls;
+
+        httplib::Request request =
+            request_with_body(
+                std::string(
+                    R"({"node_id":"node-01","api_base_url":"https://node-01.migrated.internal","tls_spki_sha256_pin":")"
+                ) +
+                kMigrationPinB +
+                R"("})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_node_tls_trust_migration(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 409,
+            "different existing TLS identity should return 409"
+        );
+
+        expect(
+            tls_verify_calls ==
+                verifies_before &&
+            tls_trust_bind_calls ==
+                binds_before &&
+            tls_trust["node-01"] ==
+                kMigrationPinA,
+            "trust conflict must fail before network or mutation"
+        );
+    }
+
+    {
+        const int verifies_before =
+            tls_verify_calls;
+
+        httplib::Request request =
+            request_with_body(
+                std::string(
+                    R"({"node_id":"node-01","api_base_url":"https://node-01.migrated.internal","tls_spki_sha256_pin":")"
+                ) +
+                kMigrationPinA +
+                R"("})"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_node_tls_trust_migration(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 200 &&
+            tls_verify_calls ==
+                verifies_before + 1 &&
+            tls_trust["node-01"] ==
+                kMigrationPinA,
+            "exact TLS migration retry should be idempotent"
         );
     }
 
