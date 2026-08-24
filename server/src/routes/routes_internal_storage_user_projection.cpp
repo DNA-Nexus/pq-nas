@@ -2,8 +2,10 @@
 
 #include "cluster/cluster_identity_validation.h"
 #include "cluster/internal_auth.h"
+#include "cluster/storage_user_projection_audit.h"
 #include "cluster/storage_user_projection_store.h"
 #include "httplib.h"
+#include "storage_metadata_validation.h"
 
 #include <nlohmann/json.hpp>
 
@@ -15,6 +17,8 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace pqnas::cluster {
 namespace {
@@ -158,7 +162,138 @@ private:
     > windows_;
 };
 
-bool context_ok(
+class DefaultStorageUserProjectionAuditRateLimiter {
+public:
+    bool allow(
+        const std::string& remote_address,
+        long* retry_after_seconds
+    ) {
+        if (retry_after_seconds) {
+            *retry_after_seconds = 0;
+        }
+
+        const std::string peer =
+            remote_address.empty()
+                ? "<unknown>"
+                : remote_address;
+
+        const auto now =
+            Clock::now();
+
+        std::lock_guard<std::mutex> lock(
+            mutex_
+        );
+
+        prune_expired(now);
+
+        auto found =
+            windows_.find(peer);
+
+        if (found == windows_.end()) {
+            if (windows_.size() >=
+                kInternalStorageUserProjectionAuditRateLimitTrackedPeers) {
+                if (retry_after_seconds) {
+                    *retry_after_seconds =
+                        kInternalStorageUserProjectionAuditRateLimitWindowSeconds;
+                }
+
+                return false;
+            }
+
+            windows_.emplace(
+                peer,
+                PeerWindow{
+                    now,
+                    1
+                }
+            );
+
+            return true;
+        }
+
+        PeerWindow& window =
+            found->second;
+
+        const long elapsed_seconds =
+            static_cast<long>(
+                std::chrono::duration_cast<
+                    std::chrono::seconds
+                >(
+                    now -
+                    window.started_at
+                ).count()
+            );
+
+        if (elapsed_seconds >=
+            kInternalStorageUserProjectionAuditRateLimitWindowSeconds) {
+            window.started_at = now;
+            window.requests = 1;
+            return true;
+        }
+
+        if (window.requests >=
+            kInternalStorageUserProjectionAuditRateLimitRequests) {
+            if (retry_after_seconds) {
+                *retry_after_seconds =
+                    std::max(
+                        1L,
+                        kInternalStorageUserProjectionAuditRateLimitWindowSeconds -
+                            elapsed_seconds
+                    );
+            }
+
+            return false;
+        }
+
+        ++window.requests;
+        return true;
+    }
+
+private:
+    using Clock =
+        std::chrono::steady_clock;
+
+    struct PeerWindow {
+        Clock::time_point started_at;
+        std::size_t requests = 0;
+    };
+
+    void prune_expired(
+        const Clock::time_point now
+    ) {
+        auto iterator =
+            windows_.begin();
+
+        while (iterator !=
+               windows_.end()) {
+            const auto elapsed =
+                std::chrono::duration_cast<
+                    std::chrono::seconds
+                >(
+                    now -
+                    iterator->second.started_at
+                ).count();
+
+            if (elapsed >=
+                kInternalStorageUserProjectionAuditRateLimitWindowSeconds) {
+                iterator =
+                    windows_.erase(iterator);
+                continue;
+            }
+
+            ++iterator;
+        }
+    }
+
+    std::mutex mutex_;
+
+    std::unordered_map<
+        std::string,
+        PeerWindow
+    > windows_;
+};
+
+bool projection_context_ok(
     const InternalStorageUserProjectionRoutesContext& context
 ) noexcept {
     return
@@ -170,6 +305,21 @@ bool context_ok(
             context.local_node_id) &&
         static_cast<bool>(
             context.consume_rate_limit_slot
+        );
+}
+
+bool audit_context_ok(
+    const InternalStorageUserProjectionRoutesContext& context
+) noexcept {
+    return
+        static_cast<bool>(
+            context.verify_authorization
+        ) &&
+        context.projection_store &&
+        valid_cluster_node_id(
+            context.local_node_id) &&
+        static_cast<bool>(
+            context.consume_audit_rate_limit_slot
         );
 }
 
@@ -557,6 +707,178 @@ bool parse_projection_body(
     return true;
 }
 
+bool valid_audit_digest_hex(
+    const std::string& value
+) {
+    if (value.size() !=
+        kStorageUserProjectionDigestHexChars) {
+        return false;
+    }
+
+    for (unsigned char character : value) {
+        const bool valid =
+            (character >= '0' && character <= '9') ||
+            (character >= 'a' && character <= 'f');
+
+        if (!valid) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool fingerprint_in_audit_range(
+    const std::string& fingerprint,
+    const std::string& range_start,
+    const std::string& range_end
+) {
+    return
+        (range_start.empty() ||
+         fingerprint >= range_start) &&
+        (range_end.empty() ||
+         fingerprint < range_end);
+}
+
+bool parse_projection_audit_body(
+    const json& body,
+    std::string* node_id,
+    std::string* range_start,
+    std::string* range_end,
+    std::vector<
+        StorageUserProjectionAuditExpected
+    >* expected
+) {
+    if (!node_id ||
+        !range_start ||
+        !range_end ||
+        !expected ||
+        !has_only_keys(
+            body,
+            {
+                "version",
+                "node_id",
+                "range_start",
+                "range_end",
+                "expected"
+            })) {
+        return false;
+    }
+
+    std::uint64_t version = 0;
+
+    if (!json_u64(
+            body,
+            "version",
+            &version) ||
+        version != 1 ||
+        !json_string(
+            body,
+            "node_id",
+            node_id) ||
+        !json_string(
+            body,
+            "range_start",
+            range_start) ||
+        !json_string(
+            body,
+            "range_end",
+            range_end)) {
+        return false;
+    }
+
+    if (!valid_cluster_node_id(
+            *node_id) ||
+        (!range_start->empty() &&
+         !pqnas::valid_storage_user_fingerprint_hex(
+             *range_start)) ||
+        (!range_end->empty() &&
+         !pqnas::valid_storage_user_fingerprint_hex(
+             *range_end)) ||
+        (!range_start->empty() &&
+         !range_end->empty() &&
+         *range_start >= *range_end)) {
+        return false;
+    }
+
+    const auto expected_iterator =
+        body.find("expected");
+
+    if (expected_iterator == body.end() ||
+        !expected_iterator->is_array() ||
+        expected_iterator->size() >
+            kStorageUserProjectionAuditMaxExpected) {
+        return false;
+    }
+
+    std::vector<
+        StorageUserProjectionAuditExpected
+    > parsed;
+
+    parsed.reserve(
+        expected_iterator->size()
+    );
+
+    std::string previous_fingerprint;
+    bool have_previous_fingerprint = false;
+
+    for (const auto& item :
+         *expected_iterator) {
+        if (!has_only_keys(
+                item,
+                {
+                    "fingerprint",
+                    "revision",
+                    "digest"
+                })) {
+            return false;
+        }
+
+        StorageUserProjectionAuditExpected
+            entry;
+
+        if (!json_string(
+                item,
+                "fingerprint",
+                &entry.fingerprint) ||
+            !json_u64(
+                item,
+                "revision",
+                &entry.revision) ||
+            !json_string(
+                item,
+                "digest",
+                &entry.digest_hex) ||
+            !pqnas::valid_storage_user_fingerprint_hex(
+                entry.fingerprint) ||
+            entry.revision == 0 ||
+            !valid_audit_digest_hex(
+                entry.digest_hex) ||
+            !fingerprint_in_audit_range(
+                entry.fingerprint,
+                *range_start,
+                *range_end) ||
+            (have_previous_fingerprint &&
+             entry.fingerprint <=
+                 previous_fingerprint)) {
+            return false;
+        }
+
+        previous_fingerprint =
+            entry.fingerprint;
+        have_previous_fingerprint = true;
+
+        parsed.push_back(
+            std::move(entry)
+        );
+    }
+
+    *expected =
+        std::move(parsed);
+
+    return true;
+}
+
 } // namespace
 
 void handle_internal_storage_user_projection_request(
@@ -574,7 +896,7 @@ void handle_internal_storage_user_projection_request(
         "nosniff"
     );
 
-    if (!context_ok(context)) {
+    if (!projection_context_ok(context)) {
         reply_json_local(
             context,
             response,
@@ -888,6 +1210,314 @@ void handle_internal_storage_user_projection_request(
     );
 }
 
+void handle_internal_storage_user_projection_audit_request(
+    const httplib::Request& request,
+    httplib::Response& response,
+    const InternalStorageUserProjectionRoutesContext& context
+) {
+    response.set_header(
+        "Cache-Control",
+        "no-store"
+    );
+
+    response.set_header(
+        "X-Content-Type-Options",
+        "nosniff"
+    );
+
+    if (!audit_context_ok(context)) {
+        reply_json_local(
+            context,
+            response,
+            500,
+            json{
+                {"ok", false},
+                {"error", "server_error"}
+            }
+        );
+
+        return;
+    }
+
+    const std::string* authorization =
+        exact_authorization_header(
+            request
+        );
+
+    bool authorized = false;
+
+    if (authorization) {
+        try {
+            authorized =
+                context.verify_authorization(
+                    *authorization
+                );
+        } catch (...) {
+            // Security: verifier dependency failures fail closed before any
+            // Storage projection snapshot is materialized.
+            authorized = false;
+        }
+    }
+
+    if (!authorized) {
+        reply_unauthorized(
+            context,
+            response
+        );
+
+        return;
+    }
+
+    long retry_after_seconds = 0;
+    bool within_rate_limit = false;
+
+    try {
+        within_rate_limit =
+            context.consume_audit_rate_limit_slot(
+                request.remote_addr,
+                &retry_after_seconds
+            );
+    } catch (...) {
+        reply_json_local(
+            context,
+            response,
+            503,
+            json{
+                {"ok", false},
+                {"error", "audit_unavailable"}
+            }
+        );
+
+        return;
+    }
+
+    if (!within_rate_limit) {
+        response.set_header(
+            "Retry-After",
+            std::to_string(
+                std::max(
+                    1L,
+                    retry_after_seconds
+                )
+            )
+        );
+
+        reply_json_local(
+            context,
+            response,
+            429,
+            json{
+                {"ok", false},
+                {"error", "rate_limited"}
+            }
+        );
+
+        return;
+    }
+
+    if (!exact_json_content_type(
+            request)) {
+        reply_json_local(
+            context,
+            response,
+            415,
+            json{
+                {"ok", false},
+                {"error", "unsupported_media_type"}
+            }
+        );
+
+        return;
+    }
+
+    if (request.body.empty() ||
+        request.body.size() >
+            kInternalStorageUserProjectionAuditMaxRequestBytes) {
+        reply_json_local(
+            context,
+            response,
+            request.body.empty()
+                ? 400
+                : 413,
+            json{
+                {"ok", false},
+                {
+                    "error",
+                    request.body.empty()
+                        ? "bad_request"
+                        : "request_too_large"
+                }
+            }
+        );
+
+        return;
+    }
+
+    json body =
+        json::parse(
+            request.body,
+            nullptr,
+            false
+        );
+
+    if (body.is_discarded() ||
+        !body.is_object()) {
+        reply_json_local(
+            context,
+            response,
+            400,
+            json{
+                {"ok", false},
+                {"error", "bad_request"}
+            }
+        );
+
+        return;
+    }
+
+    std::string requested_node_id;
+    std::string range_start;
+    std::string range_end;
+
+    std::vector<
+        StorageUserProjectionAuditExpected
+    > expected;
+
+    if (!parse_projection_audit_body(
+            body,
+            &requested_node_id,
+            &range_start,
+            &range_end,
+            &expected)) {
+        reply_json_local(
+            context,
+            response,
+            400,
+            json{
+                {"ok", false},
+                {"error", "bad_request"}
+            }
+        );
+
+        return;
+    }
+
+    // Security: even an authenticated Director must explicitly bind an audit
+    // manifest to the exact Storage Node that is answering it.
+    if (requested_node_id !=
+        context.local_node_id) {
+        reply_json_local(
+            context,
+            response,
+            409,
+            json{
+                {"ok", false},
+                {"error", "wrong_node"}
+            }
+        );
+
+        return;
+    }
+
+    StorageUserProjectionAuditResult
+        audit_result;
+
+    bool audit_ok = false;
+
+    try {
+        const auto snapshot =
+            context.projection_store->snapshot();
+
+        audit_ok =
+            audit_storage_user_projection_range(
+                context.local_node_id,
+                range_start,
+                range_end,
+                expected,
+                snapshot,
+                &audit_result,
+                nullptr
+            );
+    } catch (...) {
+        audit_ok = false;
+    }
+
+    if (!audit_ok) {
+        // Request syntax has already been fully validated. Failure here means
+        // Storage state/digest verification itself could not be trusted.
+        reply_json_local(
+            context,
+            response,
+            503,
+            json{
+                {"ok", false},
+                {"error", "audit_unavailable"}
+            }
+        );
+
+        return;
+    }
+
+    json mismatches =
+        json::array();
+
+    for (const auto& mismatch :
+         audit_result.mismatches) {
+        mismatches.push_back(
+            json{
+                {
+                    "fingerprint",
+                    mismatch.fingerprint
+                },
+                {
+                    "kind",
+                    storage_user_projection_audit_mismatch_code(
+                        mismatch.code
+                    )
+                },
+                {
+                    "expected_revision",
+                    mismatch.expected_revision
+                },
+                {
+                    "actual_revision",
+                    mismatch.actual_revision
+                }
+            }
+        );
+    }
+
+    reply_json_local(
+        context,
+        response,
+        200,
+        json{
+            {"version", 1},
+            {"ok", true},
+            {
+                "node_id",
+                context.local_node_id
+            },
+            {
+                "complete",
+                audit_result.complete
+            },
+            {
+                "matched",
+                audit_result.matched
+            },
+            {
+                "safe_tombstones_ignored",
+                audit_result.safe_tombstones_ignored
+            },
+            {
+                "mismatches",
+                std::move(mismatches)
+            }
+        }
+    );
+}
+
 void register_internal_storage_user_projection_routes(
     httplib::Server& server,
     const InternalStorageUserProjectionRoutesContext& context
@@ -913,6 +1543,24 @@ void register_internal_storage_user_projection_routes(
             };
     }
 
+    if (!captured.consume_audit_rate_limit_slot) {
+        auto limiter =
+            std::make_shared<
+                DefaultStorageUserProjectionAuditRateLimiter
+            >();
+
+        captured.consume_audit_rate_limit_slot =
+            [limiter](
+                const std::string& remote_address,
+                long* retry_after_seconds
+            ) {
+                return limiter->allow(
+                    remote_address,
+                    retry_after_seconds
+                );
+            };
+    }
+
     server.Post(
         "/internal/storage/user-projection",
         [captured](
@@ -920,6 +1568,20 @@ void register_internal_storage_user_projection_routes(
             httplib::Response& response
         ) {
             handle_internal_storage_user_projection_request(
+                request,
+                response,
+                captured
+            );
+        }
+    );
+
+    server.Post(
+        "/internal/storage/user-projection/audit",
+        [captured](
+            const httplib::Request& request,
+            httplib::Response& response
+        ) {
+            handle_internal_storage_user_projection_audit_request(
                 request,
                 response,
                 captured

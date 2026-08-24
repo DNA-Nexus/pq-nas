@@ -3954,6 +3954,7 @@ endif()
 
 target_link_libraries(pqnas_internal_storage_user_projection_routes PUBLIC
         pqnas_storage_user_projection_store
+        pqnas_storage_user_projection_audit
 )
 
 

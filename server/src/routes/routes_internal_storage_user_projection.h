@@ -19,6 +19,22 @@ inline constexpr std::size_t
     kInternalStorageUserProjectionMaxRequestBytes =
         8u * 1024u;
 
+// RT-008 readback carries up to 512 compact expected identities. Bound the
+// body before JSON parsing so authenticated control-plane traffic cannot turn
+// verification into an unbounded parser/allocation path.
+inline constexpr std::size_t
+    kInternalStorageUserProjectionAuditMaxRequestBytes =
+        256u * 1024u;
+
+inline constexpr std::size_t
+    kInternalStorageUserProjectionAuditRateLimitRequests = 64;
+
+inline constexpr long
+    kInternalStorageUserProjectionAuditRateLimitWindowSeconds = 10;
+
+inline constexpr std::size_t
+    kInternalStorageUserProjectionAuditRateLimitTrackedPeers = 64;
+
 // Security: an authenticated but buggy/compromised Director must not be able
 // to turn projection synchronization into an unbounded mutation/parser loop.
 inline constexpr std::size_t
@@ -49,6 +65,13 @@ struct InternalStorageUserProjectionRoutesContext {
         long* retry_after_seconds
     )> consume_rate_limit_slot;
 
+    // Readback is separately throttled so a large audit cannot starve
+    // authorization mutation traffic.
+    std::function<bool(
+        const std::string& remote_address,
+        long* retry_after_seconds
+    )> consume_audit_rate_limit_slot;
+
     std::function<void(
         httplib::Response&,
         int,
@@ -58,6 +81,14 @@ struct InternalStorageUserProjectionRoutesContext {
 
 // Exposed for deterministic tests without opening a listener.
 void handle_internal_storage_user_projection_request(
+    const httplib::Request& request,
+    httplib::Response& response,
+    const InternalStorageUserProjectionRoutesContext& context
+);
+
+// RT-008 authenticated read-only proof endpoint. Exposed separately for
+// deterministic tests without opening a listener.
+void handle_internal_storage_user_projection_audit_request(
     const httplib::Request& request,
     httplib::Response& response,
     const InternalStorageUserProjectionRoutesContext& context
