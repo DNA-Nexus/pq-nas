@@ -1,5 +1,9 @@
 from pathlib import Path
 
+from production_translation_unit import (
+    read_main_translation_unit_text,
+)
+
 root = Path(__file__).resolve().parents[2]
 
 main = (root / "server/src/main.cpp").read_text(
@@ -12,6 +16,11 @@ route = (
 ).read_text(
     encoding="utf-8"
 )
+
+# Security: negative production-wiring assertions must inspect the
+# implementation .inc files compiled into main.cpp as well as the
+# literal main.cpp source. This closes historical RT-011.
+production_tu = read_main_translation_unit_text()
 
 errors = []
 
@@ -30,17 +39,17 @@ require(
 # browser handoff stays closed in production until preauth, Director ticket
 # issue, browser consume, Storage session auth, and E2E wiring are complete.
 require(
-    "register_storage_handoff_preauth_routes(" not in main,
+    "register_storage_handoff_preauth_routes(" not in production_tu,
     "Storage browser preauth must not yet be production-registered",
 )
 
 require(
-    '"/api/storage/handoff/preauth"' not in main,
+    '"/api/storage/handoff/preauth"' not in production_tu,
     "Storage browser preauth endpoint must not be hand-wired in main.cpp",
 )
 
 require(
-    "register_internal_storage_handoff_routes(" not in main,
+    "register_internal_storage_handoff_routes(" not in production_tu,
     "internal Storage handoff ticket route must remain production-disabled",
 )
 

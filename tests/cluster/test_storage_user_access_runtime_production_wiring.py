@@ -1,5 +1,9 @@
 from pathlib import Path
 
+from production_translation_unit import (
+    read_main_translation_unit_text,
+)
+
 root = Path(__file__).resolve().parents[2]
 
 main = (root / "server/src/main.cpp").read_text(
@@ -16,6 +20,11 @@ runtime = (
 cmake = (root / "CMakeLists.txt").read_text(
     encoding="utf-8"
 )
+
+# Security: negative production-wiring assertions must inspect the
+# implementation .inc files compiled into main.cpp as well as the
+# literal main.cpp source. This closes historical RT-011.
+production_tu = read_main_translation_unit_text()
 
 errors = []
 
@@ -135,17 +144,17 @@ require(
 # Security architecture invariant: composing authorization primitives must not
 # implicitly open the browser handoff trust boundary.
 require(
-    "register_storage_handoff_consume_routes(" not in main,
+    "register_storage_handoff_consume_routes(" not in production_tu,
     "Storage handoff consume must remain production-disabled",
 )
 
 require(
-    "register_storage_handoff_preauth_routes(" not in main,
+    "register_storage_handoff_preauth_routes(" not in production_tu,
     "Storage handoff preauth must remain production-disabled",
 )
 
 require(
-    "register_internal_storage_handoff_routes(" not in main,
+    "register_internal_storage_handoff_routes(" not in production_tu,
     "internal Storage handoff ticket route must remain production-disabled",
 )
 

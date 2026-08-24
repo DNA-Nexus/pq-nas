@@ -1789,6 +1789,16 @@ add_custom_target(run_test_admin_user_profile_stale_write_guard
 
 
 # -----------------------------------------------------------------------------
+# Guard: production wiring checks include main.cpp local .inc files (RT-011)
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_production_translation_unit
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_production_translation_unit.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: test_node_heartbeat_worker
 # -----------------------------------------------------------------------------
 add_executable(test_node_heartbeat_worker
