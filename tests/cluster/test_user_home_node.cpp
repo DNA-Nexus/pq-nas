@@ -816,6 +816,291 @@ int main() {
         "failed persistence must restore previous policy reference"
     );
 
+
+    // ---------------------------------------------------------------------
+    // RT-005 profile-only stale snapshot regression
+    // ---------------------------------------------------------------------
+    //
+    // Security: an admin profile request may have been created from state read
+    // before a concurrent placement transition. The profile-only persisted API
+    // must apply its fields to the CURRENT UserRec rather than write that stale
+    // record back with an old home_node or Storage authorization mapping.
+    {
+        const fs::path profile_path =
+            directory /
+            "profile_race_users.json";
+
+        pqnas::UsersRegistry
+            profile_registry;
+
+        pqnas::UserRec user;
+
+        user.fingerprint =
+            "fp-profile-race";
+
+        user.name =
+            "Original";
+
+        user.role =
+            "user";
+
+        user.status =
+            "enabled";
+
+        user.notes =
+            "old notes";
+
+        user.email =
+            "old@example.invalid";
+
+        user.group =
+            "old-group";
+
+        user.address =
+            "old-address";
+
+        user.avatar_url =
+            "/avatars/old.png";
+
+        user.storage_state =
+            "allocated";
+
+        user.quota_bytes =
+            4096;
+
+        user.root_rel =
+            "users/fp-profile-race";
+
+        user.storage_pool_id =
+            "pool01";
+
+        user.storage_set_at =
+            "2026-08-24T00:00:00Z";
+
+        user.storage_set_by =
+            "admin-fingerprint";
+
+        user.home_node =
+            "node-01";
+
+        user.placement_policy_id =
+            "business-backup";
+
+        bool seed_projection_changed = false;
+        std::string profile_error;
+
+        expect(
+            profile_registry.upsert_persisted(
+                user,
+                profile_path.string(),
+                &seed_projection_changed,
+                &profile_error
+            ) &&
+            seed_projection_changed,
+            "RT-005 fixture should persist initial user: " +
+                profile_error
+        );
+
+        // This copy models the stale request-local UserRec that the historical
+        // admin route used to modify and later pass to generic upsert().
+        const auto stale_snapshot =
+            profile_registry.get(
+                user.fingerprint
+            );
+
+        expect(
+            stale_snapshot.has_value() &&
+            stale_snapshot->home_node ==
+                "node-01",
+            "RT-005 fixture should capture node-01 snapshot"
+        );
+
+        const std::uint64_t
+            stale_revision =
+                stale_snapshot.has_value()
+                    ? stale_snapshot->
+                        storage_projection_revision
+                    : 0;
+
+        bool placement_changed = false;
+
+        profile_error.clear();
+
+        expect(
+            profile_registry.set_home_node_persisted(
+                user.fingerprint,
+                "node-02",
+                profile_path.string(),
+                &placement_changed,
+                &profile_error
+            ) &&
+            placement_changed,
+            "RT-005 concurrent placement should move to node-02: " +
+                profile_error
+        );
+
+        const auto after_move =
+            profile_registry.get(
+                user.fingerprint
+            );
+
+        expect(
+            after_move.has_value() &&
+            after_move->home_node ==
+                "node-02" &&
+            after_move->
+                storage_projection_revision >
+                stale_revision,
+            "RT-005 placement must be newer than stale profile snapshot"
+        );
+
+        pqnas::UserProfileUpdate
+            profile_update;
+
+        profile_update.name =
+            "Updated";
+
+        profile_update.notes =
+            "new notes";
+
+        profile_update.email =
+            "new@example.invalid";
+
+        profile_update.address =
+            "new-address";
+
+        profile_update.group =
+            "new-group";
+
+        profile_update.avatar_url =
+            "/avatars/new.png";
+
+        // Simulate self-edit: even a requested role change must not alter role.
+        profile_update.update_role =
+            false;
+
+        profile_update.role =
+            "admin";
+
+        bool profile_changed = false;
+
+        pqnas::UserRec
+            updated;
+
+        profile_error.clear();
+
+        expect(
+            profile_registry.set_profile_persisted(
+                user.fingerprint,
+                profile_update,
+                profile_path.string(),
+                &profile_changed,
+                &updated,
+                &profile_error
+            ) &&
+            profile_changed,
+            "RT-005 profile-only update should persist: " +
+                profile_error
+        );
+
+        expect(
+            after_move.has_value() &&
+            updated.name ==
+                "Updated" &&
+            updated.notes ==
+                "new notes" &&
+            updated.email ==
+                "new@example.invalid" &&
+            updated.address ==
+                "new-address" &&
+            updated.group ==
+                "new-group" &&
+            updated.avatar_url ==
+                "/avatars/new.png" &&
+            updated.role ==
+                after_move->role &&
+            updated.status ==
+                after_move->status &&
+            updated.home_node ==
+                "node-02" &&
+            updated.storage_state ==
+                after_move->storage_state &&
+            updated.quota_bytes ==
+                after_move->quota_bytes &&
+            updated.root_rel ==
+                after_move->root_rel &&
+            updated.storage_pool_id ==
+                after_move->storage_pool_id &&
+            updated.storage_set_at ==
+                after_move->storage_set_at &&
+            updated.storage_set_by ==
+                after_move->storage_set_by &&
+            updated.placement_policy_id ==
+                after_move->
+                    placement_policy_id &&
+            updated.storage_projection_revision ==
+                after_move->
+                    storage_projection_revision,
+            "RT-005 profile update must preserve CURRENT protected state"
+        );
+
+        // Idempotent retry must not churn users.json authorization version.
+        const std::uint64_t
+            revision_after_profile =
+                updated.storage_projection_revision;
+
+        profile_changed = true;
+        profile_error.clear();
+
+        expect(
+            profile_registry.set_profile_persisted(
+                user.fingerprint,
+                profile_update,
+                profile_path.string(),
+                &profile_changed,
+                &updated,
+                &profile_error
+            ) &&
+            !profile_changed &&
+            updated.storage_projection_revision ==
+                revision_after_profile,
+            "RT-005 idempotent profile retry must not advance projection revision"
+        );
+
+        // Reload proves the protected current placement, not the stale snapshot,
+        // is what reached durable users.json.
+        pqnas::UsersRegistry
+            profile_reloaded;
+
+        expect(
+            profile_reloaded.load(
+                profile_path.string()
+            ),
+            "RT-005 profile fixture should reload"
+        );
+
+        const auto durable =
+            profile_reloaded.get(
+                user.fingerprint
+            );
+
+        expect(
+            durable.has_value() &&
+            durable->home_node ==
+                "node-02" &&
+            durable->storage_projection_revision ==
+                revision_after_profile &&
+            durable->name ==
+                "Updated" &&
+            durable->role ==
+                "user" &&
+            durable->placement_policy_id ==
+                "business-backup",
+            "RT-005 durable reload must retain new placement and profile"
+        );
+    }
+
+
     const fs::path invalid_string_path =
         directory / "invalid_string.json";
 

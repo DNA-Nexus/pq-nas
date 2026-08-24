@@ -92,6 +92,23 @@ struct UserStorageMetadataUpdate {
     std::string storage_set_by;
 };
 
+// Profile-only mutation payload.
+//
+// Security: this type deliberately cannot carry placement, Storage mapping,
+// status or projection revision state. A stale profile snapshot therefore
+// cannot overwrite newer Director authorization state.
+struct UserProfileUpdate {
+    std::string name;
+    std::string notes;
+    std::string email;
+    std::string address;
+    std::string group;
+    std::string avatar_url;
+
+    bool update_role = false;
+    std::string role;
+};
+
 // Bounded correlation metadata for one durably committed Storage projection.
 struct StorageProjectionCommitInfo {
     std::string fingerprint;
@@ -156,6 +173,19 @@ public:
         const UserRec& u,
         const std::string& path,
         bool* projection_changed,
+        std::string* error
+    );
+
+    // Atomically updates only profile fields of an existing user.
+    //
+    // Security: placement, Storage authorization, status, policy intent and
+    // projection revision are always preserved from the current registry state.
+    bool set_profile_persisted(
+        const std::string& fp_hex,
+        const UserProfileUpdate& update,
+        const std::string& path,
+        bool* changed,
+        UserRec* updated,
         std::string* error
     );
 

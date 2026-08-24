@@ -1779,6 +1779,16 @@ add_custom_target(run_test_user_home_node
 
 
 # -----------------------------------------------------------------------------
+# Guard: admin profile updates must remain profile-only (RT-005)
+# -----------------------------------------------------------------------------
+add_custom_target(run_test_admin_user_profile_stale_write_guard
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_admin_user_profile_stale_write_guard.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: test_node_heartbeat_worker
 # -----------------------------------------------------------------------------
 add_executable(test_node_heartbeat_worker

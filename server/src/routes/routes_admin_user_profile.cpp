@@ -75,22 +75,11 @@ void register_admin_user_profile_routes(
 
             const std::string fp = j.value("fingerprint", "");
 
-            auto existing_user_for_immutable_fp = c.users->get(fp);
-            if (!existing_user_for_immutable_fp.has_value()) {
-                pqnas::AuditEvent ev;
-                ev.event = "admin.users.upsert_reject_unknown_fingerprint";
-                ev.outcome = "deny";
-                ev.f["fingerprint"] = fp;
-                ev.f["reason"] = "fingerprint_is_immutable_and_must_already_exist";
-                ev.f["ts"] = c.now_iso_utc();
-                ev.f["actor_fp"] = actor_fp;
-                ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
-                c.audit_append(ev);
-
+            if (fp.empty()) {
                 reply(400, json{
                     {"ok", false},
-                    {"error", "fingerprint_immutable"},
-                    {"message", "fingerprint is immutable; admin users upsert can only update an existing user profile"}
+                    {"error", "bad_request"},
+                    {"message", "missing fingerprint"}
                 });
                 return;
             }
@@ -103,69 +92,127 @@ void register_admin_user_profile_routes(
             const std::string group = j.value("group", "");
             const std::string address = j.value("address", "");
 
-            if (fp.empty()) {
-                reply(400, json{{"ok", false}, {"error", "bad_request"}, {"message", "missing fingerprint"}});
+            const std::string now_iso =
+                c.now_iso_utc();
+
+            const bool is_self =
+                !actor_fp.empty() &&
+                fp == actor_fp;
+
+            pqnas::UserProfileUpdate update;
+            update.name = name;
+            update.notes = notes;
+            update.email = email;
+            update.address = address;
+            update.group = group;
+            update.avatar_url = avatar_url;
+            update.update_role = !is_self;
+            update.role = role;
+
+            bool profile_changed = false;
+            pqnas::UserRec updated_user;
+            std::string profile_error;
+
+            // Security: profile writes are applied to the CURRENT registry
+            // record while its mutation lock is held. A stale request snapshot
+            // can therefore never resurrect older placement/projection state.
+            const bool ok_profile =
+                c.users->set_profile_persisted(
+                    fp,
+                    update,
+                    c.users_path,
+                    &profile_changed,
+                    &updated_user,
+                    &profile_error
+                );
+
+            if (!ok_profile &&
+                profile_error == "user not found") {
+                pqnas::AuditEvent ev;
+                ev.event =
+                    "admin.users.upsert_reject_unknown_fingerprint";
+                ev.outcome = "deny";
+                ev.f["fingerprint"] = fp;
+                ev.f["reason"] =
+                    "fingerprint_is_immutable_and_must_already_exist";
+                ev.f["ts"] = now_iso;
+                ev.f["actor_fp"] = actor_fp;
+                ev.f["ip"] =
+                    req.remote_addr.empty()
+                        ? "?"
+                        : req.remote_addr;
+                c.audit_append(ev);
+
+                reply(400, json{
+                    {"ok", false},
+                    {"error", "fingerprint_immutable"},
+                    {
+                        "message",
+                        "fingerprint is immutable; admin users upsert can only update an existing user profile"
+                    }
+                });
                 return;
             }
-
-            const std::string now_iso = c.now_iso_utc();
-
-            pqnas::UserRec u{};
-            bool existed = false;
-
-            if (auto cur = c.users->get(fp); cur.has_value()) {
-                existed = true;
-                u = *cur;
-            } else {
-                u.fingerprint = fp;
-                u.added_at = now_iso;
-                u.last_seen = "";
-                u.status = "disabled";
-                u.role = "user";
-                u.name = "";
-                u.notes = "";
-                u.avatar_url = "";
-            }
-
-            const bool is_self = (!actor_fp.empty() && fp == actor_fp);
-
-            u.name = name;
-            u.notes = notes;
-            u.email = email;
-            u.address = address;
-            u.group = group;
-            u.avatar_url = avatar_url;
-
-            if (!is_self) {
-                u.role = role;
-            }
-
-            const bool ok_upsert = c.users->upsert(u);
-            const bool ok_save = ok_upsert ? c.users->save(c.users_path) : false;
 
             {
                 pqnas::AuditEvent ev;
                 ev.event = "admin.user_upsert";
-                ev.outcome = (ok_upsert && ok_save) ? "ok" : "fail";
+                ev.outcome =
+                    ok_profile
+                        ? "ok"
+                        : "fail";
+
                 ev.f["fingerprint"] = fp;
-                ev.f["existed"] = existed ? "true" : "false";
+                ev.f["existed"] =
+                    ok_profile
+                        ? "true"
+                        : "unknown";
                 ev.f["role_requested"] = role;
-                ev.f["role_effective"] = u.role;
-                if (is_self && role != u.role) ev.f["self_role_change_blocked"] = "true";
-                if (!name.empty()) ev.f["name"] = pqnas::shorten(name, 80);
-                if (!notes.empty()) ev.f["notes"] = pqnas::shorten(notes, 120);
+
+                if (ok_profile) {
+                    ev.f["role_effective"] =
+                        updated_user.role;
+
+                    ev.f["profile_changed"] =
+                        profile_changed
+                            ? "true"
+                            : "false";
+
+                    if (is_self &&
+                        role != updated_user.role) {
+                        ev.f["self_role_change_blocked"] =
+                            "true";
+                    }
+                }
+
+                if (!name.empty()) {
+                    ev.f["name"] =
+                        pqnas::shorten(name, 80);
+                }
+
+                if (!notes.empty()) {
+                    ev.f["notes"] =
+                        pqnas::shorten(notes, 120);
+                }
+
                 ev.f["ts"] = now_iso;
                 ev.f["actor_fp"] = actor_fp;
-                ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
+                ev.f["ip"] =
+                    req.remote_addr.empty()
+                        ? "?"
+                        : req.remote_addr;
+
                 c.audit_append(ev);
             }
 
-            if (!ok_upsert) {
-                reply(500, json{{"ok", false}, {"error", "server_error"}, {"message", "upsert failed"}});
-                return;
-            }
-            if (!ok_save) {
-                reply(500, json{{"ok", false}, {"error", "server_error"}, {"message", "users save failed"}});
+            if (!ok_profile) {
+                // Security: do not expose users.json paths, errno values or
+                // persistence internals through this admin API.
+                reply(500, json{
+                    {"ok", false},
+                    {"error", "server_error"},
+                    {"message", "user profile update failed"}
+                });
                 return;
             }
 
