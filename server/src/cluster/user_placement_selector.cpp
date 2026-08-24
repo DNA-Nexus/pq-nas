@@ -106,8 +106,8 @@ UserPlacementSelectionResult select_user_home_node(
 
         // Fail closed unless this state came from a complete and current
         // protocol-compatible heartbeat observation.
-        if (node.protocol_version !=
-                kNodeStatusProtocolVersion ||
+        if (!node_status_protocol_version_supported(
+                node.protocol_version) ||
             node.last_seen_at.empty() ||
             node.node_reported_at.empty()) {
             reject(

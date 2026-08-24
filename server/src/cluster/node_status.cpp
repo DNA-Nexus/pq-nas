@@ -299,6 +299,11 @@ bool collect_node_status_snapshot(
         }
     }
 
+    // This Storage build implements the RT-008 authenticated range-audit
+    // endpoint and therefore advertises protocol v2.
+    out->protocol_version =
+        kNodeStatusProtocolVersionCurrent;
+
     out->node_id = node_id;
     out->hostname = safe_hostname();
     out->server_version = server_version;
@@ -315,7 +320,7 @@ nlohmann::json node_status_to_json(
 ) {
     return nlohmann::json{
         {"ok", true},
-        {"protocol_version", kNodeStatusProtocolVersion},
+        {"protocol_version", status.protocol_version},
         {"node_id", status.node_id},
         {"role", "node"},
         {"hostname", status.hostname},
@@ -435,6 +440,49 @@ bool heartbeat_json_u64(
     }
 
     return false;
+}
+
+bool heartbeat_json_protocol_version(
+    const nlohmann::json& value,
+    const char* key,
+    int* out
+) {
+    if (!out) {
+        return false;
+    }
+
+    const auto iterator =
+        value.find(key);
+
+    if (iterator == value.end() ||
+        !iterator->is_number_integer()) {
+        return false;
+    }
+
+    try {
+        const std::int64_t parsed =
+            iterator->get<std::int64_t>();
+
+        if (parsed <
+                std::numeric_limits<int>::min() ||
+            parsed >
+                std::numeric_limits<int>::max()) {
+            return false;
+        }
+
+        const int version =
+            static_cast<int>(parsed);
+
+        if (!node_status_protocol_version_supported(
+                version)) {
+            return false;
+        }
+
+        *out = version;
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 bool heartbeat_safe_text(
@@ -573,21 +621,21 @@ bool parse_node_status_json(
     }
 
     const auto ok_iterator = value.find("ok");
-    const auto protocol_iterator =
-        value.find("protocol_version");
     const auto role_iterator = value.find("role");
     const auto storage_iterator =
         value.find("storage");
     const auto users_iterator =
         value.find("users");
 
+    int protocol_version = 0;
+
     if (ok_iterator == value.end() ||
         !ok_iterator->is_boolean() ||
         !ok_iterator->get<bool>() ||
-        protocol_iterator == value.end() ||
-        !protocol_iterator->is_number_integer() ||
-        protocol_iterator->get<int>() !=
-            kNodeStatusProtocolVersion ||
+        !heartbeat_json_protocol_version(
+            value,
+            "protocol_version",
+            &protocol_version) ||
         role_iterator == value.end() ||
         !role_iterator->is_string() ||
         role_iterator->get<std::string>() != "node" ||
@@ -615,6 +663,8 @@ bool parse_node_status_json(
     }
 
     NodeStatusSnapshot candidate;
+    candidate.protocol_version =
+        protocol_version;
 
     if (!heartbeat_json_string(
             value,

@@ -341,6 +341,13 @@ int main() {
     );
 
     pqnas::cluster::NodeStatusSnapshot status;
+
+    // Rolling-upgrade regression: a legacy Storage heartbeat must remain v1
+    // after NodeRegistry persistence; it must not be rewritten as current v2.
+    status.protocol_version =
+        pqnas::cluster::
+            kNodeStatusProtocolVersionLegacy;
+
     status.node_id = "node-01";
     status.hostname = "cellnode2";
     status.server_version = "1.2.6";
@@ -376,6 +383,14 @@ int main() {
 
     expect(
         observed.has_value() &&
+        observed->protocol_version ==
+            pqnas::cluster::
+                kNodeStatusProtocolVersionLegacy,
+        "registry preserves exact legacy heartbeat protocol version"
+    );
+
+    expect(
+        observed.has_value() &&
         observed->last_seen_at ==
             "2026-07-28T06:04:01Z" &&
         observed->node_reported_at ==
@@ -395,6 +410,24 @@ int main() {
         observed.has_value() &&
         observed->capacity_ceiling_bytes == 2000,
         "heartbeat must preserve Director-owned capacity ceiling"
+    );
+
+    pqnas::cluster::NodeStatusSnapshot invalid_protocol_status =
+        status;
+
+    invalid_protocol_status.protocol_version =
+        pqnas::cluster::
+            kNodeStatusProtocolVersionCurrent + 1;
+
+    error.clear();
+
+    expect(
+        !reloaded.apply_status(
+            invalid_protocol_status,
+            "2026-07-28T06:04:02Z",
+            &error
+        ),
+        "registry rejects unsupported heartbeat protocol version"
     );
 
     pqnas::cluster::NodeStatusSnapshot unknown_status =

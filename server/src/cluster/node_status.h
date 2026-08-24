@@ -11,7 +11,35 @@ class UsersRegistry;
 
 namespace cluster {
 
-inline constexpr int kNodeStatusProtocolVersion = 1;
+inline constexpr int kNodeStatusProtocolVersionLegacy = 1;
+
+// RT-008: protocol v2 advertises the authenticated projection range-audit
+// capability. Director accepts both v1 and v2 during rolling upgrade.
+inline constexpr int kNodeStatusProtocolVersionProjectionAudit = 2;
+
+inline constexpr int kNodeStatusProtocolVersionCurrent =
+    kNodeStatusProtocolVersionProjectionAudit;
+
+// Backward-compatible name for code/tests that mean "what this binary emits".
+inline constexpr int kNodeStatusProtocolVersion =
+    kNodeStatusProtocolVersionCurrent;
+
+inline constexpr bool node_status_protocol_version_supported(
+    int version
+) noexcept {
+    return
+        version == kNodeStatusProtocolVersionLegacy ||
+        version == kNodeStatusProtocolVersionCurrent;
+}
+
+inline constexpr bool
+node_status_protocol_supports_projection_audit(
+    int version
+) noexcept {
+    return
+        version ==
+            kNodeStatusProtocolVersionProjectionAudit;
+}
 
 struct NodeStorageStatus {
     std::uint64_t total_bytes = 0;
@@ -26,6 +54,11 @@ struct NodeUserStatus {
 };
 
 struct NodeStatusSnapshot {
+    // Exact protocol observed from the peer. Locally collected Storage status
+    // defaults to the current emitted protocol.
+    int protocol_version =
+        kNodeStatusProtocolVersionCurrent;
+
     std::string node_id;
     std::string hostname;
     std::string server_version;
@@ -55,8 +88,8 @@ nlohmann::json node_status_to_json(
     const NodeStatusSnapshot& status
 );
 
-// Strictly parses a node heartbeat response. Unknown fields, wrong protocol
-// versions, wrong roles, invalid counters and unsafe text are rejected.
+// Strictly parses a node heartbeat response. Unknown fields, unsupported
+// protocol versions, wrong roles, invalid counters and unsafe text are rejected.
 bool parse_node_status_json(
     const nlohmann::json& value,
     NodeStatusSnapshot* out,
