@@ -130,6 +130,69 @@ require(
     "both initial and A-to-B authorization paths must use the narrow boundary",
 )
 
+# NEW-005: direct sends from the long-lived reconciliation snapshot must
+# re-read the authoritative user immediately before network I/O.
+freshness_start = source.find(
+    "bool projection_still_authoritative_before_send("
+)
+
+freshness_end = source.find(
+    "bool prepare_pending_authorization_transition(",
+    freshness_start,
+)
+
+freshness_block = (
+    source[freshness_start:freshness_end]
+    if freshness_start >= 0 and
+    freshness_end > freshness_start
+    else ""
+)
+
+require(
+    freshness_start >= 0 and
+    freshness_end > freshness_start and
+    "config.users->get(" in freshness_block and
+    "projection_equal(" in freshness_block,
+    "NEW-005 pre-send freshness helper must re-read and compare Director state",
+)
+
+require(
+    "sync_projection(" not in freshness_block and
+    "audit_projection_range(" not in freshness_block,
+    "NEW-005 freshness check must contain no network I/O",
+)
+
+require(
+    source.count(
+        "projection_still_authoritative_before_send("
+    ) == 4,
+    "NEW-005 helper must guard every snapshot-derived live projection send",
+)
+
+require(
+    source.count(
+        "if (!projection_still_authoritative_before_send(\n"
+        "                    config_,\n"
+        "                    current,\n"
+        "                    &result))"
+    ) == 1 and
+    source.count(
+        "if (!projection_still_authoritative_before_send(\n"
+        "                config_,\n"
+        "                current,\n"
+        "                &result))"
+    ) == 1,
+    "NEW-005 equal-revision verification and same-Node refresh must fail stale before send",
+)
+
+require(
+    "if (!projection_still_authoritative_before_send(\n"
+    "                        config_,\n"
+    "                        deferred->second,\n"
+    "                        &result))" in source,
+    "NEW-005 audit repair must re-read Director state before replay",
+)
+
 require(
     "previous_node_tombstone(" in source,
     "placement reconciliation must construct an old-Node tombstone",

@@ -962,6 +962,649 @@ int main() {
         );
     }
 
+    // NEW-005 regression: a long reconciliation pass must not re-push a
+    // superseded same-Node authorization from its initial UsersRegistry snapshot.
+    //
+    // The first network callback mutates whichever OTHER user has not yet been
+    // sent. This makes the test independent of unordered_map iteration order.
+    {
+        const fs::path stale_users_path =
+            directory /
+            "new005_stale_users.json";
+
+        const fs::path stale_state_path =
+            directory /
+            "new005_stale_sync_state.json";
+
+        const fs::path stale_transition_path =
+            directory /
+            "new005_stale_transition_journal.json";
+
+        pqnas::UsersRegistry
+            stale_users;
+
+        pqnas::cluster::
+            StorageUserProjectionSyncStateStore
+                stale_store;
+
+        error.clear();
+
+        expect(
+            stale_store.load(
+                stale_state_path.string(),
+                &error
+            ),
+            "NEW-005 sync-state store loads: " +
+                error
+        );
+
+        auto stale_transition_store =
+            load_transition_store(
+                stale_transition_path,
+                &error
+            );
+
+        expect(
+            stale_transition_store != nullptr,
+            "NEW-005 transition journal loads: " +
+                error
+        );
+
+        const auto stale_user_a =
+            make_user(
+                'c',
+                "storage-01"
+            );
+
+        const auto stale_user_b =
+            make_user(
+                'd',
+                "storage-01"
+            );
+
+        bool stale_projection_changed = false;
+
+        error.clear();
+
+        expect(
+            stale_users.upsert_persisted(
+                stale_user_a,
+                stale_users_path.string(),
+                &stale_projection_changed,
+                &error
+            ) &&
+            stale_projection_changed,
+            "NEW-005 user A persists"
+        );
+
+        stale_projection_changed = false;
+        error.clear();
+
+        expect(
+            stale_users.upsert_persisted(
+                stale_user_b,
+                stale_users_path.string(),
+                &stale_projection_changed,
+                &error
+            ) &&
+            stale_projection_changed,
+            "NEW-005 user B persists"
+        );
+
+        std::vector<
+            pqnas::cluster::
+                StorageUserProjection
+        > stale_sent;
+
+        pqnas::cluster::
+            StorageUserProjectionReconcilerConfig
+                stale_config;
+
+        stale_config.users =
+            &stale_users;
+
+        stale_config.state_store =
+            &stale_store;
+
+        stale_config.transition_store =
+            stale_transition_store.get();
+
+        stale_config.sync_projection =
+            [&](const pqnas::cluster::
+                    StorageUserProjection& projection) {
+                stale_sent.push_back(
+                    projection
+                );
+
+                return sync_success(
+                    projection
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                stale_initial_reconciler(
+                    stale_config
+                );
+
+        const auto stale_initial_result =
+            stale_initial_reconciler.
+                reconcile_once();
+
+        expect(
+            stale_initial_result.ok &&
+            stale_initial_result.synced_current == 2 &&
+            stale_sent.size() == 2,
+            "NEW-005 fixture initially confirms both users"
+        );
+
+        bool stale_a_changed = false;
+        bool stale_b_changed = false;
+
+        error.clear();
+
+        expect(
+            stale_users.set_status_persisted(
+                stale_user_a.fingerprint,
+                "disabled",
+                stale_users_path.string(),
+                &stale_a_changed,
+                &error
+            ) &&
+            stale_a_changed,
+            "NEW-005 user A advances before stale pass"
+        );
+
+        error.clear();
+
+        expect(
+            stale_users.set_status_persisted(
+                stale_user_b.fingerprint,
+                "disabled",
+                stale_users_path.string(),
+                &stale_b_changed,
+                &error
+            ) &&
+            stale_b_changed,
+            "NEW-005 user B advances before stale pass"
+        );
+
+        stale_sent.clear();
+
+        bool mutation_attempted = false;
+        bool mutation_succeeded = false;
+        std::string mutated_fingerprint;
+
+        auto stale_race_config =
+            stale_config;
+
+        stale_race_config.sync_projection =
+            [&](const pqnas::cluster::
+                    StorageUserProjection& projection) {
+                stale_sent.push_back(
+                    projection
+                );
+
+                if (!mutation_attempted) {
+                    mutation_attempted = true;
+
+                    mutated_fingerprint =
+                        projection.fingerprint ==
+                                stale_user_a.fingerprint
+                            ? stale_user_b.fingerprint
+                            : stale_user_a.fingerprint;
+
+                    bool changed = false;
+                    std::string mutation_error;
+
+                    mutation_succeeded =
+                        stale_users.set_status_persisted(
+                            mutated_fingerprint,
+                            "enabled",
+                            stale_users_path.string(),
+                            &changed,
+                            &mutation_error
+                        ) &&
+                        changed;
+                }
+
+                return sync_success(
+                    projection
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                stale_race_reconciler(
+                    stale_race_config
+                );
+
+        const auto stale_result =
+            stale_race_reconciler.
+                reconcile_once();
+
+        const auto authoritative_mutated_user =
+            stale_users.get(
+                mutated_fingerprint
+            );
+
+        const auto confirmed_mutated_state =
+            stale_store.get(
+                mutated_fingerprint
+            );
+
+        bool stale_projection_was_sent = false;
+
+        for (const auto& projection :
+             stale_sent) {
+            if (projection.fingerprint ==
+                mutated_fingerprint) {
+                stale_projection_was_sent = true;
+            }
+        }
+
+        expect(
+            mutation_attempted &&
+            mutation_succeeded &&
+            !stale_result.ok &&
+            stale_result.stale_states == 1 &&
+            stale_result.failed == 1 &&
+            stale_result.synced_current == 1 &&
+            stale_sent.size() == 1 &&
+            !stale_projection_was_sent &&
+            authoritative_mutated_user.has_value() &&
+            authoritative_mutated_user->status ==
+                "enabled" &&
+            confirmed_mutated_state.has_value() &&
+            confirmed_mutated_state->revision <
+                authoritative_mutated_user->
+                    storage_projection_revision,
+            "NEW-005 stale same-Node projection is skipped after authoritative revision advances"
+        );
+
+        // Converge both users so confirmed state again exactly matches the
+        // authoritative Director revisions. This prepares the second NEW-005
+        // branch: equal-revision legacy verification.
+        stale_sent.clear();
+
+        auto equal_converge_config =
+            stale_config;
+
+        equal_converge_config.sync_projection =
+            [&](const pqnas::cluster::
+                    StorageUserProjection& projection) {
+                stale_sent.push_back(
+                    projection
+                );
+
+                return sync_success(
+                    projection
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                equal_converge_reconciler(
+                    equal_converge_config
+                );
+
+        const auto equal_converge_result =
+            equal_converge_reconciler.
+                reconcile_once();
+
+        const auto converged_user_a =
+            stale_users.get(
+                stale_user_a.fingerprint
+            );
+
+        const auto converged_user_b =
+            stale_users.get(
+                stale_user_b.fingerprint
+            );
+
+        const auto converged_state_a =
+            stale_store.get(
+                stale_user_a.fingerprint
+            );
+
+        const auto converged_state_b =
+            stale_store.get(
+                stale_user_b.fingerprint
+            );
+
+        expect(
+            equal_converge_result.ok &&
+            stale_sent.size() == 2 &&
+            converged_user_a.has_value() &&
+            converged_user_b.has_value() &&
+            converged_state_a.has_value() &&
+            converged_state_b.has_value() &&
+            converged_state_a->revision ==
+                converged_user_a->
+                    storage_projection_revision &&
+            converged_state_b->revision ==
+                converged_user_b->
+                    storage_projection_revision,
+            "NEW-005 fixture reconverges before equal-revision stale race"
+        );
+
+        // NEW-005 second affected branch: both users enter the pass with
+        // confirmed == current. The first legacy verification POST mutates the
+        // OTHER authoritative user. Its stale equal-revision snapshot must be
+        // rejected before a second POST can leave the Director.
+        stale_sent.clear();
+
+        bool equal_mutation_attempted = false;
+        bool equal_mutation_succeeded = false;
+        std::string equal_mutated_fingerprint;
+
+        auto equal_race_config =
+            stale_config;
+
+        equal_race_config.sync_projection =
+            [&](const pqnas::cluster::
+                    StorageUserProjection& projection) {
+                stale_sent.push_back(
+                    projection
+                );
+
+                if (!equal_mutation_attempted) {
+                    equal_mutation_attempted = true;
+
+                    equal_mutated_fingerprint =
+                        projection.fingerprint ==
+                                stale_user_a.fingerprint
+                            ? stale_user_b.fingerprint
+                            : stale_user_a.fingerprint;
+
+                    const auto target =
+                        stale_users.get(
+                            equal_mutated_fingerprint
+                        );
+
+                    bool changed = false;
+                    std::string mutation_error;
+
+                    if (target.has_value()) {
+                        const std::string next_status =
+                            target->status == "enabled"
+                                ? "disabled"
+                                : "enabled";
+
+                        equal_mutation_succeeded =
+                            stale_users.set_status_persisted(
+                                equal_mutated_fingerprint,
+                                next_status,
+                                stale_users_path.string(),
+                                &changed,
+                                &mutation_error
+                            ) &&
+                            changed;
+                    }
+                }
+
+                return sync_success(
+                    projection
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                equal_race_reconciler(
+                    equal_race_config
+                );
+
+        const auto equal_race_result =
+            equal_race_reconciler.
+                reconcile_once();
+
+        const auto equal_authoritative_user =
+            stale_users.get(
+                equal_mutated_fingerprint
+            );
+
+        const auto equal_confirmed_state =
+            stale_store.get(
+                equal_mutated_fingerprint
+            );
+
+        bool equal_stale_projection_was_sent = false;
+
+        for (const auto& projection :
+             stale_sent) {
+            if (projection.fingerprint ==
+                equal_mutated_fingerprint) {
+                equal_stale_projection_was_sent = true;
+            }
+        }
+
+        expect(
+            equal_mutation_attempted &&
+            equal_mutation_succeeded &&
+            !equal_race_result.ok &&
+            equal_race_result.stale_states == 1 &&
+            equal_race_result.failed == 1 &&
+            equal_race_result.already_synced == 1 &&
+            stale_sent.size() == 1 &&
+            !equal_stale_projection_was_sent &&
+            equal_authoritative_user.has_value() &&
+            equal_confirmed_state.has_value() &&
+            equal_confirmed_state->revision <
+                equal_authoritative_user->
+                    storage_projection_revision,
+            "NEW-005 stale equal-revision verification is skipped after authoritative revision advances"
+        );
+
+        // Reconverge after the equal-revision race so the audit-capable pass
+        // begins with confirmed == authoritative for both fixture users.
+        stale_sent.clear();
+
+        auto audit_reconverge_config =
+            stale_config;
+
+        audit_reconverge_config.sync_projection =
+            [&](const pqnas::cluster::
+                    StorageUserProjection& projection) {
+                stale_sent.push_back(
+                    projection
+                );
+
+                return sync_success(
+                    projection
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                audit_reconverge_reconciler(
+                    audit_reconverge_config
+                );
+
+        const auto audit_reconverge_result =
+            audit_reconverge_reconciler.
+                reconcile_once();
+
+        const auto audit_ready_user_a =
+            stale_users.get(
+                stale_user_a.fingerprint
+            );
+
+        const auto audit_ready_user_b =
+            stale_users.get(
+                stale_user_b.fingerprint
+            );
+
+        const auto audit_ready_state_a =
+            stale_store.get(
+                stale_user_a.fingerprint
+            );
+
+        const auto audit_ready_state_b =
+            stale_store.get(
+                stale_user_b.fingerprint
+            );
+
+        expect(
+            audit_reconverge_result.ok &&
+            audit_ready_user_a.has_value() &&
+            audit_ready_user_b.has_value() &&
+            audit_ready_state_a.has_value() &&
+            audit_ready_state_b.has_value() &&
+            audit_ready_state_a->revision ==
+                audit_ready_user_a->
+                    storage_projection_revision &&
+            audit_ready_state_b->revision ==
+                audit_ready_user_b->
+                    storage_projection_revision,
+            "NEW-005 fixture reconverges before stale audit repair race"
+        );
+
+        stale_sent.clear();
+
+        bool audit_mutation_attempted = false;
+        bool audit_mutation_succeeded = false;
+        bool audit_target_found = false;
+
+        auto stale_audit_config =
+            stale_config;
+
+        stale_audit_config.list_audit_capable_nodes =
+            []() {
+                return std::vector<std::string>{
+                    "storage-01"
+                };
+            };
+
+        stale_audit_config.audit_projection_range =
+            [&](const pqnas::cluster::
+                    StorageUserProjectionAuditRequest& request) {
+                auto result =
+                    audit_match(
+                        request
+                    );
+
+                std::uint64_t expected_revision = 0;
+
+                for (const auto& expected :
+                     request.expected) {
+                    if (expected.fingerprint ==
+                        stale_user_a.fingerprint) {
+                        audit_target_found = true;
+                        expected_revision =
+                            expected.revision;
+                        break;
+                    }
+                }
+
+                if (audit_target_found &&
+                    !audit_mutation_attempted) {
+                    audit_mutation_attempted = true;
+
+                    const auto target =
+                        stale_users.get(
+                            stale_user_a.fingerprint
+                        );
+
+                    bool changed = false;
+                    std::string mutation_error;
+
+                    if (target.has_value()) {
+                        const std::string next_status =
+                            target->status == "enabled"
+                                ? "disabled"
+                                : "enabled";
+
+                        audit_mutation_succeeded =
+                            stale_users.set_status_persisted(
+                                stale_user_a.fingerprint,
+                                next_status,
+                                stale_users_path.string(),
+                                &changed,
+                                &mutation_error
+                            ) &&
+                            changed;
+                    }
+                }
+
+                if (audit_target_found) {
+                    if (result.result.matched > 0) {
+                        --result.result.matched;
+                    }
+
+                    pqnas::cluster::
+                        StorageUserProjectionAuditMismatch
+                            mismatch;
+
+                    mismatch.code =
+                        pqnas::cluster::
+                            StorageUserProjectionAuditMismatchCode::
+                                Missing;
+
+                    mismatch.fingerprint =
+                        stale_user_a.fingerprint;
+
+                    mismatch.expected_revision =
+                        expected_revision;
+
+                    mismatch.actual_revision = 0;
+
+                    result.result.mismatches.push_back(
+                        std::move(mismatch)
+                    );
+                }
+
+                return result;
+            };
+
+        stale_audit_config.sync_projection =
+            [&](const pqnas::cluster::
+                    StorageUserProjection& projection) {
+                stale_sent.push_back(
+                    projection
+                );
+
+                return sync_success(
+                    projection
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                stale_audit_reconciler(
+                    stale_audit_config
+                );
+
+        const auto stale_audit_result =
+            stale_audit_reconciler.
+                reconcile_once();
+
+        const auto audit_authoritative_user =
+            stale_users.get(
+                stale_user_a.fingerprint
+            );
+
+        const auto audit_confirmed_state =
+            stale_store.get(
+                stale_user_a.fingerprint
+            );
+
+        expect(
+            audit_target_found &&
+            audit_mutation_attempted &&
+            audit_mutation_succeeded &&
+            !stale_audit_result.ok &&
+            stale_audit_result.stale_states == 1 &&
+            stale_audit_result.failed == 1 &&
+            stale_sent.empty() &&
+            audit_authoritative_user.has_value() &&
+            audit_confirmed_state.has_value() &&
+            audit_confirmed_state->revision <
+                audit_authoritative_user->
+                    storage_projection_revision,
+            "NEW-005 stale audit repair is skipped after authoritative revision advances"
+        );
+    }
+
     const auto before_move_state =
         state_store.get(
             placed.fingerprint
