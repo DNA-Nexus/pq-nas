@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 main = (ROOT / "server/src/main.cpp").read_text()
 authz = (ROOT / "server/src/authz.cc").read_text()
+strict_cookie = (ROOT / "server/include/strict_session_cookie.h").read_text()
 put = (ROOT / "server/src/routes/routes_files_put.inc").read_text()
 routes_v5 = (ROOT / "server/src/routes/routes_v5.cc").read_text()
 routes_v5_h = (ROOT / "server/include/routes_v5.h").read_text()
@@ -13,6 +14,33 @@ def require(cond, msg):
     if not cond:
         print("FAIL:", msg)
         raise SystemExit(1)
+
+# RT-013: every legacy pqnas_session authorization path must use the same
+# duplicate-header / duplicate-name fail-closed parser.
+require(
+    "extract_strict_pqnas_session_cookie(" in strict_cookie and
+    "equal_range(" in strict_cookie and
+    "duplicate target names enable cookie tossing" in strict_cookie,
+    "strict pqnas_session parser security contract missing",
+)
+require(
+    '#include "strict_session_cookie.h"' in main and
+    '#include "strict_session_cookie.h"' in authz,
+    "legacy session auth must include the shared strict cookie parser",
+)
+require(
+    "extract_named_cookie_value" not in main and
+    "extract_cookie_value" not in authz,
+    "legacy first-match cookie parsers must not survive RT-013",
+)
+require(
+    main.count("pqnas::extract_strict_pqnas_session_cookie(") == 3,
+    "all three main.cpp pqnas_session auth paths must use strict parser",
+)
+require(
+    authz.count("pqnas::extract_strict_pqnas_session_cookie(") == 4,
+    "all four authz.cc pqnas_session auth paths must use strict parser",
+)
 
 # Security: an unconfigured composition root must fail closed.
 require(

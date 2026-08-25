@@ -11,6 +11,7 @@
 
 #include "allowlist.h"
 #include "session_cookie.h"
+#include "strict_session_cookie.h"
 #include "users_registry.h"
 
 namespace {
@@ -20,28 +21,6 @@ namespace {
 // as a user or administrative authority.
 std::atomic<bool> g_legacy_users_auth_allowed{false};
 
-
-// Extract pqnas_session=<...> from Cookie header. Returns "" if missing.
-static std::string extract_cookie_value(const httplib::Request& req, const std::string& name) {
-    auto it = req.headers.find("Cookie");
-    if (it == req.headers.end()) return "";
-
-    const std::string& hdr = it->second;
-    const std::string key = name + "=";
-
-    auto pos = hdr.find(key);
-    if (pos == std::string::npos) return "";
-    pos += key.size();
-
-    auto end = hdr.find(';', pos);
-    if (end == std::string::npos) end = hdr.size();
-
-    // trim spaces around value
-    while (pos < end && (hdr[pos] == ' ' || hdr[pos] == '\t')) pos++;
-    while (end > pos && (hdr[end - 1] == ' ' || hdr[end - 1] == '\t')) end--;
-
-    return hdr.substr(pos, end - pos);
-}
 
 // Decode standard base64 (padded) -> bytes in out (string used as byte buffer)
 static bool b64std_decode_to_bytes(const std::string& in, std::string& out) {
@@ -89,10 +68,22 @@ bool require_admin_cookie(const httplib::Request& req,
                           const std::string& /*allowlist_path*/,
                           const pqnas::Allowlist* allowlist)
 {
-    // Require cookie header + pqnas_session
-    const std::string cookieVal = extract_cookie_value(req, "pqnas_session");
-    if (cookieVal.empty()) {
-        reply_text(res, 401, "missing pqnas_session");
+    std::string cookieVal;
+
+    const auto cookie_result =
+        pqnas::extract_strict_pqnas_session_cookie(
+            req,
+            &cookieVal
+        );
+
+    if (cookie_result != pqnas::StrictSessionCookieResult::Ok) {
+        reply_text(
+            res,
+            401,
+            cookie_result == pqnas::StrictSessionCookieResult::InvalidCookieHeader
+                ? "invalid cookie"
+                : "missing pqnas_session"
+        );
         return false;
     }
 
@@ -156,10 +147,22 @@ bool require_admin_cookie_users_actor(const httplib::Request& req,
         return false;
     }
 
-    // Require cookie header + pqnas_session
-    const std::string cookieVal = extract_cookie_value(req, "pqnas_session");
-    if (cookieVal.empty()) {
-        reply_text(res, 401, "missing pqnas_session");
+    std::string cookieVal;
+
+    const auto cookie_result =
+        pqnas::extract_strict_pqnas_session_cookie(
+            req,
+            &cookieVal
+        );
+
+    if (cookie_result != pqnas::StrictSessionCookieResult::Ok) {
+        reply_text(
+            res,
+            401,
+            cookie_result == pqnas::StrictSessionCookieResult::InvalidCookieHeader
+                ? "invalid cookie"
+                : "missing pqnas_session"
+        );
         return false;
     }
 
@@ -202,9 +205,13 @@ bool is_admin_cookie(const httplib::Request& req,
 {
     if (out_fp_hex) out_fp_hex->clear();
 
-    // Require cookie header + pqnas_session
-    const std::string cookieVal = extract_cookie_value(req, "pqnas_session");
-    if (cookieVal.empty()) return false;
+    std::string cookieVal;
+
+    if (pqnas::extract_strict_pqnas_session_cookie(
+            req,
+            &cookieVal) != pqnas::StrictSessionCookieResult::Ok) {
+        return false;
+    }
 
     // Verify cookie MAC and extract identity (fp_b64) + expiry
     std::string fp_b64;
@@ -240,8 +247,13 @@ bool is_admin_cookie_users(const httplib::Request& req,
         return false;
     }
 
-    const std::string cookieVal = extract_cookie_value(req, "pqnas_session");
-    if (cookieVal.empty()) return false;
+    std::string cookieVal;
+
+    if (pqnas::extract_strict_pqnas_session_cookie(
+            req,
+            &cookieVal) != pqnas::StrictSessionCookieResult::Ok) {
+        return false;
+    }
 
     std::string fp_b64;
     long exp = 0;

@@ -109,23 +109,61 @@ int main() {
         return 5;
     }
 
-    // Fake request containing the session cookie
-    httplib::Request req;
-    httplib::Response res;
+    auto require_allowed = [&](const std::string& header, const char* label) -> bool {
+        httplib::Request request;
+        httplib::Response response;
+        request.remote_addr = "127.0.0.1";
+        request.headers.emplace("Cookie", header);
 
-    req.remote_addr = "127.0.0.1";
-    req.headers.emplace("Cookie", std::string("pqnas_session=") + cookieVal);
+        if (!require_admin_cookie(request, response, cookie_key, policy_path, &allowlist)) {
+            std::cerr << "FAIL: " << label << " status=" << response.status << " body=" << response.body << "\n";
+            return false;
+        }
+        return true;
+    };
 
-    // Call the real guard with allowlist pointer (so it doesn't re-load policy unexpectedly)
-    const bool ok = require_admin_cookie(req, res, cookie_key, policy_path, &allowlist);
+    auto require_rejected = [&](const httplib::Request& request, const char* label) -> bool {
+        httplib::Response response;
+        if (require_admin_cookie(request, response, cookie_key, policy_path, &allowlist)) {
+            std::cerr << "FAIL: " << label << " unexpectedly authenticated\n";
+            return false;
+        }
+        if (response.status != 401) {
+            std::cerr << "FAIL: " << label << " status=" << response.status << " expected=401\n";
+            return false;
+        }
+        return true;
+    };
 
-    if (!ok) {
-        std::cerr << "FAIL: require_admin_cookie returned false\n";
-        std::cerr << "HTTP status=" << res.status << "\n";
-        std::cerr << "Body:\n" << res.body << "\n";
-        return 6;
+    if (!require_allowed(std::string("pqnas_session=") + cookieVal, "canonical session cookie")) return 6;
+    if (!require_allowed(std::string("theme=dark; pqnas_session=") + cookieVal, "session cookie with unrelated cookie")) return 7;
+    if (!require_allowed(std::string("notpqnas_session=ignored; pqnas_session=") + cookieVal, "exact session cookie name matching")) return 8;
+
+    {
+        httplib::Request request;
+        request.headers.emplace("Cookie", std::string("pqnas_session=") + cookieVal);
+        request.headers.emplace("Cookie", std::string("pqnas_session=") + cookieVal);
+        if (!require_rejected(request, "duplicate Cookie headers")) return 9;
     }
 
-    std::cout << "OK: admin cookie/policy regression test passed\n";
+    {
+        httplib::Request request;
+        request.headers.emplace("Cookie", std::string("pqnas_session=") + cookieVal + "; pqnas_session=" + cookieVal);
+        if (!require_rejected(request, "duplicate pqnas_session names")) return 10;
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace("Cookie", std::string("broken; pqnas_session=") + cookieVal);
+        if (!require_rejected(request, "malformed Cookie segment")) return 11;
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace("Cookie", std::string("pqnas_session= ") + cookieVal);
+        if (!require_rejected(request, "noncanonical session cookie characters")) return 12;
+    }
+
+    std::cout << "OK: strict admin cookie/policy regression tests passed\n";
     return 0;
 }
