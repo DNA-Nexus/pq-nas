@@ -34,6 +34,10 @@ using pqnas::cluster::
 
 int failures = 0;
 
+constexpr char kTestDirectorTlsPin[] =
+    "sha256/"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
 void expect(
     bool condition,
     const std::string& message
@@ -109,6 +113,9 @@ make_intent() {
     intent.director_url =
         "https://director.internal/";
 
+    intent.director_tls_spki_sha256_pin =
+        kTestDirectorTlsPin;
+
     intent.api_base_url =
         "https://storage-node-01.internal/";
 
@@ -128,7 +135,11 @@ json state_json(
         ""
 ) {
     return json{
-        {"version", 1},
+        {
+            "version",
+            pqnas::cluster::
+                kStorageNodeProvisioningStateVersionCurrent
+        },
         {"stage", stage},
         {
             "enrollment_id",
@@ -142,6 +153,10 @@ json state_json(
         {
             "director_url",
             "https://director.internal"
+        },
+        {
+            "director_tls_spki_sha256_pin",
+            intent.director_tls_spki_sha256_pin
         },
         {
             "api_base_url",
@@ -297,6 +312,36 @@ int main() {
 
     StorageNodeProvisioningRecord prepared;
     std::string credential;
+
+    StorageNodeProvisioningIntent
+        noncanonical_director_tls =
+            intent;
+
+    noncanonical_director_tls
+        .director_tls_spki_sha256_pin =
+            " " +
+            intent.director_tls_spki_sha256_pin;
+
+    expect_result(
+        store.prepare_for_bootstrap(
+            noncanonical_director_tls,
+            "2026-07-31T03:59:59Z",
+            &credential,
+            &prepared,
+            &error
+        ),
+        StorageNodeProvisioningStoreResult::
+            InvalidInput,
+        "reject noncanonical Director TLS identity before credential creation"
+    );
+
+    expect(
+        credential.empty() &&
+        !store.snapshot().has_value(),
+        "noncanonical Director TLS identity must not persist state or credential"
+    );
+
+    error.clear();
 
     expect_result(
         store.prepare_for_bootstrap(
@@ -456,6 +501,33 @@ int main() {
     expect(
         credential.empty(),
         "mismatched state must not expose credential"
+    );
+
+    StorageNodeProvisioningIntent
+        wrong_director_tls =
+            intent;
+
+    wrong_director_tls
+        .director_tls_spki_sha256_pin =
+            "sha256/"
+            "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
+    expect_result(
+        reloaded.prepare_for_bootstrap(
+            wrong_director_tls,
+            "2026-07-31T04:02:00Z",
+            &credential,
+            &recovered,
+            &error
+        ),
+        StorageNodeProvisioningStoreResult::
+            StateMismatch,
+        "reject a different Director TLS identity"
+    );
+
+    expect(
+        credential.empty(),
+        "Director TLS mismatch must not expose credential"
     );
 
     StorageNodeProvisioningRecord enrolled;

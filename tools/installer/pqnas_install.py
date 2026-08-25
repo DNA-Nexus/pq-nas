@@ -62,6 +62,7 @@ from pqnas_secure_files import (
 from pqnas_cluster_config import (
     ClusterConfigError,
     ClusterInstallConfig,
+    is_legacy_director_tls_pin_upgrade,
     load_existing_cluster_config,
     render_cluster_env_lines,
     validate_cluster_config,
@@ -3375,6 +3376,16 @@ class ClusterRoleScreen(Screen):
             )
             yield self.director_url_in
 
+            self.director_tls_pin_in = Input(
+                placeholder="sha256/...",
+            )
+            yield Static(
+                "Director TLS SPKI SHA-256 pin "
+                "(obtain out-of-band):",
+                classes="muted",
+            )
+            yield self.director_tls_pin_in
+
             self.enrollment_id_in = Input(
                 placeholder="enrollment identifier",
             )
@@ -3453,6 +3464,9 @@ class ClusterRoleScreen(Screen):
         if base.role == "node":
             self.node_id_in.value = base.node_id
             self.director_url_in.value = base.director_url
+            self.director_tls_pin_in.value = (
+                base.director_tls_spki_sha256_pin
+            )
             self.enrollment_id_in.value = base.enrollment_id
             self.generation_in.value = str(
                 base.enrollment_generation
@@ -3555,6 +3569,11 @@ class ClusterRoleScreen(Screen):
                         director_url=(
                             self.director_url_in.value or ""
                         ).strip(),
+                        # Security: trust anchors must already be
+                        # canonical; never trim or normalize pin text here.
+                        director_tls_spki_sha256_pin=(
+                            self.director_tls_pin_in.value or ""
+                        ),
                         cluster_credential_file=credential_file,
                         enrollment_id=(
                             self.enrollment_id_in.value or ""
@@ -3574,6 +3593,13 @@ class ClusterRoleScreen(Screen):
                     f"Invalid storage-node configuration: {exc}"
                 )
                 return
+
+        legacy_director_pin_upgrade = (
+            is_legacy_director_tls_pin_upgrade(
+                app.state.original_cluster_config,
+                selected,
+            )
+        )
 
         if selected != app.state.cluster_config:
             wipe_secret_buffer(
@@ -3613,6 +3639,7 @@ class ClusterRoleScreen(Screen):
             elif (
                 selected !=
                     app.state.original_cluster_config
+                and not legacy_director_pin_upgrade
                 and app.state.node_bootstrap_token is None
             ):
                 self.hint.update(

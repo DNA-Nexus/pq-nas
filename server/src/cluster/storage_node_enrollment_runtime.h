@@ -20,6 +20,10 @@ struct StorageNodeEnrollmentRuntimeConfig {
     // Required whenever enrollment is enabled.
     std::string tls_spki_sha256_pin;
 
+    // Out-of-band trust anchor for the Director enrollment endpoint.
+    // Security: this is distinct from the Storage node's own TLS identity.
+    std::string director_tls_spki_sha256_pin;
+
     // Optional during recovery after a credential has already been persisted.
     // Fresh enrollment still requires a valid token file.
     std::string bootstrap_token_file;
@@ -43,6 +47,7 @@ parse_storage_node_enrollment_runtime_config(
     const std::string& raw_generation,
     const std::string& raw_api_base_url,
     const std::string& raw_tls_spki_sha256_pin,
+    const std::string& raw_director_tls_spki_sha256_pin,
     const std::string& raw_bootstrap_token_file,
     StorageNodeEnrollmentRuntimeConfig* output
 );

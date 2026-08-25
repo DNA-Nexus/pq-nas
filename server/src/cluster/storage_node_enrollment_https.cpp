@@ -2,6 +2,7 @@
 
 #include "cluster/cluster_identity_validation.h"
 #include "cluster/internal_auth.h"
+#include "cluster/node_tls_https_client.h"
 #include "cluster/node_tls_identity.h"
 
 #include "httplib.h"
@@ -510,8 +511,15 @@ bool valid_transport_request(
 
     std::string normalized_api;
     std::string normalized_tls_pin;
+    std::string normalized_director_tls_pin;
 
     if (!normalize_node_tls_spki_sha256_pin(
+            request.director_tls_spki_sha256_pin,
+            &normalized_director_tls_pin,
+            nullptr) ||
+        normalized_director_tls_pin !=
+            request.director_tls_spki_sha256_pin ||
+        !normalize_node_tls_spki_sha256_pin(
             request.tls_spki_sha256_pin,
             &normalized_tls_pin,
             nullptr) ||
@@ -670,6 +678,40 @@ make_https_storage_node_enrollment_transport() {
             return invalid_response(0);
         }
 
+        std::string tls_error;
+
+        auto client =
+            make_pinned_node_https_client(
+                authority.host,
+                authority.port,
+                request
+                    .director_tls_spki_sha256_pin,
+                &tls_error
+            );
+
+        if (!client) {
+            tls_error.clear();
+
+            return {
+                StorageNodeEnrollmentTransportCode::
+                    TransportFailed,
+                false,
+                0
+            };
+        }
+
+        tls_error.clear();
+
+        // Security: the actual credential-bearing POST uses this exact
+        // SPKI-pinned client; there is no separate unpinned connection.
+        client->set_follow_location(false);
+        client->set_keep_alive(false);
+        client->set_decompress(false);
+
+        client->set_connection_timeout(5, 0);
+        client->set_read_timeout(8, 0);
+        client->set_write_timeout(5, 0);
+
         json request_json{
             {
                 "enrollment_id",
@@ -752,39 +794,9 @@ make_https_storage_node_enrollment_transport() {
             headers
         );
 
-        httplib::SSLClient client(
-            authority.host,
-            authority.port
-        );
-
-        if (!client.is_valid()) {
-            return {
-                StorageNodeEnrollmentTransportCode::
-                    TransportFailed,
-                false,
-                0
-            };
-        }
-
         // Security: redirects could forward either the one-time bootstrap token
-        // or the long-lived node credential to another origin.
-        client.set_follow_location(false);
-        client.set_keep_alive(false);
-        client.set_decompress(false);
-
-        client.set_connection_timeout(5, 0);
-        client.set_read_timeout(8, 0);
-        client.set_write_timeout(5, 0);
-
-        // Security: there is deliberately no runtime switch for insecure TLS.
-        client.enable_server_certificate_verification(
-            true
-        );
-
-        client.enable_server_hostname_verification(
-            true
-        );
-
+        // or the long-lived node credential to another origin. The shared
+        // pinned client also keeps normal CA-chain and hostname verification.
         std::string response_body;
         SensitiveStringWiper response_wiper(
             response_body
@@ -797,7 +809,7 @@ make_https_storage_node_enrollment_transport() {
         bool too_large = false;
 
         const httplib::Result result =
-            client.Post(
+            client->Post(
                 "/internal/node/enrollments/consume",
                 headers,
                 request_body,

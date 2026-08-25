@@ -78,6 +78,50 @@ class InstallerClusterRoleUiTests(unittest.TestCase):
             r"Step [1-7]/6",
         )
 
+    def test_director_tls_pin_is_explicit_out_of_band_input(
+        self,
+    ) -> None:
+        role = self.class_body(
+            "ClusterRoleScreen"
+        )
+
+        self.assertIn(
+            "self.director_tls_pin_in = Input(",
+            role,
+        )
+        # The UI label is intentionally split across adjacent source
+        # literals; assert the source-level fragments rather than requiring
+        # their runtime-concatenated form to appear verbatim in the file.
+        self.assertIn(
+            "Director TLS SPKI SHA-256 pin ",
+            role,
+        )
+        self.assertIn(
+            "(obtain out-of-band):",
+            role,
+        )
+        self.assertIn(
+            "director_tls_spki_sha256_pin=(",
+            role,
+        )
+        self.assertIn(
+            "is_legacy_director_tls_pin_upgrade(",
+            role,
+        )
+        self.assertIn(
+            "and not legacy_director_pin_upgrade",
+            role,
+        )
+        self.assertIn(
+            "never trim or normalize pin text here",
+            role,
+        )
+        self.assertNotIn(
+            "self.director_tls_pin_in.value or \"\"\n"
+            "                        ).strip()",
+            role,
+        )
+
     def test_secret_input_is_password_protected(
         self,
     ) -> None:
