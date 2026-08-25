@@ -109,6 +109,24 @@ struct UserProfileUpdate {
     std::string role;
 };
 
+// Partial metadata mutation for self-service/avatar/preferences/recovery paths.
+//
+// Security: this type cannot carry role, status, placement, Storage mapping,
+// policy intent or projection revision state. Updates are applied to the
+// CURRENT registry record while holding the mutation lock.
+struct UserNonAuthMetadataUpdate {
+    std::optional<std::string> name;
+    std::optional<std::string> email;
+    std::optional<std::string> avatar_url;
+    std::optional<std::string> app_prefs_json;
+
+    std::optional<std::string> vault_master_recovery_status;
+    std::optional<std::string> vault_master_recovery_public_key_b64;
+    std::optional<std::string> vault_master_recovery_public_key_sha256;
+    std::optional<long long> vault_master_recovery_created_at;
+    std::optional<std::string> vault_master_recovery_label;
+};
+
 // Bounded correlation metadata for one durably committed Storage projection.
 struct StorageProjectionCommitInfo {
     std::string fingerprint;
@@ -183,6 +201,19 @@ public:
     bool set_profile_persisted(
         const std::string& fp_hex,
         const UserProfileUpdate& update,
+        const std::string& path,
+        bool* changed,
+        UserRec* updated,
+        std::string* error
+    );
+
+    // Atomically updates only non-authorization metadata of an existing user.
+    //
+    // Security: the mutation starts from the CURRENT registry record, so a
+    // stale request cannot overwrite newer placement/projection state.
+    bool set_non_auth_metadata_persisted(
+        const std::string& fp_hex,
+        const UserNonAuthMetadataUpdate& update,
         const std::string& path,
         bool* changed,
         UserRec* updated,

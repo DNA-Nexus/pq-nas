@@ -2795,7 +2795,14 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
             final_user_status = u.status;
             user_enabled_by_enrollment = (u.status == "enabled");
 
-            if (!ctx.users->upsert(u) || !ctx.users->save(*ctx.users_path)) {
+            // Security: user creation and its initial projection revision
+            // are one locked, durable UsersRegistry commit.
+            if (!ctx.users->upsert_persisted(
+                    u,
+                    *ctx.users_path,
+                    nullptr,
+                    nullptr
+                )) {
                 routes_v5_secure_clear_string(generated_ident.recovery_words);
                 routes_v5_audit_password(ctx, req, "opaque.enrollment_finish", "deny", login, final_fingerprint, "user_create_failed");
                 reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "user_create_failed"}}.dump());
@@ -4316,7 +4323,14 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         rec.created_at = now_iso;
         rec.updated_at = now_iso;
 
-        if (!ctx.users->upsert(u) || !ctx.users->save(*ctx.users_path)) {
+        // Security: bootstrap user creation is a single durable registry
+        // mutation; never split in-memory insertion from users.json commit.
+        if (!ctx.users->upsert_persisted(
+                u,
+                *ctx.users_path,
+                nullptr,
+                nullptr
+            )) {
             routes_v5_secure_clear_string(recovery_words);
             routes_v5_audit_password(ctx, req, "opaque.bootstrap_finish", "deny", login, fp_hex, "users_save_failed");
             reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_save_failed"}}.dump());
@@ -4550,7 +4564,14 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         rec.updated_at = now_iso;
 
         if (!have_existing_admin) {
-            if (!ctx.users->upsert(u) || !ctx.users->save(*ctx.users_path)) {
+            // Security: first-admin creation is a single durable registry
+            // mutation with a registry-owned initial projection revision.
+            if (!ctx.users->upsert_persisted(
+                    u,
+                    *ctx.users_path,
+                    nullptr,
+                    nullptr
+                )) {
                 routes_v5_secure_clear_string(bootstrap_recovery_words);
                 reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_save_failed"}}.dump());
                 return;
@@ -4790,7 +4811,14 @@ void register_routes_v5(httplib::Server& srv, const RoutesV5Context& ctx) {
         rec.created_at = now_iso;
         rec.updated_at = now_iso;
 
-        if (!ctx.users->upsert(u) || !ctx.users->save(*ctx.users_path)) {
+        // Security: setup-link user creation must not expose an
+        // in-memory-only user snapshot between mutation and persistence.
+        if (!ctx.users->upsert_persisted(
+                u,
+                *ctx.users_path,
+                nullptr,
+                nullptr
+            )) {
             routes_v5_secure_clear_string(ident.recovery_words);
             reply_json(res, 500, json{{"ok", false}, {"error", "server_error"}, {"message", "users_save_failed"}}.dump());
             return;
