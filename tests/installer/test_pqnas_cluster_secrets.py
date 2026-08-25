@@ -35,6 +35,15 @@ class ClusterSecretTests(unittest.TestCase):
             raw
         ).decode("ascii").rstrip("=")
 
+    def valid_director_tls_pin(self) -> str:
+        # Deterministic test-only SPKI SHA-256 pin: 32 zero bytes.
+        return (
+            "sha256/" +
+            base64.b64encode(
+                bytes(32)
+            ).decode("ascii")
+        )
+
     def prepare_parent(self, parent: Path) -> None:
         parent.mkdir(
             parents=True,
@@ -54,6 +63,9 @@ class ClusterSecretTests(unittest.TestCase):
             role="node",
             node_id=node_id,
             director_url="https://director.internal",
+            director_tls_spki_sha256_pin=(
+                self.valid_director_tls_pin()
+            ),
             cluster_credential_file=str(
                 root / "node-credential"
             ),
@@ -335,6 +347,9 @@ class ClusterSecretTests(unittest.TestCase):
             role="node",
             node_id="cellnode1",
             director_url="https://director.internal",
+            director_tls_spki_sha256_pin=(
+                self.valid_director_tls_pin()
+            ),
             cluster_credential_file=(
                 cluster_secrets.DEFAULT_NODE_CREDENTIAL_FILE
             ),
