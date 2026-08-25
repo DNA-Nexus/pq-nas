@@ -10764,6 +10764,33 @@ auto maybe_auto_rotate_before_append = [&]() {
             };
 
     director_storage_projection_reconciler_config
+        .list_audit_online_nodes =
+            [&director_node_registry]() {
+                std::vector<std::string> node_ids;
+
+                const auto nodes =
+                    director_node_registry.snapshot();
+
+                node_ids.reserve(nodes.size());
+
+                for (const auto& node : nodes) {
+                    // Security: health controls whether range proof is
+                    // attempted this pass, never whether the authenticated v2
+                    // capability is remembered.
+                    if (node.health == "online" &&
+                        pqnas::cluster::
+                            node_status_protocol_supports_projection_audit(
+                                node.protocol_version)) {
+                        node_ids.push_back(
+                            node.node_id
+                        );
+                    }
+                }
+
+                return node_ids;
+            };
+
+    director_storage_projection_reconciler_config
         .audit_projection_range =
             [&director_storage_projection_audit_client](
                 const pqnas::cluster::
@@ -10809,6 +10836,8 @@ auto maybe_auto_rotate_before_append = [&]() {
                         << result.users_seen
                         << " failed="
                         << result.failed
+                        << " audit_deferred_nodes="
+                        << result.audit_deferred_nodes
                         << " orphaned_states="
                         << result.orphaned_states
                         << " stale_states="

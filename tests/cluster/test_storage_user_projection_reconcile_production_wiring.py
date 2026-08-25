@@ -154,6 +154,14 @@ require(
 
 require(
     "director_storage_projection_reconciler_config"
+    "\n        .list_audit_online_nodes =" in main and
+    'node.health == "online"' in main and
+    "node_status_protocol_supports_projection_audit(" in main,
+    "reconciler must defer offline v2 audit without downgrading capability",
+)
+
+require(
+    "director_storage_projection_reconciler_config"
     "\n        .audit_projection_range =" in main and
     "director_storage_projection_audit_client.audit(" in main,
     "reconciler audit callback must delegate to production audit client",

@@ -67,6 +67,10 @@ struct StorageUserProjectionReconcileResult {
     std::size_t moved = 0;
     std::size_t revoked_unplaced = 0;
 
+    // Audit-capable Nodes that were deliberately deferred because Director
+    // does not currently observe them online. This is not a transport failure.
+    std::size_t audit_deferred_nodes = 0;
+
     std::size_t orphaned_states = 0;
     std::size_t stale_states = 0;
     std::size_t state_conflicts = 0;
@@ -115,6 +119,12 @@ struct StorageUserProjectionReconcilerConfig {
     // is present, both are required and failures are fail-closed.
     StorageUserProjectionReconcileAuditNodeList
         list_audit_capable_nodes;
+
+    // Optional subset of list_audit_capable_nodes that is online for this
+    // reconciliation pass. Capability remains sticky even while offline so a
+    // known v2 Node never falls back to the legacy verification POST.
+    StorageUserProjectionReconcileAuditNodeList
+        list_audit_online_nodes;
 
     StorageUserProjectionReconcileAuditInvoke
         audit_projection_range;
