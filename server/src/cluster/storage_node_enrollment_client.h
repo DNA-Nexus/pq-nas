@@ -23,6 +23,11 @@ const char* storage_node_enrollment_transport_code(
 
 struct StorageNodeEnrollmentTransportRequest {
     std::string director_url;
+
+    // Expected TLS identity of the Director endpoint. This value is local
+    // trust state and is never serialized into the enrollment JSON body.
+    std::string director_tls_spki_sha256_pin;
+
     std::string authorization_token;
 
     std::string enrollment_id;
@@ -88,8 +93,9 @@ struct StorageNodeEnrollmentClientConfig {
     StorageNodeProvisioningStore* store =
         nullptr;
 
-    // Security: enrollment has no blank/default TLS identity path.
-    // The client requires a canonical node SPKI SHA-256 pin before transport.
+    // Public TLS identity of this Storage node, sent to Director as part
+    // of authenticated enrollment. Director trust is carried by the durable
+    // provisioning intent instead of this field.
     std::string tls_spki_sha256_pin;
 
     StorageNodeEnrollmentTransport transport;

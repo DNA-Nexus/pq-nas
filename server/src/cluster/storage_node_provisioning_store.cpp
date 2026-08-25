@@ -2,6 +2,7 @@
 
 #include "cluster/cluster_identity_validation.h"
 #include "cluster/internal_auth.h"
+#include "cluster/node_tls_identity.h"
 
 #include <nlohmann/json.hpp>
 
@@ -23,7 +24,8 @@ namespace {
 
 using json = nlohmann::json;
 
-constexpr int kProvisioningStateVersion = 1;
+// Schema v2 adds the Director TLS SPKI identity to the durable
+// enrollment transaction. v1 remains parseable only for upgrade handling.
 constexpr std::size_t kMaximumPathBytes = 4096;
 constexpr std::size_t kMaximumFilenameBytes = 255;
 constexpr std::size_t kMaximumStateFileBytes = 16 * 1024;
@@ -298,9 +300,10 @@ bool valid_enrollment_id(
     return true;
 }
 
-bool normalize_intent(
+bool normalize_intent_impl(
     const StorageNodeProvisioningIntent&
         input,
+    bool require_director_tls_pin,
     StorageNodeProvisioningIntent* output,
     std::string* error
 ) {
@@ -321,6 +324,7 @@ bool normalize_intent(
     }
 
     std::string director_url;
+    std::string director_tls_pin;
     std::string api_base_url;
 
     if (!normalize_cluster_https_base_url(
@@ -339,6 +343,29 @@ bool normalize_intent(
         return false;
     }
 
+    if (require_director_tls_pin) {
+        if (!normalize_node_tls_spki_sha256_pin(
+                input.director_tls_spki_sha256_pin,
+                &director_tls_pin,
+                nullptr) ||
+            director_tls_pin !=
+                input.director_tls_spki_sha256_pin) {
+            set_error(
+                error,
+                "invalid Director TLS SPKI pin"
+            );
+
+            return false;
+        }
+    } else if (!input.director_tls_spki_sha256_pin.empty()) {
+        set_error(
+            error,
+            "legacy provisioning state must not contain Director TLS pin"
+        );
+
+        return false;
+    }
+
     output->enrollment_id =
         input.enrollment_id;
 
@@ -351,6 +378,9 @@ bool normalize_intent(
     output->director_url =
         std::move(director_url);
 
+    output->director_tls_spki_sha256_pin =
+        std::move(director_tls_pin);
+
     output->api_base_url =
         std::move(api_base_url);
 
@@ -358,6 +388,33 @@ bool normalize_intent(
         input.protocol_version;
 
     return true;
+}
+
+bool normalize_intent(
+    const StorageNodeProvisioningIntent&
+        input,
+    StorageNodeProvisioningIntent* output,
+    std::string* error
+) {
+    return normalize_intent_impl(
+        input,
+        true,
+        output,
+        error
+    );
+}
+
+bool normalize_legacy_intent(
+    const StorageNodeProvisioningIntent&
+        input,
+    StorageNodeProvisioningIntent* output
+) {
+    return normalize_intent_impl(
+        input,
+        false,
+        output,
+        nullptr
+    );
 }
 
 bool same_intent(
@@ -375,6 +432,8 @@ bool same_intent(
             intent.node_id &&
         record.director_url ==
             intent.director_url &&
+        record.director_tls_spki_sha256_pin ==
+            intent.director_tls_spki_sha256_pin &&
         record.api_base_url ==
             intent.api_base_url &&
         record.protocol_version ==
@@ -1013,7 +1072,7 @@ json record_json(
     const StorageNodeProvisioningRecord&
         record
 ) {
-    return json{
+    json object{
         {"version", record.version},
         {
             "stage",
@@ -1053,13 +1112,24 @@ json record_json(
             record.enrolled_at
         }
     };
+
+    if (record.version ==
+        kStorageNodeProvisioningStateVersionCurrent) {
+        object[
+            "director_tls_spki_sha256_pin"
+        ] =
+            record.director_tls_spki_sha256_pin;
+    }
+
+    return object;
 }
 
 bool has_exact_record_keys(
-    const json& object
+    const json& object,
+    int version
 ) {
     static constexpr const char*
-        keys[] = {
+        common_keys[] = {
             "version",
             "stage",
             "enrollment_id",
@@ -1073,19 +1143,43 @@ bool has_exact_record_keys(
             "enrolled_at"
         };
 
+    if (version !=
+            kStorageNodeProvisioningStateVersionLegacy &&
+        version !=
+            kStorageNodeProvisioningStateVersionCurrent) {
+        return false;
+    }
+
+    const std::size_t expected_size =
+        sizeof(common_keys) /
+            sizeof(common_keys[0]) +
+        (
+            version ==
+                kStorageNodeProvisioningStateVersionCurrent
+            ? 1U
+            : 0U
+        );
+
     if (!object.is_object() ||
         object.size() !=
-            sizeof(keys) /
-                sizeof(keys[0])) {
+            expected_size) {
         return false;
     }
 
     for (const char* key :
-         keys) {
+         common_keys) {
         if (object.find(key) ==
             object.end()) {
             return false;
         }
+    }
+
+    if (version ==
+        kStorageNodeProvisioningStateVersionCurrent) {
+        return
+            object.find(
+                "director_tls_spki_sha256_pin"
+            ) != object.end();
     }
 
     return true;
@@ -1119,8 +1213,36 @@ bool parse_record(
         return false;
     }
 
+    if (!object.is_object() ||
+        object.find("version") ==
+            object.end() ||
+        !object["version"].
+            is_number_integer()) {
+        set_error(
+            error,
+            "invalid provisioning state schema"
+        );
+
+        return false;
+    }
+
+    int schema_version = 0;
+
+    try {
+        schema_version =
+            object["version"].get<int>();
+    } catch (...) {
+        set_error(
+            error,
+            "invalid provisioning state schema"
+        );
+
+        return false;
+    }
+
     if (!has_exact_record_keys(
-            object)) {
+            object,
+            schema_version)) {
         set_error(
             error,
             "invalid provisioning state schema"
@@ -1130,12 +1252,13 @@ bool parse_record(
     }
 
     StorageNodeProvisioningRecord candidate;
+    candidate.version =
+        schema_version;
+
     std::string stage;
 
     try {
-        if (!object["version"].
-                is_number_integer() ||
-            !object["stage"].is_string() ||
+        if (!object["stage"].is_string() ||
             !object["enrollment_id"].
                 is_string() ||
             !object["expected_generation"].
@@ -1143,6 +1266,13 @@ bool parse_record(
             !object["node_id"].is_string() ||
             !object["director_url"].
                 is_string() ||
+            (
+                schema_version ==
+                    kStorageNodeProvisioningStateVersionCurrent &&
+                !object[
+                    "director_tls_spki_sha256_pin"
+                ].is_string()
+            ) ||
             !object["api_base_url"].
                 is_string() ||
             !object["protocol_version"].
@@ -1160,9 +1290,6 @@ bool parse_record(
 
             return false;
         }
-
-        candidate.version =
-            object["version"].get<int>();
 
         stage =
             object["stage"].
@@ -1204,6 +1331,14 @@ bool parse_record(
         candidate.director_url =
             object["director_url"].
                 get<std::string>();
+
+        if (schema_version ==
+            kStorageNodeProvisioningStateVersionCurrent) {
+            candidate.director_tls_spki_sha256_pin =
+                object[
+                    "director_tls_spki_sha256_pin"
+                ].get<std::string>();
+        }
 
         candidate.api_base_url =
             object["api_base_url"].
@@ -1248,6 +1383,9 @@ bool parse_record(
     raw_intent.director_url =
         candidate.director_url;
 
+    raw_intent.director_tls_spki_sha256_pin =
+        candidate.director_tls_spki_sha256_pin;
+
     raw_intent.api_base_url =
         candidate.api_base_url;
 
@@ -1257,17 +1395,27 @@ bool parse_record(
     StorageNodeProvisioningIntent
         normalized_intent;
 
-    if (candidate.version !=
-            kProvisioningStateVersion ||
-        !parse_stage(
+    const bool intent_valid =
+        candidate.version ==
+            kStorageNodeProvisioningStateVersionCurrent
+        ? normalize_intent(
+              raw_intent,
+              &normalized_intent,
+              nullptr
+          )
+        : normalize_legacy_intent(
+              raw_intent,
+              &normalized_intent
+          );
+
+    if (!parse_stage(
             stage,
             &candidate.stage) ||
-        !normalize_intent(
-            raw_intent,
-            &normalized_intent,
-            nullptr) ||
+        !intent_valid ||
         normalized_intent.director_url !=
             candidate.director_url ||
+        normalized_intent.director_tls_spki_sha256_pin !=
+            candidate.director_tls_spki_sha256_pin ||
         normalized_intent.api_base_url !=
             candidate.api_base_url ||
         !valid_iso_utc_seconds_text(
@@ -2054,7 +2202,7 @@ prepare_for_bootstrap(
             initial;
 
         initial.version =
-            kProvisioningStateVersion;
+            kStorageNodeProvisioningStateVersionCurrent;
 
         initial.stage =
             StorageNodeProvisioningStage::
@@ -2071,6 +2219,10 @@ prepare_for_bootstrap(
 
         initial.director_url =
             normalized_intent.director_url;
+
+        initial.director_tls_spki_sha256_pin =
+            normalized_intent
+                .director_tls_spki_sha256_pin;
 
         initial.api_base_url =
             normalized_intent.api_base_url;

@@ -8,6 +8,12 @@
 
 namespace pqnas::cluster {
 
+inline constexpr int
+    kStorageNodeProvisioningStateVersionLegacy = 1;
+
+inline constexpr int
+    kStorageNodeProvisioningStateVersionCurrent = 2;
+
 enum class StorageNodeProvisioningStage {
     Prepared,
     CredentialPersisted,
@@ -40,12 +46,18 @@ struct StorageNodeProvisioningIntent {
     std::uint64_t expected_generation = 0;
     std::string node_id;
     std::string director_url;
+
+    // Security: RT-014 binds retries to the exact Director TLS identity.
+    std::string director_tls_spki_sha256_pin;
+
     std::string api_base_url;
     int protocol_version = 0;
 };
 
 struct StorageNodeProvisioningRecord {
-    int version = 1;
+    int version =
+        kStorageNodeProvisioningStateVersionCurrent;
+
     StorageNodeProvisioningStage stage =
         StorageNodeProvisioningStage::Prepared;
 
@@ -53,6 +65,7 @@ struct StorageNodeProvisioningRecord {
     std::uint64_t expected_generation = 0;
     std::string node_id;
     std::string director_url;
+    std::string director_tls_spki_sha256_pin;
     std::string api_base_url;
     int protocol_version = 0;
 

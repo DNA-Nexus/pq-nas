@@ -18,6 +18,7 @@ from pqnas_cluster_config import (  # noqa: E402
     MAX_GENERATION,
     ClusterConfigError,
     ClusterInstallConfig,
+    is_legacy_director_tls_pin_upgrade,
     load_existing_cluster_config,
     parse_cluster_config_from_env_text,
     render_cluster_env_lines,
@@ -39,6 +40,10 @@ class ClusterConfigTests(unittest.TestCase):
             node_id="cellnode1",
             director_url=(
                 "https://director.example.com/"
+            ),
+            director_tls_spki_sha256_pin=(
+                "sha256/"
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
             ),
             cluster_credential_file=(
                 "/var/lib/pqnas/cluster/"
@@ -185,6 +190,7 @@ class ClusterConfigTests(unittest.TestCase):
             "PQNAS_SERVER_ROLE=node",
             "PQNAS_NODE_ID=cellnode1",
             "PQNAS_DIRECTOR_URL=",
+            "PQNAS_DIRECTOR_TLS_SPKI_SHA256_PIN=",
             "PQNAS_CLUSTER_CREDENTIAL_FILE=",
             "PQNAS_NODE_ENROLLMENT_ID=",
             "PQNAS_NODE_ENROLLMENT_GENERATION=7",
@@ -209,6 +215,139 @@ class ClusterConfigTests(unittest.TestCase):
         self.assertIn(
             "bootstrap_token_file",
             fields,
+        )
+
+    def test_node_requires_canonical_director_tls_pin(
+        self,
+    ) -> None:
+        invalid_pins = (
+            "",
+            " sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= ",
+            "sha256/short=",
+            (
+                "sha256/" +
+                ("A" * 42) +
+                "B="
+            ),
+            "SHA256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        )
+
+        for value in invalid_pins:
+            with self.subTest(pin=value):
+                with self.assertRaises(
+                    ClusterConfigError
+                ):
+                    validate_cluster_config(
+                        replace(
+                            self.node_config(),
+                            director_tls_spki_sha256_pin=value,
+                        )
+                    )
+
+    def test_legacy_node_env_without_director_pin_is_read_compatible(
+        self,
+    ) -> None:
+        normalized = validate_cluster_config(
+            self.node_config()
+        )
+        text = "\n".join(
+            render_cluster_env_lines(normalized)
+        ) + "\n"
+
+        legacy_text = "\n".join(
+            line
+            for line in text.splitlines()
+            if not line.startswith(
+                "PQNAS_DIRECTOR_TLS_SPKI_SHA256_PIN="
+            )
+        ) + "\n"
+
+        parsed = parse_cluster_config_from_env_text(
+            legacy_text
+        )
+
+        self.assertEqual(
+            parsed.role,
+            "node",
+        )
+        self.assertEqual(
+            parsed.director_tls_spki_sha256_pin,
+            "",
+        )
+
+        # Security: compatibility is read-only. Rewriting a node config must
+        # provision the new out-of-band Director trust anchor.
+        with self.assertRaises(
+            ClusterConfigError
+        ):
+            render_cluster_env_lines(parsed)
+
+    def test_explicit_blank_director_pin_is_not_legacy(
+        self,
+    ) -> None:
+        normalized = validate_cluster_config(
+            self.node_config()
+        )
+        text = "\n".join(
+            render_cluster_env_lines(normalized)
+        ) + "\n"
+        text = text.replace(
+            (
+                "PQNAS_DIRECTOR_TLS_SPKI_SHA256_PIN="
+                f"{normalized.director_tls_spki_sha256_pin}"
+            ),
+            "PQNAS_DIRECTOR_TLS_SPKI_SHA256_PIN=",
+        )
+
+        with self.assertRaises(
+            ClusterConfigError
+        ):
+            parse_cluster_config_from_env_text(
+                text
+            )
+
+    def test_first_legacy_director_pin_addition_is_not_reenrollment(
+        self,
+    ) -> None:
+        selected = validate_cluster_config(
+            self.node_config()
+        )
+        original = replace(
+            selected,
+            director_tls_spki_sha256_pin="",
+        )
+
+        self.assertTrue(
+            is_legacy_director_tls_pin_upgrade(
+                original,
+                selected,
+            )
+        )
+
+        self.assertFalse(
+            is_legacy_director_tls_pin_upgrade(
+                original,
+                replace(
+                    selected,
+                    enrollment_generation=(
+                        selected.enrollment_generation + 1
+                    ),
+                ),
+            )
+        )
+
+        self.assertFalse(
+            is_legacy_director_tls_pin_upgrade(
+                selected,
+                replace(
+                    selected,
+                    director_tls_spki_sha256_pin=(
+                        "sha256/"
+                        "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+                    ),
+                ),
+            )
         )
 
     def test_node_rejects_invalid_identifiers(self) -> None:

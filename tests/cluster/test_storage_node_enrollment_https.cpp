@@ -19,6 +19,10 @@ using pqnas::cluster::
 
 int failures = 0;
 
+constexpr char kDirectorTlsPin[] =
+    "sha256/"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
 void expect(
     bool condition,
     const std::string& message
@@ -221,7 +225,10 @@ int main() {
     StorageNodeEnrollmentTransportRequest request;
 
     request.director_url =
-        "http://director.internal";
+        "https://director.internal";
+
+    request.director_tls_spki_sha256_pin =
+        kDirectorTlsPin;
 
     request.authorization_token =
         token;
@@ -251,6 +258,42 @@ int main() {
     const auto transport =
         pqnas::cluster::
             make_https_storage_node_enrollment_transport();
+
+    const std::string valid_director_pin =
+        request.director_tls_spki_sha256_pin;
+
+    request.director_tls_spki_sha256_pin.clear();
+
+    const auto missing_director_pin_result =
+        transport(request);
+
+    expect(
+        missing_director_pin_result.code ==
+            StorageNodeEnrollmentTransportCode::
+                InvalidResponse &&
+        missing_director_pin_result.http_status == 0,
+        "production transport rejects missing Director TLS pin before network"
+    );
+
+    request.director_tls_spki_sha256_pin =
+        " " + valid_director_pin;
+
+    const auto noncanonical_director_pin_result =
+        transport(request);
+
+    expect(
+        noncanonical_director_pin_result.code ==
+            StorageNodeEnrollmentTransportCode::
+                InvalidResponse &&
+        noncanonical_director_pin_result.http_status == 0,
+        "production transport rejects noncanonical Director TLS pin before network"
+    );
+
+    request.director_tls_spki_sha256_pin =
+        valid_director_pin;
+
+    request.director_url =
+        "http://director.internal";
 
     const auto invalid_url_result =
         transport(request);

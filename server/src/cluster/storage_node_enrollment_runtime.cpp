@@ -588,12 +588,39 @@ bool exact_persisted_intent(
     const StorageNodeProvisioningIntent& intent
 ) noexcept {
     return
+        record.version ==
+            kStorageNodeProvisioningStateVersionCurrent &&
+        record.enrollment_id == intent.enrollment_id &&
+        record.expected_generation == intent.expected_generation &&
+        record.node_id == intent.node_id &&
+        record.director_url == intent.director_url &&
+        record.director_tls_spki_sha256_pin ==
+            intent.director_tls_spki_sha256_pin &&
+        record.api_base_url == intent.api_base_url &&
+        record.protocol_version == intent.protocol_version;
+}
+
+bool exact_legacy_enrolled_intent(
+    const StorageNodeProvisioningRecord& record,
+    const StorageNodeProvisioningIntent& intent
+) noexcept {
+    // Security: a pre-RT-014 transaction may be accepted only after it already
+    // reached the final Enrolled state. It is never allowed back into a path
+    // that can transmit bootstrap or node credentials.
+    return
+        record.version ==
+            kStorageNodeProvisioningStateVersionLegacy &&
+        record.stage ==
+            StorageNodeProvisioningStage::Enrolled &&
+        record.director_tls_spki_sha256_pin.empty() &&
         record.enrollment_id == intent.enrollment_id &&
         record.expected_generation == intent.expected_generation &&
         record.node_id == intent.node_id &&
         record.director_url == intent.director_url &&
         record.api_base_url == intent.api_base_url &&
-        record.protocol_version == intent.protocol_version;
+        node_status_protocol_version_supported(
+            record.protocol_version
+        );
 }
 
 bool persisted_credential_stage(
@@ -787,6 +814,7 @@ parse_storage_node_enrollment_runtime_config(
     const std::string& raw_generation,
     const std::string& raw_api_base_url,
     const std::string& raw_tls_spki_sha256_pin,
+    const std::string& raw_director_tls_spki_sha256_pin,
     const std::string& raw_bootstrap_token_file,
     StorageNodeEnrollmentRuntimeConfig* output
 ) {
@@ -826,6 +854,7 @@ parse_storage_node_enrollment_runtime_config(
     std::uint64_t generation = 0;
     std::string api_base_url;
     std::string tls_spki_sha256_pin;
+    std::string director_tls_spki_sha256_pin;
 
     if (!valid_enrollment_id(
             raw_enrollment_id) ||
@@ -839,7 +868,14 @@ parse_storage_node_enrollment_runtime_config(
         !normalize_node_tls_spki_sha256_pin(
             raw_tls_spki_sha256_pin,
             &tls_spki_sha256_pin,
-            nullptr)) {
+            nullptr) ||
+        (
+            !raw_director_tls_spki_sha256_pin.empty() &&
+            !normalize_node_tls_spki_sha256_pin(
+                raw_director_tls_spki_sha256_pin,
+                &director_tls_spki_sha256_pin,
+                nullptr)
+        )) {
         return
             StorageNodeEnrollmentRuntimeConfigResult::
                 InvalidInput;
@@ -876,6 +912,11 @@ parse_storage_node_enrollment_runtime_config(
     output->tls_spki_sha256_pin =
         std::move(tls_spki_sha256_pin);
 
+    output->director_tls_spki_sha256_pin =
+        std::move(
+            director_tls_spki_sha256_pin
+        );
+
     output->bootstrap_token_file =
         std::move(token_file);
 
@@ -901,6 +942,9 @@ load_storage_node_enrollment_runtime_config_from_env(
             ),
             environment_value(
                 "PQNAS_TLS_SPKI_SHA256_PIN"
+            ),
+            environment_value(
+                "PQNAS_DIRECTOR_TLS_SPKI_SHA256_PIN"
             ),
             environment_value(
                 "PQNAS_NODE_BOOTSTRAP_TOKEN_FILE"
@@ -1024,6 +1068,36 @@ ensure_storage_node_enrollment(
         );
     }
 
+    std::string normalized_node_tls_pin;
+    std::string normalized_director_tls_pin;
+
+    if (!normalize_node_tls_spki_sha256_pin(
+            enrollment_config.tls_spki_sha256_pin,
+            &normalized_node_tls_pin,
+            nullptr) ||
+        normalized_node_tls_pin !=
+            enrollment_config.tls_spki_sha256_pin ||
+        (
+            !enrollment_config
+                 .director_tls_spki_sha256_pin
+                 .empty() &&
+            (
+                !normalize_node_tls_spki_sha256_pin(
+                    enrollment_config
+                        .director_tls_spki_sha256_pin,
+                    &normalized_director_tls_pin,
+                    nullptr) ||
+                normalized_director_tls_pin !=
+                    enrollment_config
+                        .director_tls_spki_sha256_pin
+            )
+        )) {
+        return finish(
+            StorageNodeEnrollmentRuntimeCode::
+                InvalidConfig
+        );
+    }
+
     const std::filesystem::path credential_path(
         role_config.cluster_credential_file
     );
@@ -1070,11 +1144,48 @@ ensure_storage_node_enrollment(
     intent.director_url =
         role_config.director_url;
 
+    intent.director_tls_spki_sha256_pin =
+        enrollment_config
+            .director_tls_spki_sha256_pin;
+
     intent.api_base_url =
         enrollment_config.api_base_url;
 
     intent.protocol_version =
         kNodeStatusProtocolVersion;
+
+    const auto persisted =
+        store.snapshot();
+
+    const bool legacy_already_enrolled =
+        persisted.has_value() &&
+        exact_legacy_enrolled_intent(
+            *persisted,
+            intent
+        );
+
+    if (legacy_already_enrolled) {
+        // Security: legacy final-state recovery performs no bootstrap-secret
+        // file I/O and no network I/O.
+        return finish(
+            StorageNodeEnrollmentRuntimeCode::Ok,
+            false,
+            true,
+            false
+        );
+    }
+
+    if (enrollment_config
+            .director_tls_spki_sha256_pin
+            .empty()) {
+        // Security: only an already-final legacy v1 transaction may run
+        // without the new Director trust anchor. Fail before opening any
+        // bootstrap-secret file or reaching credential-bearing transport.
+        return finish(
+            StorageNodeEnrollmentRuntimeCode::
+                InvalidConfig
+        );
+    }
 
     std::string bootstrap_token;
     SensitiveTokenWiper token_wiper(
@@ -1108,11 +1219,9 @@ ensure_storage_node_enrollment(
 
     if (token_result ==
         BootstrapTokenLoadResult::Missing) {
-        const auto persisted =
-            store.snapshot();
-
         // Security: an absent one-time token is expected only after the exact
-        // local transaction durably installed its node credential.
+        // current-schema transaction durably installed its node credential.
+        // Legacy Prepared/CredentialPersisted state therefore fails closed.
         if (!persisted.has_value() ||
             !persisted_credential_stage(
                 persisted->stage) ||

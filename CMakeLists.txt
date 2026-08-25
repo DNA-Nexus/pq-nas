@@ -4347,6 +4347,12 @@ target_link_libraries(
 # RT014: every Storage enrollment layer that validates or propagates the
 # canonical TLS SPKI identity depends explicitly on the shared primitive.
 target_link_libraries(
+        pqnas_storage_node_provisioning_store
+        PUBLIC
+        pqnas_node_tls_identity
+)
+
+target_link_libraries(
         pqnas_storage_node_enrollment_client
         PUBLIC
         pqnas_node_tls_identity
@@ -4355,7 +4361,7 @@ target_link_libraries(
 target_link_libraries(
         pqnas_storage_node_enrollment_https
         PUBLIC
-        pqnas_node_tls_identity
+        pqnas_node_tls_https_client
 )
 
 target_link_libraries(

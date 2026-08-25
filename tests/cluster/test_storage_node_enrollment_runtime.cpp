@@ -45,6 +45,10 @@ constexpr char kTestTlsPin[] =
     "sha256/"
     "lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=";
 
+constexpr char kTestDirectorTlsPin[] =
+    "sha256/"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
 void expect(
     bool condition,
     const std::string& message
@@ -251,6 +255,9 @@ make_config(
     config.tls_spki_sha256_pin =
         kTestTlsPin;
 
+    config.director_tls_spki_sha256_pin =
+        kTestDirectorTlsPin;
+
     config.bootstrap_token_file =
         token_file.empty()
         ? std::string()
@@ -304,6 +311,7 @@ int main() {
                     "",
                     "",
                     kTestTlsPin,
+                    kTestDirectorTlsPin,
                     "",
                     &config
                 ) ==
@@ -320,6 +328,7 @@ int main() {
                     "7",
                     "https://node-config.internal/",
                     kTestTlsPin,
+                    kTestDirectorTlsPin,
                     "/run/pqnas/bootstrap.token",
                     &config
                 ) ==
@@ -335,10 +344,29 @@ int main() {
         expect(
             pqnas::cluster::
                 parse_storage_node_enrollment_runtime_config(
+                    "enrollment_runtime_missing_director_pin",
+                    "1",
+                    "https://node-config.internal",
+                    kTestTlsPin,
+                    "",
+                    "",
+                    &config
+                ) ==
+                StorageNodeEnrollmentRuntimeConfigResult::
+                    Ok &&
+            config.enabled &&
+            config.director_tls_spki_sha256_pin.empty(),
+            "parser preserves missing Director pin for legacy final-state recovery"
+        );
+
+        expect(
+            pqnas::cluster::
+                parse_storage_node_enrollment_runtime_config(
                     "enrollment_runtime_missing_pin",
                     "1",
                     "https://node-config.internal",
                     "",
+                    kTestDirectorTlsPin,
                     "",
                     &config
                 ) ==
@@ -354,6 +382,7 @@ int main() {
                     "1",
                     "https://node-config.internal",
                     std::string(" ") + kTestTlsPin,
+                    kTestDirectorTlsPin,
                     "",
                     &config
                 ) ==
@@ -371,6 +400,7 @@ int main() {
                     "",
                     "https://node-config.internal",
                     kTestTlsPin,
+                    kTestDirectorTlsPin,
                     "",
                     &config
                 ) ==
@@ -386,6 +416,7 @@ int main() {
                     "",
                     "",
                     kTestTlsPin,
+                    kTestDirectorTlsPin,
                     "/run/pqnas/bootstrap.token",
                     &config
                 ) ==
@@ -401,6 +432,7 @@ int main() {
                     "18446744073709551616",
                     "https://node-config.internal",
                     kTestTlsPin,
+                    kTestDirectorTlsPin,
                     "",
                     &config
                 ) ==
@@ -416,6 +448,7 @@ int main() {
                     "1",
                     "http://node-config.internal",
                     kTestTlsPin,
+                    kTestDirectorTlsPin,
                     "",
                     &config
                 ) ==
@@ -431,6 +464,7 @@ int main() {
                     "1",
                     "https://node-config.internal",
                     kTestTlsPin,
+                    kTestDirectorTlsPin,
                     "relative/bootstrap.token",
                     &config
                 ) ==
@@ -486,6 +520,89 @@ int main() {
                     Disabled &&
             calls == 0,
             "disabled runtime performs no role or network work"
+        );
+    }
+
+    {
+        const fs::path private_directory =
+            root /
+            "missing-director-trust" /
+            "private";
+
+        expect(
+            create_private_directory(
+                private_directory
+            ),
+            "create missing Director trust private directory"
+        );
+
+        const ServerRoleConfig role =
+            make_role(
+                private_directory,
+                "missing-director-trust"
+            );
+
+        const fs::path invalid_token_file =
+            private_directory /
+            "invalid-bootstrap.token";
+
+        expect(
+            write_private_text(
+                invalid_token_file,
+                "not-a-valid-bootstrap-token\n"
+            ),
+            "write invalid bootstrap token for missing Director trust"
+        );
+
+        auto config =
+            make_config(
+                invalid_token_file,
+                "missing-director-trust"
+            );
+
+        config.director_tls_spki_sha256_pin.clear();
+
+        int calls = 0;
+
+        StorageNodeEnrollmentRuntimeDependencies
+            dependencies;
+
+        dependencies.transport =
+            [&](const StorageNodeEnrollmentTransportRequest&) {
+                ++calls;
+
+                return
+                    StorageNodeEnrollmentTransportResponse{
+                        StorageNodeEnrollmentTransportCode::
+                            TransportFailed,
+                        false,
+                        0
+                    };
+            };
+
+        dependencies.now_iso_utc =
+            []() {
+                return
+                    std::string{
+                        "2026-07-31T12:59:59Z"
+                    };
+            };
+
+        const auto result =
+            pqnas::cluster::
+                ensure_storage_node_enrollment(
+                    role,
+                    config,
+                    std::move(dependencies)
+                );
+
+        expect(
+            !result.ok &&
+            result.code ==
+                StorageNodeEnrollmentRuntimeCode::
+                    InvalidConfig &&
+            calls == 0,
+            "fresh enrollment without Director TLS trust fails before token validation or transport"
         );
     }
 
@@ -564,6 +681,8 @@ int main() {
                         role.node_id &&
                     request.director_url ==
                         role.director_url &&
+                    request.director_tls_spki_sha256_pin ==
+                        kTestDirectorTlsPin &&
                     request.api_base_url ==
                         config.api_base_url &&
                     request.protocol_version ==
@@ -1115,6 +1234,141 @@ int main() {
         pqnas::cluster::
             clear_node_enrollment_token_text(
                 &bootstrap_token
+            );
+    }
+
+    {
+        const fs::path private_directory =
+            root /
+            "legacy-v1-enrolled" /
+            "private";
+
+        expect(
+            create_private_directory(
+                private_directory
+            ),
+            "create legacy v1 enrolled private directory"
+        );
+
+        const ServerRoleConfig role =
+            make_role(
+                private_directory,
+                "legacy-v1-enrolled"
+            );
+
+        const fs::path invalid_token_file =
+            private_directory /
+            "invalid-bootstrap.token";
+
+        expect(
+            write_private_text(
+                invalid_token_file,
+                "not-a-valid-bootstrap-token\n"
+            ),
+            "write invalid bootstrap token for legacy final state"
+        );
+
+        auto config =
+            make_config(
+                invalid_token_file,
+                "legacy-v1-enrolled"
+            );
+
+        config.director_tls_spki_sha256_pin.clear();
+
+        std::string credential;
+        std::string error;
+
+        expect(
+            pqnas::cluster::
+                generate_internal_auth_credential_token(
+                    &credential,
+                    &error
+                ) &&
+            write_private_text(
+                role.cluster_credential_file,
+                credential + "\n"
+            ),
+            "write legacy v1 enrolled credential"
+        );
+
+        const std::string state =
+            std::string{
+                "{\"version\":1,"
+                "\"stage\":\"enrolled\","
+                "\"enrollment_id\":\""
+            } +
+            config.enrollment_id +
+            "\",\"expected_generation\":" +
+            std::to_string(
+                config.expected_generation
+            ) +
+            ",\"node_id\":\"" +
+            role.node_id +
+            "\",\"director_url\":\"" +
+            role.director_url +
+            "\",\"api_base_url\":\"" +
+            config.api_base_url +
+            "\",\"protocol_version\":1,"
+            "\"prepared_at\":\"2026-07-31T12:40:00Z\","
+            "\"updated_at\":\"2026-07-31T12:40:01Z\","
+            "\"enrolled_at\":\"2026-07-31T12:40:01Z\"}\n";
+
+        expect(
+            write_private_text(
+                private_directory /
+                    "storage_node_provisioning.json",
+                state
+            ),
+            "write legacy v1 enrolled state"
+        );
+
+        int calls = 0;
+
+        StorageNodeEnrollmentRuntimeDependencies
+            dependencies;
+
+        dependencies.transport =
+            [&](const StorageNodeEnrollmentTransportRequest&) {
+                ++calls;
+
+                return
+                    StorageNodeEnrollmentTransportResponse{
+                        StorageNodeEnrollmentTransportCode::
+                            TransportFailed,
+                        false,
+                        0
+                    };
+            };
+
+        dependencies.now_iso_utc =
+            []() {
+                return
+                    std::string{
+                        "2026-07-31T12:40:10Z"
+                    };
+            };
+
+        const auto result =
+            pqnas::cluster::
+                ensure_storage_node_enrollment(
+                    role,
+                    config,
+                    std::move(dependencies)
+                );
+
+        expect(
+            result.ok &&
+            result.already_enrolled &&
+            result.code ==
+                StorageNodeEnrollmentRuntimeCode::Ok &&
+            calls == 0,
+            "legacy v1 Enrolled state ignores invalid token and performs no network"
+        );
+
+        pqnas::cluster::
+            clear_internal_auth_token_text(
+                &credential
             );
     }
 

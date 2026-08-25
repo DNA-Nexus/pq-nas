@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, FrozenSet, List, Mapping, Optional
 
 from pqnas_secure_files import (
@@ -24,6 +26,7 @@ MANAGED_CLUSTER_ENV_KEYS: FrozenSet[str] = frozenset({
     "PQNAS_SERVER_ROLE",
     "PQNAS_NODE_ID",
     "PQNAS_DIRECTOR_URL",
+    "PQNAS_DIRECTOR_TLS_SPKI_SHA256_PIN",
     "PQNAS_CLUSTER_CREDENTIAL_FILE",
     "PQNAS_NODE_ENROLLMENT_ID",
     "PQNAS_NODE_ENROLLMENT_GENERATION",
@@ -37,6 +40,41 @@ _NODE_ID_RE = re.compile(
 _ENROLLMENT_ID_RE = re.compile(
     r"[A-Za-z0-9_-]{1,128}\Z"
 )
+_TLS_SPKI_SHA256_PIN_RE = re.compile(
+    r"sha256/[A-Za-z0-9+/]{43}=\Z"
+)
+
+_TLS_SPKI_SHA256_PREFIX = "sha256/"
+_TLS_SPKI_SHA256_DIGEST_BYTES = 32
+
+
+def is_canonical_tls_spki_sha256_pin(raw: object) -> bool:
+    if (
+        not isinstance(raw, str)
+        or not _TLS_SPKI_SHA256_PIN_RE.fullmatch(raw)
+    ):
+        return False
+
+    payload = raw[len(_TLS_SPKI_SHA256_PREFIX):]
+
+    try:
+        digest = base64.b64decode(
+            payload,
+            validate=True,
+        )
+    except (binascii.Error, ValueError):
+        return False
+
+    if len(digest) != _TLS_SPKI_SHA256_DIGEST_BYTES:
+        return False
+
+    canonical_payload = base64.b64encode(
+        digest
+    ).decode("ascii")
+
+    # Security: exact round-trip equality rejects alternative base64 spellings
+    # of the same trust identity instead of silently canonicalizing them.
+    return canonical_payload == payload
 
 
 class ClusterConfigError(ValueError):
@@ -48,6 +86,7 @@ class ClusterInstallConfig:
     role: str = "standalone"
     node_id: str = ""
     director_url: str = ""
+    director_tls_spki_sha256_pin: str = ""
     cluster_credential_file: str = ""
     enrollment_id: str = ""
     enrollment_generation: int = 0
@@ -151,6 +190,8 @@ def normalize_absolute_file_path(
 
 def validate_cluster_config(
     config: ClusterInstallConfig,
+    *,
+    allow_legacy_missing_director_tls_pin: bool = False,
 ) -> ClusterInstallConfig:
     if not isinstance(config, ClusterInstallConfig):
         raise ClusterConfigError(
@@ -170,6 +211,7 @@ def validate_cluster_config(
     node_values = (
         config.node_id,
         config.director_url,
+        config.director_tls_spki_sha256_pin,
         config.cluster_credential_file,
         config.enrollment_id,
         config.node_api_base_url,
@@ -244,6 +286,24 @@ def validate_cluster_config(
     director_url = normalize_cluster_https_base_url(
         config.director_url
     )
+
+    director_tls_spki_sha256_pin = (
+        config.director_tls_spki_sha256_pin
+    )
+
+    if not director_tls_spki_sha256_pin:
+        if not allow_legacy_missing_director_tls_pin:
+            raise ClusterConfigError(
+                "storage node requires Director TLS SPKI SHA-256 pin"
+            )
+    elif not is_canonical_tls_spki_sha256_pin(
+        director_tls_spki_sha256_pin
+    ):
+        # Security: do not trim or otherwise normalize trust anchors silently.
+        raise ClusterConfigError(
+            "invalid Director TLS SPKI SHA-256 pin"
+        )
+
     node_api_base_url = normalize_cluster_https_base_url(
         config.node_api_base_url
     )
@@ -265,6 +325,9 @@ def validate_cluster_config(
         role="node",
         node_id=config.node_id,
         director_url=director_url,
+        director_tls_spki_sha256_pin=(
+            director_tls_spki_sha256_pin
+        ),
         cluster_credential_file=credential_file,
         enrollment_id=config.enrollment_id,
         enrollment_generation=(
@@ -272,6 +335,28 @@ def validate_cluster_config(
         ),
         node_api_base_url=node_api_base_url,
         bootstrap_token_file=bootstrap_token_file,
+    )
+
+
+def is_legacy_director_tls_pin_upgrade(
+    original: ClusterInstallConfig,
+    selected: ClusterInstallConfig,
+) -> bool:
+    # True only when an old node config gains its first Director trust pin.
+    if (
+        original.role != "node"
+        or selected.role != "node"
+        or original.director_tls_spki_sha256_pin
+        or not selected.director_tls_spki_sha256_pin
+    ):
+        return False
+
+    return (
+        replace(
+            selected,
+            director_tls_spki_sha256_pin="",
+        )
+        == original
     )
 
 
@@ -313,6 +398,10 @@ def cluster_config_from_mapping(
                 "PQNAS_DIRECTOR_URL",
                 "",
             ),
+            director_tls_spki_sha256_pin=values.get(
+                "PQNAS_DIRECTOR_TLS_SPKI_SHA256_PIN",
+                "",
+            ),
             cluster_credential_file=values.get(
                 "PQNAS_CLUSTER_CREDENTIAL_FILE",
                 "",
@@ -330,7 +419,11 @@ def cluster_config_from_mapping(
                 "PQNAS_NODE_BOOTSTRAP_TOKEN_FILE",
                 "",
             ),
-        )
+        ),
+        allow_legacy_missing_director_tls_pin=(
+            "PQNAS_DIRECTOR_TLS_SPKI_SHA256_PIN"
+            not in values
+        ),
     )
 
 
@@ -437,6 +530,10 @@ def render_cluster_env_lines(
     lines.extend([
         f"PQNAS_NODE_ID={normalized.node_id}",
         f"PQNAS_DIRECTOR_URL={normalized.director_url}",
+        (
+            "PQNAS_DIRECTOR_TLS_SPKI_SHA256_PIN="
+            f"{normalized.director_tls_spki_sha256_pin}"
+        ),
         (
             "PQNAS_CLUSTER_CREDENTIAL_FILE="
             f"{normalized.cluster_credential_file}"

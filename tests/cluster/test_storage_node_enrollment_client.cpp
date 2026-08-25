@@ -41,6 +41,10 @@ constexpr char kTestTlsPin[] =
     "sha256/"
     "lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=";
 
+constexpr char kTestDirectorTlsPin[] =
+    "sha256/"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
 void expect(
     bool condition,
     const std::string& message
@@ -98,6 +102,9 @@ make_intent(
 
     intent.director_url =
         "https://director.internal";
+
+    intent.director_tls_spki_sha256_pin =
+        kTestDirectorTlsPin;
 
     intent.api_base_url =
         "https://storage-" +
@@ -286,7 +293,13 @@ int main() {
                 expect(
                     request.tls_spki_sha256_pin ==
                         kTestTlsPin,
-                    "fresh request carries canonical TLS SPKI pin"
+                    "fresh request carries canonical node TLS SPKI pin"
+                );
+
+                expect(
+                    request.director_tls_spki_sha256_pin ==
+                        kTestDirectorTlsPin,
+                    "fresh request carries durable Director TLS identity"
                 );
 
                 observed_credential =

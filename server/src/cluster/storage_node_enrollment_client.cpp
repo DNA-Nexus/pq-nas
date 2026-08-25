@@ -378,6 +378,22 @@ StorageNodeEnrollmentClient::enroll(
         );
     }
 
+    std::string normalized_director_tls_pin;
+
+    if (!normalize_node_tls_spki_sha256_pin(
+            intent.director_tls_spki_sha256_pin,
+            &normalized_director_tls_pin,
+            nullptr) ||
+        normalized_director_tls_pin !=
+            intent.director_tls_spki_sha256_pin) {
+        // Security: Director identity is fixed before any credential state
+        // can be generated or recovered for this enrollment transaction.
+        return finish(
+            StorageNodeEnrollmentClientCode::
+                InvalidInput
+        );
+    }
+
     const auto prior =
         config_.store->snapshot();
 
@@ -478,6 +494,10 @@ StorageNodeEnrollmentClient::enroll(
 
             request.director_url =
                 prepared.director_url;
+
+            request.director_tls_spki_sha256_pin =
+                prepared
+                    .director_tls_spki_sha256_pin;
 
             request.authorization_token =
                 authorization_token;
