@@ -8,7 +8,9 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
@@ -383,6 +385,15 @@ int main() {
 
     std::vector<AuditRecord> audits;
 
+    // RT-016: production shares this boundary with physical user deletion and
+    // Node deletion. The network callback below probes it from another thread.
+    const auto rt016_transition_mutex =
+        std::make_shared<std::mutex>();
+
+    bool rt016_probe_first_authorization = true;
+    bool rt016_pending_visible_before_sync = false;
+    bool rt016_boundary_available_during_sync = false;
+
     auto transition_store =
         load_transition_store(
             directory /
@@ -409,6 +420,9 @@ int main() {
     config.transition_store =
         transition_store.get();
 
+    config.transition_mutex =
+        rt016_transition_mutex;
+
     config.audit_emit =
         [&](const std::string& event,
             const std::string& outcome,
@@ -425,6 +439,42 @@ int main() {
     config.sync_projection =
         [&](const pqnas::cluster::
                 StorageUserProjection& projection) {
+            if (rt016_probe_first_authorization) {
+                rt016_probe_first_authorization = false;
+
+                const auto pending =
+                    transition_store->get(
+                        projection.fingerprint
+                    );
+
+                rt016_pending_visible_before_sync =
+                    pending.has_value() &&
+                    pending->home_node ==
+                        projection.home_node &&
+                    pending->revision ==
+                        projection.revision;
+
+                bool boundary_acquired = false;
+
+                std::thread boundary_probe(
+                    [&]() {
+                        boundary_acquired =
+                            rt016_transition_mutex->
+                                try_lock();
+
+                        if (boundary_acquired) {
+                            rt016_transition_mutex->
+                                unlock();
+                        }
+                    }
+                );
+
+                boundary_probe.join();
+
+                rt016_boundary_available_during_sync =
+                    boundary_acquired;
+            }
+
             sent.push_back(
                 projection
             );
@@ -470,6 +520,8 @@ int main() {
             result.ok &&
             result.synced_current == 1 &&
             result.no_placement == 1 &&
+            rt016_pending_visible_before_sync &&
+            rt016_boundary_available_during_sync &&
             sent.size() == 1 &&
             sent[0].home_node ==
                 "storage-01" &&
@@ -507,7 +559,7 @@ int main() {
                 "home_node",
                 "storage-01"
             ),
-            "initial reconciliation synchronizes and audits exact current projection"
+            "RT-016 initial reconciliation journals pending before unlocked network I/O"
         );
     }
 

@@ -229,7 +229,8 @@ require(
 
 
 # ---------------------------------------------------------------------------
-# Reconciliation and deletion share the same transition boundary.
+# RT-016: reconciliation and deletion share only the narrow transition
+# boundary. Slow Storage network I/O must not monopolize physical deletion.
 # ---------------------------------------------------------------------------
 
 worker_callback = main.find(
@@ -237,21 +238,32 @@ worker_callback = main.find(
     "\n        .reconcile_once ="
 )
 
-worker_lock = main.find(
-    "transition_lock(",
+worker_end = main.find(
+    "pqnas::cluster::\n"
+    "        StorageUserProjectionReconcileWorker",
     worker_callback,
 )
 
-worker_reconcile = main.find(
-    ".reconcile_once();",
-    worker_lock,
+worker_block = (
+    main[worker_callback:worker_end]
+    if worker_callback >= 0 and
+       worker_end > worker_callback
+    else ""
+)
+
+require(
+    "director_storage_projection_reconciler_config.transition_mutex =" in
+        main and
+    "director_storage_projection_transition_mutex" in main,
+    "production reconciler and delete service must share transition mutex",
 )
 
 require(
     worker_callback >= 0 and
-    worker_lock > worker_callback and
-    worker_reconcile > worker_lock,
-    "production reconciler must hold transition mutex before reconcile_once",
+    worker_end > worker_callback and
+    ".reconcile_once();" in worker_block and
+    "transition_lock(" not in worker_block,
+    "production worker must not hold transition mutex across reconcile_once",
 )
 
 require(

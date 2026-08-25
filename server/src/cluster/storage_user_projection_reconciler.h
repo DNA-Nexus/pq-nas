@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <functional>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -94,6 +96,16 @@ struct StorageUserProjectionReconcilerConfig {
     // may accept authorization before confirmed state can be committed.
     StorageUserProjectionTransitionStore*
         transition_store = nullptr;
+
+    // RT-016: shared with cluster-safe user/Node deletion in production.
+    // The reconciler holds this only while re-reading authoritative Director
+    // state and durably journaling a newly authorized Node. Network I/O must
+    // never run while this mutex is held.
+    //
+    // Reusable single-threaded callers may omit it; production wiring is
+    // structurally guarded to provide the shared boundary.
+    std::shared_ptr<std::mutex>
+        transition_mutex;
 
     StorageUserProjectionReconcileSyncInvoke
         sync_projection;

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <map>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -348,6 +349,99 @@ bool persist_pending_transition(
     ++result->state_conflicts;
     ++result->failed;
     return false;
+}
+
+
+bool projection_equal(
+    const StorageUserProjection& left,
+    const StorageUserProjection& right
+) noexcept {
+    return
+        left.fingerprint == right.fingerprint &&
+        left.enabled == right.enabled &&
+        left.storage_allocated ==
+            right.storage_allocated &&
+        left.quota_bytes == right.quota_bytes &&
+        left.root_rel == right.root_rel &&
+        left.storage_pool_id ==
+            right.storage_pool_id &&
+        left.home_node == right.home_node &&
+        left.revision == right.revision;
+}
+
+
+bool prepare_pending_authorization_transition(
+    const StorageUserProjectionReconcilerConfig& config,
+    const StorageUserProjection& projection,
+    StorageUserProjectionReconcileResult* result
+) {
+    if (!config.users ||
+        !config.transition_store ||
+        !result) {
+        if (result) {
+            ++result->state_conflicts;
+            ++result->failed;
+        }
+
+        return false;
+    }
+
+    std::unique_lock<std::mutex>
+        transition_lock;
+
+    if (config.transition_mutex) {
+        transition_lock =
+            std::unique_lock<std::mutex>(
+                *config.transition_mutex
+            );
+    }
+
+    // RT-016: this is the narrow shared deletion/reconciliation boundary.
+    // Re-read users.json-backed state after acquiring it, then persist RT-009
+    // pending knowledge before releasing it. A physical user/Node deletion
+    // that runs after this point observes pending state and fails closed.
+    const auto authoritative_user =
+        config.users->get(
+            projection.fingerprint
+        );
+
+    if (!authoritative_user.has_value()) {
+        ++result->stale_states;
+        ++result->failed;
+        return false;
+    }
+
+    StorageUserProjection
+        authoritative_projection;
+
+    std::string build_error;
+
+    if (!build_storage_user_projection(
+            *authoritative_user,
+            &authoritative_projection,
+            &build_error)) {
+        build_error.clear();
+
+        ++result->state_conflicts;
+        ++result->failed;
+        return false;
+    }
+
+    if (!projection_equal(
+            authoritative_projection,
+            projection)) {
+        // Director state advanced while this reconciliation pass was working.
+        // Never journal or send the stale authorization target.
+        ++result->stale_states;
+        ++result->failed;
+        return false;
+    }
+
+    return persist_pending_transition(
+        config.transition_store,
+        projection,
+        result
+    );
 }
 
 
@@ -1160,8 +1254,8 @@ StorageUserProjectionReconciler::reconcile_once() const {
         if (!confirmed.has_value()) {
             // RT009: establish durable knowledge of the new target before the
             // Node can receive usable authorization.
-            if (!persist_pending_transition(
-                    config_.transition_store,
+            if (!prepare_pending_authorization_transition(
+                    config_,
                     current,
                     &result)) {
                 continue;
@@ -1324,8 +1418,8 @@ StorageUserProjectionReconciler::reconcile_once() const {
             // RT009: the previous Node has accepted its tombstone. Persist B
             // before B can receive authorization, so B survives a Director
             // crash or confirmed-state persistence failure.
-            if (!persist_pending_transition(
-                    config_.transition_store,
+            if (!prepare_pending_authorization_transition(
+                    config_,
                     current,
                     &result)) {
                 continue;

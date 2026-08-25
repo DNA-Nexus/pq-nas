@@ -103,6 +103,42 @@ require(
 )
 
 require(
+    "director_storage_projection_reconciler_config.transition_mutex =" in main and
+    "director_storage_projection_transition_mutex" in main,
+    "production reconciler must receive shared deletion transition boundary",
+)
+
+worker_callback_start = main.find(
+    "director_storage_projection_reconcile_worker_config"
+    "\n        .reconcile_once ="
+)
+
+worker_callback_end = main.find(
+    "pqnas::cluster::\n"
+    "        StorageUserProjectionReconcileWorker",
+    worker_callback_start,
+)
+
+worker_callback_block = (
+    main[worker_callback_start:worker_callback_end]
+    if worker_callback_start >= 0 and
+       worker_callback_end > worker_callback_start
+    else ""
+)
+
+require(
+    worker_callback_start >= 0 and
+    worker_callback_end > worker_callback_start,
+    "production reconcile worker callback must exist",
+)
+
+require(
+    "transition_lock(" not in worker_callback_block and
+    "std::lock_guard<std::mutex>" not in worker_callback_block,
+    "RT-016 worker must not hold transition mutex across reconcile_once/network I/O",
+)
+
+require(
     "director_storage_projection_sync_client.sync(" in main,
     "reconciler mutation callback must delegate to production sync client",
 )
