@@ -2,6 +2,10 @@
 
 from pathlib import Path
 
+from production_translation_unit import (
+    read_main_translation_unit_text,
+)
+
 source = Path(
     "server/src/cluster/"
     "storage_user_projection_reconciler.cpp"
@@ -11,6 +15,25 @@ main = Path(
     "server/src/main.cpp"
 ).read_text()
 
+# Security: main.cpp includes route/helper .inc files inside the production
+# translation unit. RT-017 absence checks must cover those compiled sources
+# too, not just the top-level main.cpp text.
+production_tu = read_main_translation_unit_text()
+
+cmake = Path(
+    "CMakeLists.txt"
+).read_text()
+
+obsolete_sync_cpp = Path(
+    "server/src/cluster/"
+    "storage_user_projection_sync_service.cpp"
+)
+
+obsolete_sync_h = Path(
+    "server/src/cluster/"
+    "storage_user_projection_sync_service.h"
+)
+
 errors = []
 
 
@@ -18,6 +41,26 @@ def require(condition, message):
     if not condition:
         errors.append(message)
 
+
+# RT-017: the old state-blind immediate-sync service was never
+# production-wired and could bypass durable confirmed-sync-state tracking.
+# Keep it deleted rather than allowing a second authorization write path.
+require(
+    not obsolete_sync_cpp.exists() and
+    not obsolete_sync_h.exists(),
+    "obsolete state-blind projection sync service must stay deleted",
+)
+
+require(
+    "StorageUserProjectionSyncService" not in production_tu,
+    "production translation unit must not reintroduce obsolete projection sync service",
+)
+
+require(
+    "pqnas_storage_user_projection_sync_service" not in cmake and
+    "test_storage_user_projection_sync_service" not in cmake,
+    "obsolete projection sync CMake targets must stay removed",
+)
 
 require(
     "config_.users->snapshot()" in source,
