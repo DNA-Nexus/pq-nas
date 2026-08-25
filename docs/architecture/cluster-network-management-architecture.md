@@ -46,6 +46,7 @@ The cluster plane carries authenticated Director-to-Storage control traffic, inc
 
 - heartbeat/status
 - Storage user projection synchronization
+- Storage projection audit/readback
 - node credential rotation
 - future authenticated internal cluster operations
 
@@ -80,7 +81,7 @@ The authenticated TLS session used for cluster traffic MUST terminate on the des
 
 Each Storage Node owns a unique TLS private key.
 
-RT014 SPKI pinning therefore means:
+Exact per-node SPKI pinning therefore means:
 
 ```text
 expected pin == destination Storage Node TLS public key identity
@@ -320,13 +321,13 @@ Admin    -> direct Storage HTTPS for administration
 Public   -> separate public ingress path
 ```
 
-Do not create a lab-only proxy arrangement that changes which TLS identity RT014 authenticates.
+Do not create a lab-only proxy arrangement that changes which Storage TLS identity the Director authenticates.
 
 ---
 
 # 13. Deployment Validation Checklist
 
-Before enabling RT014 or declaring a new cluster ready, verify at minimum:
+Before declaring a new cluster ready, verify at minimum:
 
 ```text
 [ ] Director resolves each Storage cluster hostname to the intended private node address
@@ -335,7 +336,7 @@ Before enabling RT014 or declaring a new cluster ready, verify at minimum:
 [ ] Storage certificate hostname validation succeeds
 [ ] Storage CA validation succeeds
 [ ] captured SPKI belongs to that Storage Node
-[ ] RT014 trust store contains the expected node SPKI binding
+[ ] Director trust store contains the expected node SPKI binding
 [ ] a wrong SPKI pin is rejected
 [ ] Storage UI is reachable from authorized management network
 [ ] Storage UI is not unintentionally public
@@ -345,19 +346,27 @@ Before enabling RT014 or declaring a new cluster ready, verify at minimum:
 
 ---
 
-# 14. Current Lab Migration
+# 14. Lab Topology Contract
 
-The existing lab topology discovered during RT014 integration testing uses a Director-side TLS termination/proxy for the registered Storage public hostname. That topology does not satisfy this contract for authenticated cluster traffic.
+The lab must preserve the same authenticated cluster trust endpoint required in
+customer deployments.
 
-Before deploying RT014 in the lab:
+Required lab topology:
 
 - provide a direct Storage HTTPS endpoint
-- give Storage its own TLS identity
-- make Director resolve the chosen Storage cluster hostname directly to the Storage private address
+- give each Storage Node its own TLS identity
+- make Director resolve the chosen Storage cluster hostname directly to the
+  intended Storage private address
 - provision the verified Storage SPKI into Director trust state
-- then perform RT014/RT015 integration tests
+- exercise heartbeat, projection mutation, projection audit/readback and other
+  authenticated control-plane operations against that direct endpoint
 
-The public-facing proxy may remain for public/user traffic if desired; it must no longer be the authenticated cluster trust endpoint.
+A public-facing proxy may remain for public/user traffic if desired. It must
+not become the authenticated Director-to-Storage cluster trust endpoint.
+
+If a lab experiment temporarily violates this topology, results from that
+experiment must not be treated as validation of the production cluster trust
+model.
 
 ---
 

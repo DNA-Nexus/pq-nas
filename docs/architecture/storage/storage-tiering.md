@@ -172,13 +172,16 @@ min_age_sec
 max_candidates_per_pass
 ```
 
-Example configuration:
+Current default worker configuration:
 
 ```
-interval: 15 seconds
-min age: 10 seconds
-max migrations per pass: 4
+interval: 60 seconds
+min age: 60 seconds
+max migrations per pass: 8
 ```
+
+These are operational defaults rather than architecture invariants and may be
+changed through supported configuration.
 
 ---
 
@@ -281,23 +284,57 @@ The interface refreshes automatically.
 
 # Configuration
 
-Tiering is controlled by environment variables.
+Persistent administrator settings are the normal source of truth for tiering.
 
-Example configuration:
+The trusted configuration file is:
 
+```text
+/srv/pqnas/config/admin_settings.json
 ```
-PQNAS_TIERING_ENABLE=1
-PQNAS_TIERING_LANDING_POOL=raidtest
+
+Conceptually:
+
+```json
+{
+  "tiering": {
+    "enabled": true,
+    "landing_pool_id": "raidtest",
+    "worker_interval_sec": 60,
+    "min_age_sec": 60,
+    "max_candidates_per_pass": 8
+  }
+}
+```
+
+`PQNAS_TIERING_*` environment variables are compatibility/bootstrap fallbacks
+when persistent administrator settings cannot be loaded. They are not the
+normal higher-priority configuration source.
+
+Relevant fallback variables include:
+
+```text
+PQNAS_TIERING_ENABLE
+PQNAS_TIERING_LANDING_POOL
+PQNAS_TIERING_WORKER_INTERVAL_SEC
+PQNAS_TIERING_MIN_AGE_SEC
+PQNAS_TIERING_MAX_CANDIDATES
 ```
 
 Behavior:
 
-| Setting  | Effect                          |
-| -------- | ------------------------------- |
+| Effective setting | Effect |
+| --- | --- |
 | disabled | uploads go directly to capacity |
-| enabled  | uploads land in landing tier    |
+| enabled with valid landing pool | uploads land in the configured landing tier |
 
-If the landing pool is invalid, PQ-NAS **fails closed** and refuses uploads.
+An invalid or empty configured landing pool must never cause silent fallback
+to some other landing pool. Current configuration loading disables effective
+tiering when its configured landing pool is invalid, so uploads use the normal
+capacity path.
+
+If tiering remains enabled but the selected landing path cannot be resolved
+safely for an individual request, that upload fails rather than being written
+to an unintended landing location.
 
 ---
 
