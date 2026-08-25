@@ -280,7 +280,10 @@ NOTE:
 */
 bool UsersRegistry::load(const std::string& path) {
   std::lock_guard<std::mutex> lk(mu_);
-  by_fp_.clear();
+
+  // Security: parse a replacement snapshot off to the side. A failed reload
+  // must not erase the authoritative in-memory registry.
+  std::unordered_map<std::string, UserRec> parsed;
 
   std::ifstream f(path);
   if (!f.good()) return false;
@@ -418,11 +421,14 @@ bool UsersRegistry::load(const std::string& path) {
       u.placement_policy_id = "";
     }
 
-    by_fp_[u.fingerprint] = u;
+    parsed[u.fingerprint] = u;
   }
 
+  by_fp_.swap(parsed);
   durability_path_ = path;
-  durability_uncertain_ = false;
+
+  // Security: reading users.json does not prove a previously visible rename
+  // crash-durable. Only the persistence path may clear that uncertainty.
 
   return true;
 }

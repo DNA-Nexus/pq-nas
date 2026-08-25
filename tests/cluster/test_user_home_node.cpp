@@ -2,13 +2,47 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cerrno>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
+
+#if defined(__linux__)
+
+// Test-only durability fault injection.
+//
+// Security: production code gets no runtime fault hook; the linker wrapper
+// fails only the next parent-directory fsync in this regression executable.
+bool g_fail_next_directory_fsync = false;
+int g_injected_directory_fsync_failures = 0;
+
+extern "C" int __real_fsync(int descriptor);
+
+extern "C" int __wrap_fsync(int descriptor) {
+    struct stat stats {};
+
+    if (g_fail_next_directory_fsync &&
+        ::fstat(
+            descriptor,
+            &stats
+        ) == 0 &&
+        S_ISDIR(stats.st_mode)) {
+        g_fail_next_directory_fsync = false;
+        ++g_injected_directory_fsync_failures;
+
+        errno = EIO;
+        return -1;
+    }
+
+    return __real_fsync(descriptor);
+}
+
+#endif
 
 namespace {
 
@@ -1097,6 +1131,241 @@ int main() {
             durable->placement_policy_id ==
                 "business-backup",
             "RT-005 durable reload must retain new placement and profile"
+        );
+    }
+
+
+#if defined(__linux__)
+
+    {
+        const fs::path durability_path =
+            directory /
+            "new001_durability_users.json";
+
+        const json durability_fixture{
+            {
+                "users",
+                json::array({
+                    json{
+                        {
+                            "fingerprint",
+                            "new001-durability-user"
+                        },
+                        {
+                            "status",
+                            "disabled"
+                        },
+                        {
+                            "home_node",
+                            "node-01"
+                        },
+                        {
+                            "storage_projection_revision",
+                            1
+                        }
+                    }
+                })
+            }
+        };
+
+        expect(
+            write_json(
+                durability_path,
+                durability_fixture
+            ),
+            "NEW-001 durability fixture should be written"
+        );
+
+        pqnas::UsersRegistry durability_registry;
+
+        expect(
+            durability_registry.load(
+                durability_path.string()
+            ),
+            "NEW-001 durability fixture should load"
+        );
+
+        bool status_changed = false;
+        std::string durability_error;
+
+        const int mutation_failures_before =
+            g_injected_directory_fsync_failures;
+
+        g_fail_next_directory_fsync = true;
+
+        const bool mutation_durable =
+            durability_registry.set_status_persisted(
+                "new001-durability-user",
+                "enabled",
+                durability_path.string(),
+                &status_changed,
+                &durability_error
+            );
+
+        expect(
+            !mutation_durable,
+            "NEW-001 injected parent fsync failure must leave commit uncertain"
+        );
+
+        expect(
+            !g_fail_next_directory_fsync &&
+            g_injected_directory_fsync_failures ==
+                mutation_failures_before + 1,
+            "NEW-001 mutation must hit exactly one injected directory fsync failure"
+        );
+
+        // Security: re-reading the visible file must not certify the rename as
+        // durable. ensure_durable() must still perform a real durability write.
+        expect(
+            durability_registry.load(
+                durability_path.string()
+            ),
+            "NEW-001 successful reload after uncertain commit should succeed"
+        );
+
+        const auto reloaded_user =
+            durability_registry.get(
+                "new001-durability-user"
+            );
+
+        expect(
+            reloaded_user.has_value() &&
+            reloaded_user->status == "enabled",
+            "NEW-001 reload should retain the rename-visible committed snapshot"
+        );
+
+        const int healing_failures_before =
+            g_injected_directory_fsync_failures;
+
+        g_fail_next_directory_fsync = true;
+        durability_error.clear();
+
+        expect(
+            !durability_registry.ensure_durable(
+                &durability_error
+            ),
+            "NEW-001 load must preserve durability uncertainty for healing"
+        );
+
+        expect(
+            !g_fail_next_directory_fsync &&
+            g_injected_directory_fsync_failures ==
+                healing_failures_before + 1,
+            "NEW-001 ensure_durable must perform a real directory fsync after load"
+        );
+
+        g_fail_next_directory_fsync = false;
+        durability_error.clear();
+
+        expect(
+            durability_registry.ensure_durable(
+                &durability_error
+            ),
+            "NEW-001 durability retry should heal the visible snapshot"
+        );
+    }
+
+#endif
+
+    {
+        const fs::path atomic_load_path =
+            directory /
+            "new001_atomic_load_users.json";
+
+        const json original_snapshot{
+            {
+                "users",
+                json::array({
+                    json{
+                        {
+                            "fingerprint",
+                            "new001-preserved-user"
+                        },
+                        {
+                            "name",
+                            "Preserved"
+                        },
+                        {
+                            "home_node",
+                            "node-01"
+                        },
+                        {
+                            "storage_projection_revision",
+                            7
+                        }
+                    }
+                })
+            }
+        };
+
+        expect(
+            write_json(
+                atomic_load_path,
+                original_snapshot
+            ),
+            "NEW-001 original atomic-load fixture should be written"
+        );
+
+        pqnas::UsersRegistry atomic_load_registry;
+
+        expect(
+            atomic_load_registry.load(
+                atomic_load_path.string()
+            ),
+            "NEW-001 original atomic-load fixture should load"
+        );
+
+        const json invalid_replacement{
+            {
+                "users",
+                json::array({
+                    json{
+                        {
+                            "fingerprint",
+                            "new001-invalid-user"
+                        },
+                        {
+                            "home_node",
+                            123
+                        }
+                    }
+                })
+            }
+        };
+
+        expect(
+            write_json(
+                atomic_load_path,
+                invalid_replacement
+            ),
+            "NEW-001 invalid replacement fixture should be written"
+        );
+
+        expect(
+            !atomic_load_registry.load(
+                atomic_load_path.string()
+            ),
+            "NEW-001 invalid replacement must fail loading"
+        );
+
+        const auto preserved =
+            atomic_load_registry.get(
+                "new001-preserved-user"
+            );
+
+        expect(
+            preserved.has_value() &&
+            preserved->name == "Preserved" &&
+            preserved->home_node == "node-01" &&
+            preserved->storage_projection_revision == 7,
+            "NEW-001 failed load must preserve the previous authoritative snapshot"
+        );
+
+        expect(
+            !atomic_load_registry.get(
+                "new001-invalid-user"
+            ).has_value(),
+            "NEW-001 failed load must not partially publish replacement state"
         );
     }
 
