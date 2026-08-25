@@ -2,6 +2,7 @@
 
 #include "httplib.h"
 #include "archive_zip_manifest.h"
+#include "bounded_file_content_provider.h"
 #include "file_versions_read.h"
 #include "storage_resolver.h"
 #include "storage_path_validation.h"
@@ -12,7 +13,7 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
-#include <iterator>
+#include <memory>
 #include <string>
 #include <system_error>
 
@@ -398,29 +399,61 @@ void register_file_version_archive_blob_routes(
                 return;
             }
 
-            std::ifstream in(rr.blob_abs_path, std::ios::binary);
-            if (!in.good()) {
+            auto input =
+                std::make_shared<std::ifstream>(
+                    rr.blob_abs_path,
+                    std::ios::binary
+                );
+
+            if (!input->good()) {
                 res.status = 404;
                 res.set_content(R"({"ok":false,"error":"not_found","message":"version blob not found"})", "application/json");
                 return;
             }
 
-            std::string body(
-                (std::istreambuf_iterator<char>(in)),
-                std::istreambuf_iterator<char>()
+            const std::string mime =
+                mime_for_rel_path(rel_norm);
+
+            res.set_header(
+                "X-Content-Type-Options",
+                "nosniff"
             );
-
-            const std::string mime = mime_for_rel_path(rel_norm);
-
-            res.set_header("X-Content-Type-Options", "nosniff");
-            res.set_header("Cache-Control", "no-store");
+            res.set_header(
+                "Cache-Control",
+                "no-store"
+            );
+            res.set_header(
+                "Accept-Ranges",
+                "bytes"
+            );
             res.set_header(
                 "Content-Disposition",
-                std::string(inline_view ? "inline" : "attachment") +
-                "; filename=\"version-" + version_id + "\""
+                std::string(
+                    inline_view
+                        ? "inline"
+                        : "attachment"
+                ) +
+                "; filename=\"version-" +
+                version_id +
+                "\""
             );
 
-            res.set_content(std::move(body), mime.c_str());
+            // Security: the version blob can be multi-gigabyte. Install a
+            // bounded provider instead of materializing the complete file in
+            // one response std::string.
+            if (!pqnas::install_bounded_file_content_provider(
+                    res,
+                    input,
+                    rr.bytes,
+                    mime
+                )) {
+                res.status = 413;
+                res.set_content(
+                    R"({"ok":false,"error":"version_blob_too_large","message":"version blob cannot be represented by this server build"})",
+                    "application/json"
+                );
+                return;
+            }
         }
     );
 }

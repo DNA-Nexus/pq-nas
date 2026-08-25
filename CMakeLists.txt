@@ -1174,6 +1174,36 @@ add_custom_target(run_test_admin_cookie
 )
 
 # -----------------------------------------------------------------------------
+# RT-012: bounded streaming provider for multi-gigabyte version blobs
+# -----------------------------------------------------------------------------
+add_executable(test_bounded_file_content_provider
+        tests/files/test_bounded_file_content_provider.cpp
+)
+
+target_include_directories(test_bounded_file_content_provider PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_bounded_file_content_provider
+        PRIVATE
+        -Werror
+    )
+endif()
+
+set_target_properties(test_bounded_file_content_provider PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_bounded_file_content_provider
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_bounded_file_content_provider"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_bounded_file_content_provider
+)
+
+# -----------------------------------------------------------------------------
 # RT-018: workspace/user session cookie cryptographic domain separation
 # -----------------------------------------------------------------------------
 add_executable(test_session_cookie_domains
