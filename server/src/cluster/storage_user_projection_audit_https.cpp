@@ -6,6 +6,7 @@
 #include "cluster/node_tls_identity.h"
 
 #include "storage_metadata_validation.h"
+#include "storage_projection_revision_policy.h"
 
 #include "httplib.h"
 
@@ -509,7 +510,10 @@ bool valid_mismatch_semantics(
             return
                 !expected &&
                 mismatch.expected_revision == 0 &&
-                mismatch.actual_revision != 0;
+                pqnas::
+                    storage_projection_node_revision_repairable(
+                        mismatch.actual_revision
+                    );
     }
 
     return false;

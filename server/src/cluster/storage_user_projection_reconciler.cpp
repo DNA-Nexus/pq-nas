@@ -6,6 +6,7 @@
 #include "cluster/storage_user_projection_sync_state_store.h"
 #include "cluster/storage_user_projection_transition_store.h"
 #include "storage_metadata_validation.h"
+#include "storage_projection_revision_policy.h"
 #include "users_registry.h"
 
 #include <algorithm>
@@ -199,7 +200,10 @@ bool audit_result_consistent(
                     UnexpectedAuthorization:
                 if (expected ||
                     mismatch.expected_revision != 0 ||
-                    mismatch.actual_revision == 0) {
+                    !pqnas::
+                        storage_projection_node_revision_repairable(
+                            mismatch.actual_revision
+                        )) {
                     return false;
                 }
 
@@ -1947,31 +1951,24 @@ StorageUserProjectionReconciler::reconcile_once() const {
                                 break;
                             }
 
-                            const std::uint64_t
-                                director_revision =
-                                    director_user ==
-                                            users.end()
-                                        ? 0
-                                        : director_user->
-                                            second.
-                                            storage_projection_revision;
-
-                            const std::uint64_t
-                                revision_floor =
-                                    std::max(
-                                        mismatch.actual_revision,
-                                        director_revision
-                                    );
-
-                            if (revision_floor ==
-                                std::numeric_limits<
-                                    std::uint64_t
-                                >::max()) {
+                            // FINAL-001: validate only the absolute
+                            // revision-space invariant against the audit
+                            // snapshot. The relative automatic-recovery bound
+                            // is checked later against CURRENT authoritative
+                            // Director state immediately before persistence.
+                            if (!pqnas::
+                                    storage_projection_node_revision_repairable(
+                                        mismatch.actual_revision
+                                    )) {
                                 ++result.state_conflicts;
                                 ++result.failed;
                                 audit_failed = true;
                                 break;
                             }
+
+                            const std::uint64_t
+                                repair_revision =
+                                    mismatch.actual_revision + 1;
 
                             StorageUserProjection
                                 tombstone;
@@ -1988,11 +1985,12 @@ StorageUserProjectionReconciler::reconcile_once() const {
                             tombstone.home_node =
                                 observation.request.node_id;
 
-                            // Security: restored live authorization may carry
-                            // revision knowledge newer than Director. Revoke
-                            // strictly above BOTH observed revision floors.
+                            // Security: the selected repair revision is
+                            // strictly above the observed Node revision.
+                            // Existing Director users additionally pass the
+                            // bounded authoritative revalidation below.
                             tombstone.revision =
-                                revision_floor + 1;
+                                repair_revision;
 
                             orphan_repairs.push_back(
                                 OrphanAuthorizationRepair{
@@ -2084,13 +2082,24 @@ StorageUserProjectionReconciler::reconcile_once() const {
                         break;
                     }
 
-                    const std::uint64_t
-                        target_revision =
-                            std::max(
-                                repair.node_revision + 1,
+                    std::uint64_t
+                        target_revision = 0;
+
+                    // Recompute against CURRENT Director state. A remote
+                    // observation can never move the authoritative revision
+                    // outside the bounded automatic-recovery window.
+                    if (!pqnas::
+                            storage_projection_automatic_repair_target(
                                 current_user->
-                                    storage_projection_revision
-                            );
+                                    storage_projection_revision,
+                                repair.node_revision,
+                                &target_revision
+                            )) {
+                        ++result.state_conflicts;
+                        ++result.failed;
+                        audit_failed = true;
+                        break;
+                    }
 
                     bool floor_changed = false;
                     bool expectation_matched = false;
@@ -2127,8 +2136,18 @@ StorageUserProjectionReconciler::reconcile_once() const {
                         target_revision;
                 } else {
                     // Deleted users have no Director UserRec revision to
-                    // ratchet. The disabling write still has to dominate the
+                    // poison. The disabling write only needs to dominate the
                     // live revision observed by the authenticated range audit.
+                    if (!pqnas::
+                            storage_projection_node_revision_repairable(
+                                repair.node_revision
+                            )) {
+                        ++result.state_conflicts;
+                        ++result.failed;
+                        audit_failed = true;
+                        break;
+                    }
+
                     tombstone.revision =
                         repair.node_revision + 1;
                 }
