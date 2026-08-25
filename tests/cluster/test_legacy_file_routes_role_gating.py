@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 from pathlib import Path
 
+from production_translation_unit import (
+    read_main_translation_unit_text,
+)
+
 ROOT = Path(__file__).resolve().parents[2]
 
 main = (ROOT / "server/src/main.cpp").read_text()
+production_tu = read_main_translation_unit_text(ROOT)
 authz = (ROOT / "server/src/authz.cc").read_text()
 strict_cookie = (ROOT / "server/include/strict_session_cookie.h").read_text()
 put = (ROOT / "server/src/routes/routes_files_put.inc").read_text()
@@ -28,8 +33,10 @@ require(
     '#include "strict_session_cookie.h"' in authz,
     "legacy session auth must include the shared strict cookie parser",
 )
+# Security: main.cpp compiles local .inc implementation blocks, so negative
+# wiring assertions must cover the expanded production translation unit.
 require(
-    "extract_named_cookie_value" not in main and
+    "extract_named_cookie_value" not in production_tu and
     "extract_cookie_value" not in authz,
     "legacy first-match cookie parsers must not survive RT-013",
 )
