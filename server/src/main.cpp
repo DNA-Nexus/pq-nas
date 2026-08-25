@@ -123,6 +123,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "pqnas_util.h"
 #include "authz.h"
 #include "session_cookie.h"
+#include "strict_session_cookie.h"
 #include "runtime_paths.h"
 #include "durable_file.h"
 #include "opaque_credentials.h"
@@ -3131,48 +3132,6 @@ static void set_rate_limited_json(httplib::Response& res, const std::string& err
         {"error", error}
     }.dump(), "application/json; charset=utf-8");
 }
-static std::string extract_named_cookie_value(const std::string& cookie_header,
-                                              const std::string& name) {
-    if (cookie_header.empty() || name.empty()) return {};
-
-    std::size_t pos = 0;
-
-    while (pos < cookie_header.size()) {
-        while (pos < cookie_header.size() &&
-               (cookie_header[pos] == ' ' ||
-                cookie_header[pos] == '\t' ||
-                cookie_header[pos] == ';')) {
-                ++pos;
-                }
-
-        const std::size_t eq = cookie_header.find('=', pos);
-        if (eq == std::string::npos) break;
-
-        std::size_t key_end = eq;
-        while (key_end > pos &&
-               (cookie_header[key_end - 1] == ' ' ||
-                cookie_header[key_end - 1] == '\t')) {
-                --key_end;
-                }
-
-        const std::string key = cookie_header.substr(pos, key_end - pos);
-
-        const std::size_t value_start = eq + 1;
-        const std::size_t semi = cookie_header.find(';', value_start);
-
-        const std::string value =
-            (semi == std::string::npos)
-                ? cookie_header.substr(value_start)
-                : cookie_header.substr(value_start, semi - value_start);
-
-        if (key == name) return value;
-
-        if (semi == std::string::npos) break;
-        pos = semi + 1;
-    }
-
-    return {};
-}
 // ----- Cookie gate: user OR admin (UsersRegistry policy) ---------------------
 // Mirrors /api/v4/me logic, but reusable for page + API gating.
 // Returns actor_fp_hex + role ("admin"|"user") on success.
@@ -3202,16 +3161,24 @@ static bool require_user_cookie_users_actor(
         return false;
     }
 
-    auto it = req.headers.find("Cookie");
-    if (it == req.headers.end()) {
-        reply_json(res, 401, json({{"ok",false},{"error","unauthorized"},{"message","missing cookie"}}).dump());
-        return false;
-    }
+    std::string cookieVal;
 
-    const std::string& hdr = it->second;
-    const std::string cookieVal = extract_named_cookie_value(hdr, "pqnas_session");
-    if (cookieVal.empty()) {
-        reply_json(res, 401, json({{"ok",false},{"error","unauthorized"},{"message","missing pqnas_session"}}).dump());
+    const auto cookie_result =
+        pqnas::extract_strict_pqnas_session_cookie(
+            req,
+            &cookieVal
+        );
+
+    if (cookie_result !=
+        pqnas::StrictSessionCookieResult::Ok) {
+        const char* message =
+            cookie_result == pqnas::StrictSessionCookieResult::MissingCookieHeader
+                ? "missing cookie"
+                : cookie_result == pqnas::StrictSessionCookieResult::MissingSessionCookie
+                      ? "missing pqnas_session"
+                      : "invalid cookie";
+
+        reply_json(res, 401, json({{"ok",false},{"error","unauthorized"},{"message",message}}).dump());
         return false;
     }
 
@@ -3268,31 +3235,30 @@ static bool require_cleanup_session_cookie_identity(
     if (out_fp_hex) out_fp_hex->clear();
     if (out_role) out_role->clear();
 
-    auto it = req.headers.find("Cookie");
-    if (it == req.headers.end()) {
-        reply_json(
-            res,
-            401,
-            json({
-                {"ok", false},
-                {"error", "unauthorized"},
-                {"message", "missing cookie"}
-            }).dump()
+    std::string cookie_val;
+
+    const auto cookie_result =
+        pqnas::extract_strict_pqnas_session_cookie(
+            req,
+            &cookie_val
         );
-        return false;
-    }
 
-    const std::string cookie_val =
-        extract_named_cookie_value(it->second, "pqnas_session");
+    if (cookie_result !=
+        pqnas::StrictSessionCookieResult::Ok) {
+        const char* message =
+            cookie_result == pqnas::StrictSessionCookieResult::MissingCookieHeader
+                ? "missing cookie"
+                : cookie_result == pqnas::StrictSessionCookieResult::MissingSessionCookie
+                      ? "missing pqnas_session"
+                      : "invalid cookie";
 
-    if (cookie_val.empty()) {
         reply_json(
             res,
             401,
             json({
                 {"ok", false},
                 {"error", "unauthorized"},
-                {"message", "missing pqnas_session"}
+                {"message", message}
             }).dump()
         );
         return false;
@@ -13842,18 +13808,37 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
     	    audit_append(ev);
 	    };
 
-    	auto it = req.headers.find("Cookie");
-    	if (it == req.headers.end()) {
-	        audit_fail("missing_cookie_header");
-        	reply_json(res, 401, json({{"ok",false},{"error","unauthorized"},{"message","missing cookie"}}).dump());
-    	    return;
-	    }
+        std::string cookieVal;
 
-	    const std::string& hdr = it->second;
-        const std::string cookieVal = extract_named_cookie_value(hdr, "pqnas_session");
-        if (cookieVal.empty()) {
-            audit_fail("missing_pqnas_session");
-            reply_json(res, 401, json({{"ok",false},{"error","unauthorized"},{"message","missing pqnas_session"}}).dump());
+        const auto cookie_result =
+            pqnas::extract_strict_pqnas_session_cookie(
+                req,
+                &cookieVal
+            );
+
+        if (cookie_result != pqnas::StrictSessionCookieResult::Ok) {
+            const bool missing_header =
+                cookie_result == pqnas::StrictSessionCookieResult::MissingCookieHeader;
+            const bool missing_session =
+                cookie_result == pqnas::StrictSessionCookieResult::MissingSessionCookie;
+
+            audit_fail(
+                missing_header
+                    ? "missing_cookie_header"
+                    : missing_session
+                          ? "missing_pqnas_session"
+                          : "invalid_cookie_header"
+            );
+
+            reply_json(
+                res,
+                401,
+                json({
+                    {"ok", false},
+                    {"error", "unauthorized"},
+                    {"message", missing_header ? "missing cookie" : missing_session ? "missing pqnas_session" : "invalid cookie"}
+                }).dump()
+            );
             return;
         }
 
