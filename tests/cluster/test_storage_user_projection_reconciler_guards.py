@@ -173,8 +173,18 @@ require(
 require(
     source.count(
         "projection_still_authoritative_before_send("
-    ) == 4,
-    "NEW-005 helper must guard every snapshot-derived live projection send",
+    ) == 5,
+    "NEW-005 / FINAL-003 helper must guard every snapshot-derived live projection send",
+)
+
+require(
+    source.count(
+        "if (!projection_still_authoritative_before_send(\n"
+        "                        config_,\n"
+        "                        recovered,\n"
+        "                        &result))"
+    ) == 1,
+    "FINAL-003 pending recovery must revalidate Director authority before send",
 )
 
 require(
