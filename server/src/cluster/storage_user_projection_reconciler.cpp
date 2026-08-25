@@ -370,6 +370,64 @@ bool projection_equal(
 }
 
 
+bool projection_still_authoritative_before_send(
+    const StorageUserProjectionReconcilerConfig& config,
+    const StorageUserProjection& projection,
+    StorageUserProjectionReconcileResult* result
+) {
+    if (!config.users || !result) {
+        if (result) {
+            ++result->state_conflicts;
+            ++result->failed;
+        }
+
+        return false;
+    }
+
+    // Security: the reconciliation pass iterates a long-lived snapshot.
+    // Re-read this exact user immediately before network I/O so a completed
+    // disable/unplacement/storage mutation cannot be refreshed from stale
+    // snapshot state during the remainder of the pass.
+    const auto authoritative_user =
+        config.users->get(
+            projection.fingerprint
+        );
+
+    if (!authoritative_user.has_value() ||
+        authoritative_user->home_node.empty()) {
+        ++result->stale_states;
+        ++result->failed;
+        return false;
+    }
+
+    StorageUserProjection
+        authoritative_projection;
+
+    std::string build_error;
+
+    if (!build_storage_user_projection(
+            *authoritative_user,
+            &authoritative_projection,
+            &build_error)) {
+        build_error.clear();
+
+        ++result->state_conflicts;
+        ++result->failed;
+        return false;
+    }
+
+    if (!projection_equal(
+            authoritative_projection,
+            projection)) {
+        ++result->stale_states;
+        ++result->failed;
+        return false;
+    }
+
+    return true;
+}
+
+
 bool prepare_pending_authorization_transition(
     const StorageUserProjectionReconcilerConfig& config,
     const StorageUserProjection& projection,
@@ -1357,6 +1415,13 @@ StorageUserProjectionReconciler::reconcile_once() const {
             // so verify the exact current authorization with an idempotent
             // authenticated POST. Applied or Unchanged is current Storage
             // evidence; local confirmed state alone is never sufficient.
+            if (!projection_still_authoritative_before_send(
+                    config_,
+                    current,
+                    &result)) {
+                continue;
+            }
+
             StorageUserProjectionSyncResult verification_result;
 
             try {
@@ -1477,6 +1542,13 @@ StorageUserProjectionReconciler::reconcile_once() const {
             );
 
             ++result.moved;
+            continue;
+        }
+
+        if (!projection_still_authoritative_before_send(
+                config_,
+                current,
+                &result)) {
             continue;
         }
 
@@ -1779,6 +1851,14 @@ StorageUserProjectionReconciler::reconcile_once() const {
                     deferred_equal.end()) {
                     ++result.state_conflicts;
                     ++result.failed;
+                    audit_failed = true;
+                    break;
+                }
+
+                if (!projection_still_authoritative_before_send(
+                        config_,
+                        deferred->second,
+                        &result)) {
                     audit_failed = true;
                     break;
                 }
