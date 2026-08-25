@@ -3069,6 +3069,312 @@ int main() {
     }
 
 
+    // FINAL-003 regression: pending-recovery projections are built from the
+    // pass-start UsersRegistry snapshot. A Director mutation completed during
+    // an earlier network send must prevent a later stale pending projection
+    // from being re-authorized.
+    //
+    // Both users begin in pending-recovery state. The first network callback
+    // mutates the OTHER user, making the test independent of map iteration
+    // order.
+    {
+        const fs::path final003_users_path =
+            directory /
+            "final003_pending_recovery_users.json";
+
+        const fs::path final003_state_path =
+            directory /
+            "final003_pending_recovery_state.json";
+
+        const fs::path final003_transition_path =
+            directory /
+            "final003_pending_recovery_transition.json";
+
+        pqnas::UsersRegistry
+            final003_users;
+
+        pqnas::cluster::
+            StorageUserProjectionSyncStateStore
+                final003_state_store;
+
+        error.clear();
+
+        expect(
+            final003_state_store.load(
+                final003_state_path.string(),
+                &error
+            ),
+            "FINAL-003 sync-state store loads: " +
+                error
+        );
+
+        auto final003_transition_store =
+            load_transition_store(
+                final003_transition_path,
+                &error
+            );
+
+        expect(
+            final003_transition_store != nullptr,
+            "FINAL-003 transition journal loads: " +
+                error
+        );
+
+        const auto final003_user_a =
+            make_user(
+                'e',
+                "storage-01"
+            );
+
+        const auto final003_user_b =
+            make_user(
+                'f',
+                "storage-01"
+            );
+
+        bool final003_changed = false;
+
+        error.clear();
+
+        expect(
+            final003_users.upsert_persisted(
+                final003_user_a,
+                final003_users_path.string(),
+                &final003_changed,
+                &error
+            ) &&
+            final003_changed,
+            "FINAL-003 user A persists"
+        );
+
+        final003_changed = false;
+        error.clear();
+
+        expect(
+            final003_users.upsert_persisted(
+                final003_user_b,
+                final003_users_path.string(),
+                &final003_changed,
+                &error
+            ) &&
+            final003_changed,
+            "FINAL-003 user B persists"
+        );
+
+        const auto final003_persisted_a =
+            final003_users.get(
+                final003_user_a.fingerprint
+            );
+
+        const auto final003_persisted_b =
+            final003_users.get(
+                final003_user_b.fingerprint
+            );
+
+        expect(
+            final003_persisted_a.has_value() &&
+            final003_persisted_b.has_value(),
+            "FINAL-003 persisted users reload"
+        );
+
+        pqnas::cluster::
+            StorageUserProjectionTransitionRecord
+                final003_pending_a;
+
+        pqnas::cluster::
+            StorageUserProjectionTransitionRecord
+                final003_pending_b;
+
+        if (final003_persisted_a.has_value()) {
+            final003_pending_a.fingerprint =
+                final003_persisted_a->fingerprint;
+
+            final003_pending_a.home_node =
+                final003_persisted_a->home_node;
+
+            final003_pending_a.revision =
+                final003_persisted_a->
+                    storage_projection_revision;
+        }
+
+        if (final003_persisted_b.has_value()) {
+            final003_pending_b.fingerprint =
+                final003_persisted_b->fingerprint;
+
+            final003_pending_b.home_node =
+                final003_persisted_b->home_node;
+
+            final003_pending_b.revision =
+                final003_persisted_b->
+                    storage_projection_revision;
+        }
+
+        error.clear();
+
+        expect(
+            final003_transition_store->
+                mark_pending(
+                    final003_pending_a,
+                    &error
+                ) ==
+                    pqnas::cluster::
+                        StorageUserProjectionSyncStateStoreResult::
+                            Applied,
+            "FINAL-003 pending A persists: " +
+                error
+        );
+
+        error.clear();
+
+        expect(
+            final003_transition_store->
+                mark_pending(
+                    final003_pending_b,
+                    &error
+                ) ==
+                    pqnas::cluster::
+                        StorageUserProjectionSyncStateStoreResult::
+                            Applied,
+            "FINAL-003 pending B persists: " +
+                error
+        );
+
+        std::vector<
+            pqnas::cluster::
+                StorageUserProjection
+        > final003_sent;
+
+        bool final003_mutation_attempted = false;
+        bool final003_mutation_succeeded = false;
+
+        std::string
+            final003_mutated_fingerprint;
+
+        pqnas::cluster::
+            StorageUserProjectionReconcilerConfig
+                final003_config;
+
+        final003_config.users =
+            &final003_users;
+
+        final003_config.state_store =
+            &final003_state_store;
+
+        final003_config.transition_store =
+            final003_transition_store.get();
+
+        final003_config.sync_projection =
+            [&](const pqnas::cluster::
+                    StorageUserProjection& projection) {
+                final003_sent.push_back(
+                    projection
+                );
+
+                if (!final003_mutation_attempted) {
+                    final003_mutation_attempted = true;
+
+                    final003_mutated_fingerprint =
+                        projection.fingerprint ==
+                            final003_user_a.fingerprint
+                        ? final003_user_b.fingerprint
+                        : final003_user_a.fingerprint;
+
+                    bool changed = false;
+                    std::string mutation_error;
+
+                    final003_mutation_succeeded =
+                        final003_users.set_status_persisted(
+                            final003_mutated_fingerprint,
+                            "disabled",
+                            final003_users_path.string(),
+                            &changed,
+                            &mutation_error
+                        ) &&
+                        changed;
+                }
+
+                return sync_success(
+                    projection
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                final003_reconciler(
+                    final003_config
+                );
+
+        const auto final003_result =
+            final003_reconciler.
+                reconcile_once();
+
+        const auto final003_authoritative_mutated =
+            final003_users.get(
+                final003_mutated_fingerprint
+            );
+
+        const auto final003_mutated_pending =
+            final003_transition_store->get(
+                final003_mutated_fingerprint
+            );
+
+        const auto final003_mutated_confirmed =
+            final003_state_store.get(
+                final003_mutated_fingerprint
+            );
+
+        std::string final003_sent_fingerprint;
+
+        if (!final003_sent.empty()) {
+            final003_sent_fingerprint =
+                final003_sent[0].fingerprint;
+        }
+
+        const auto final003_sent_pending =
+            final003_transition_store->get(
+                final003_sent_fingerprint
+            );
+
+        const auto final003_sent_confirmed =
+            final003_state_store.get(
+                final003_sent_fingerprint
+            );
+
+        expect(
+            final003_mutation_attempted &&
+            final003_mutation_succeeded &&
+            !final003_result.ok &&
+            final003_result.stale_states == 1 &&
+            final003_result.failed == 1 &&
+
+            // Only the first pending recovery may leave the Director.
+            final003_sent.size() == 1 &&
+            final003_sent_fingerprint !=
+                final003_mutated_fingerprint &&
+
+            // The first recovery completed normally.
+            final003_sent_confirmed.has_value() &&
+            final003_sent_confirmed->revision ==
+                final003_sent[0].revision &&
+            !final003_sent_pending.has_value() &&
+
+            // The other user advanced while the pass was in network I/O.
+            final003_authoritative_mutated.has_value() &&
+            final003_authoritative_mutated->status ==
+                "disabled" &&
+            final003_mutated_pending.has_value() &&
+            final003_mutated_pending->revision <
+                final003_authoritative_mutated->
+                    storage_projection_revision &&
+
+            // Its stale pending projection was rejected before Storage I/O
+            // and therefore was neither confirmed nor journal-cleared.
+            !final003_mutated_confirmed.has_value(),
+            "FINAL-003 stale pending recovery is rejected after Director authority advances"
+        );
+    }
+
+
     // RT009 regression: B accepts the new live projection, but Director
     // confirmed-state persistence fails afterwards. The durable pending
     // journal must remember B across restart so the intermediate authorization

@@ -1203,6 +1203,16 @@ StorageUserProjectionReconciler::reconcile_once() const {
                     continue;
                 }
 
+                // FINAL-003: pending recovery is also snapshot-derived.
+                // Re-read Director authority immediately before re-authorizing
+                // the pending Node.
+                if (!projection_still_authoritative_before_send(
+                        config_,
+                        recovered,
+                        &result)) {
+                    continue;
+                }
+
                 StorageUserProjectionSyncResult
                     recovered_result;
 
