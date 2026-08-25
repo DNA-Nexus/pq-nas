@@ -1490,6 +1490,11 @@ LIMIT 2000;
         }
     });
 
+    // FINAL-002: these workspace routes still use local users.json /
+    // workspaces.json authority and legacy user-root resolution. Storage Nodes
+    // must expose only explicitly migrated projection-backed user data-plane
+    // routes.
+    if (!cluster_config.is_node()) {
     pqnas::WorkspaceFileRouteDeps ws_file_deps;
     ws_file_deps.users = &users;
     ws_file_deps.workspaces = &workspaces;
@@ -1630,6 +1635,8 @@ ws_external_session_deps.app = &APP_NAME;
 // Security: COOKIE_KEY is base material only. Workspace cookies use a
 // domain-separated MAC key inside workspace_session_cookie_mint().
 ws_external_session_deps.cookie_key = COOKIE_KEY;
+ws_external_session_deps.interactive_user_login_allowed =
+    !cluster_config.is_node();
 ws_external_session_deps.session_cookie_mint =
     [&](const unsigned char* cookie_key,
         const std::string& fp_b64,
@@ -1690,6 +1697,7 @@ ws_external_session_deps.qr_svg_from_text =
     };
 
 pqnas::register_workspace_external_session_routes(srv, ws_external_session_deps);
+    } // !cluster_config.is_node(): legacy workspace routes
 
 
 	    // ---- Admin users overview routes ----
