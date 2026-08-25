@@ -242,32 +242,6 @@ auto resolve_pq_share_open_context_v1 =
         return s;
     };
 
-    auto get_cookie_value_local = [&](const std::string& name) -> std::string {
-        auto it = req.headers.find("Cookie");
-        if (it == req.headers.end()) return {};
-
-        const std::string all = it->second;
-        const std::string needle = name + "=";
-
-        std::size_t pos = 0;
-        while (pos < all.size()) {
-            while (pos < all.size() && (all[pos] == ' ' || all[pos] == ';')) ++pos;
-            if (pos >= all.size()) break;
-
-            if (all.compare(pos, needle.size(), needle) == 0) {
-                std::size_t start = pos + needle.size();
-                std::size_t end = all.find(';', start);
-                if (end == std::string::npos) end = all.size();
-                return all.substr(start, end - start);
-            }
-
-            std::size_t next = all.find(';', pos);
-            if (next == std::string::npos) break;
-            pos = next + 1;
-        }
-        return {};
-    };
-
     pqnas::ShareLink s;
     std::string share_err;
     auto valid = shares.is_valid_now(share_token, &s, &share_err);
@@ -288,8 +262,17 @@ auto resolve_pq_share_open_context_v1 =
         return fail("pq_share_requires_file");
     }
 
-    const std::string session_id = get_cookie_value_local("pqnas_share_recipient");
-    if (session_id.empty()) {
+    std::string session_id;
+    const auto recipient_cookie_result =
+        pqnas::extract_strict_session_cookie(
+            req,
+            "pqnas_share_recipient",
+            &session_id,
+            pqnas::canonical_pqnas_share_recipient_cookie_value
+        );
+
+    if (recipient_cookie_result !=
+            pqnas::StrictSessionCookieResult::Ok) {
         return fail("enrollment_required");
     }
 
@@ -605,18 +588,10 @@ srv.Post("/api/v4/shares/pq/open/init", [&](const httplib::Request& req, httplib
         return;
     }
 
-    const std::string recipient_session_id = [&]() -> std::string {
-        auto it = req.headers.find("Cookie");
-        if (it == req.headers.end()) return {};
-        const std::string all = it->second;
-        const std::string needle = "pqnas_share_recipient=";
-        std::size_t pos = all.find(needle);
-        if (pos == std::string::npos) return {};
-        pos += needle.size();
-        std::size_t end = all.find(';', pos);
-        if (end == std::string::npos) end = all.size();
-        return all.substr(pos, end - pos);
-    }();
+    // Security: reuse the credential selected by the strict parser above;
+    // never reinterpret the Cookie header with a second parser.
+    const std::string recipient_session_id =
+        ctx.session.session_id;
 
     pqnas::PqShareOpenStreamSessionV1 os;
     os.open_id = pqnas::SharePqStoreV1::random_id_b64url_local(24);
@@ -726,20 +701,19 @@ srv.Get("/api/v4/shares/pq/open/chunk", [&](const httplib::Request& req, httplib
         return;
     }
 
-    // Bind chunk fetch to the same recipient browser session
-    auto get_cookie_value_local = [&](const std::string& name) -> std::string {
-        auto it = req.headers.find("Cookie");
-        if (it == req.headers.end()) return {};
-        const std::string all = it->second;
-        const std::string needle = name + "=";
-        std::size_t pos = all.find(needle);
-        if (pos == std::string::npos) return {};
-        pos += needle.size();
-        std::size_t end = all.find(';', pos);
-        if (end == std::string::npos) end = all.size();
-        return all.substr(pos, end - pos);
-    };
-    if (get_cookie_value_local("pqnas_share_recipient") != os.recipient_session_id) {
+    // Bind chunk fetch to the same unambiguously selected recipient session.
+    std::string recipient_session_id;
+    const auto recipient_cookie_result =
+        pqnas::extract_strict_session_cookie(
+            req,
+            "pqnas_share_recipient",
+            &recipient_session_id,
+            pqnas::canonical_pqnas_share_recipient_cookie_value
+        );
+
+    if (recipient_cookie_result !=
+            pqnas::StrictSessionCookieResult::Ok ||
+        recipient_session_id != os.recipient_session_id) {
         fail(403, "recipient_session_mismatch");
         return;
     }
@@ -3566,30 +3540,6 @@ srv.Get(R"(/s/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Resp
         if (it_xff != req.headers.end()) ev.f["xff"] = audit_safe_header_value(it_xff->second, 120);
         ev.f["ua"] = audit_ua();
     };
-    auto get_cookie_value = [&](const std::string& name) -> std::string {
-        auto it = req.headers.find("Cookie");
-        if (it == req.headers.end()) return {};
-        const std::string all = it->second;
-        const std::string needle = name + "=";
-
-        std::size_t pos = 0;
-        while (pos < all.size()) {
-            while (pos < all.size() && (all[pos] == ' ' || all[pos] == ';')) ++pos;
-            if (pos >= all.size()) break;
-
-            if (all.compare(pos, needle.size(), needle) == 0) {
-                std::size_t start = pos + needle.size();
-                std::size_t end = all.find(';', start);
-                if (end == std::string::npos) end = all.size();
-                return all.substr(start, end - start);
-            }
-
-            std::size_t next = all.find(';', pos);
-            if (next == std::string::npos) break;
-            pos = next + 1;
-        }
-        return {};
-    };
     auto audit_event = [&](const std::string& name,
                            const std::string& outcome,
                            const pqnas::ShareLink* s,
@@ -3647,9 +3597,17 @@ srv.Get(R"(/s/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Resp
     bool pq_session_ok = false;
 
     if (is_pq_share) {
-        const std::string session_id = get_cookie_value("pqnas_share_recipient");
+        std::string session_id;
+        const auto recipient_cookie_result =
+            pqnas::extract_strict_session_cookie(
+                req,
+                "pqnas_share_recipient",
+                &session_id,
+                pqnas::canonical_pqnas_share_recipient_cookie_value
+            );
 
-        if (!session_id.empty()) {
+        if (recipient_cookie_result ==
+                pqnas::StrictSessionCookieResult::Ok) {
             std::string sess_err;
             if (share_pq.load_session(session_id, &pq_sess, &sess_err) &&
                 pq_sess.state == "active" &&
