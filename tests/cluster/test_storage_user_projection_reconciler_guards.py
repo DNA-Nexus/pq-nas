@@ -11,6 +11,11 @@ source = Path(
     "storage_user_projection_reconciler.cpp"
 ).read_text()
 
+header = Path(
+    "server/src/cluster/"
+    "storage_user_projection_reconciler.h"
+).read_text()
+
 main = Path(
     "server/src/main.cpp"
 ).read_text()
@@ -65,6 +70,64 @@ require(
 require(
     "config_.users->snapshot()" in source,
     "reconciler must operate from a stable Director user snapshot",
+)
+
+# RT-016: a new authorization target is made deletion-visible while holding
+# the shared boundary, but all Storage HTTPS I/O remains outside that mutex.
+require(
+    "std::shared_ptr<std::mutex>\n        transition_mutex;" in header,
+    "reconciler config must expose the shared transition boundary",
+)
+
+prepare_start = source.find(
+    "bool prepare_pending_authorization_transition("
+)
+
+prepare_end = source.find(
+    "bool erase_pending_transition(",
+    prepare_start,
+)
+
+prepare_block = (
+    source[prepare_start:prepare_end]
+    if prepare_start >= 0 and prepare_end > prepare_start
+    else ""
+)
+
+prepare_lock = prepare_block.find(
+    "std::unique_lock<std::mutex>"
+)
+
+prepare_reread = prepare_block.find(
+    "config.users->get(",
+    prepare_lock,
+)
+
+prepare_journal = prepare_block.find(
+    "persist_pending_transition(",
+    prepare_reread,
+)
+
+require(
+    prepare_start >= 0 and
+    prepare_end > prepare_start and
+    prepare_lock >= 0 and
+    prepare_reread > prepare_lock and
+    prepare_journal > prepare_reread,
+    "RT-016 boundary must lock, re-read Director user, then journal pending",
+)
+
+require(
+    "sync_projection(" not in prepare_block and
+    "audit_projection_range(" not in prepare_block,
+    "RT-016 transition critical section must contain no network I/O",
+)
+
+require(
+    source.count(
+        "prepare_pending_authorization_transition("
+    ) == 3,
+    "both initial and A-to-B authorization paths must use the narrow boundary",
 )
 
 require(

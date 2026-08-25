@@ -10442,10 +10442,10 @@ auto maybe_auto_rotate_before_append = [&]() {
     // The persistent sync-state remembers the last Node/revision known to
     // have accepted each projection, allowing crash-safe reconciliation.
     // ---------------------------------------------------------------------
-    // Security: physical Director user deletion and projection
-    // reconciliation share this lifetime-wide transition boundary. This prevents
-    // an older in-flight reconciliation snapshot from re-authorizing a Storage
-    // Node after the authoritative Director user record has been deleted.
+    // Security: physical user deletion, Node deletion and reconciliation
+    // share this transition mutex. RT-016 keeps reconciliation's use narrow:
+    // authoritative Director re-read + durable RT-009 pending journal only.
+    // Storage network I/O runs outside this boundary.
     auto director_storage_projection_transition_mutex =
         std::make_shared<std::mutex>();
 
@@ -10700,6 +10700,11 @@ auto maybe_auto_rotate_before_append = [&]() {
     director_storage_projection_reconciler_config.transition_store =
         &director_storage_projection_transition_store;
 
+    // RT-016: the reconciler itself narrows this shared boundary to
+    // authoritative re-read + durable pending journal. HTTPS runs unlocked.
+    director_storage_projection_reconciler_config.transition_mutex =
+        director_storage_projection_transition_mutex;
+
     director_storage_projection_reconciler_config.audit_emit =
         [](
             const std::string& event,
@@ -10784,18 +10789,11 @@ auto maybe_auto_rotate_before_append = [&]() {
 
     director_storage_projection_reconcile_worker_config
         .reconcile_once =
-            [
-                &director_storage_projection_reconciler,
-                director_storage_projection_transition_mutex
-            ]() {
-                // Security: hold the authorization-transition boundary across
-                // snapshot, network synchronization and confirmed-state commit.
-                // Physical Director user deletion takes this same mutex.
-                std::lock_guard<std::mutex>
-                    transition_lock(
-                        *director_storage_projection_transition_mutex
-                    );
-
+            [&director_storage_projection_reconciler]() {
+                // RT-016: network synchronization and range-proof audit I/O
+                // run outside the shared user/Node deletion boundary. The
+                // reconciler acquires it only before a newly authorized target
+                // is durably recorded in the RT-009 pending journal.
                 const auto result =
                     director_storage_projection_reconciler
                         .reconcile_once();
