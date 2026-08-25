@@ -40,6 +40,7 @@
 #include "workspace_messages.h"
 #include "password_credentials.h"
 #include "opaque_credentials.h"
+#include "strict_session_cookie.h"
 
 namespace pqnas {
     static std::string hex_encode_lower_local(const unsigned char* data, std::size_t len) {
@@ -1518,28 +1519,6 @@ std::optional<WorkspaceMemberRec> enabled_member_for_actor(const WorkspaceRec& w
     return std::nullopt;
 }
 
-std::string cookie_value_local(const httplib::Request& req, const std::string& name) {
-    const std::string header = ws_header_value(req, "Cookie");
-    if (header.empty() || name.empty()) return "";
-
-    std::size_t pos = 0;
-    while (pos < header.size()) {
-        std::size_t semi = header.find(';', pos);
-        std::string part = header.substr(pos, semi == std::string::npos ? std::string::npos : semi - pos);
-        part = trim_copy_safe(part);
-
-        const std::string prefix = name + "=";
-        if (part.rfind(prefix, 0) == 0) {
-            return part.substr(prefix.size());
-        }
-
-        if (semi == std::string::npos) break;
-        pos = semi + 1;
-    }
-
-    return "";
-}
-
 bool parse_workspace_external_claim_local(const std::string& claim,
                                           std::string* out_workspace_id,
                                           std::string* out_fp,
@@ -1585,8 +1564,17 @@ bool try_workspace_external_cookie_actor_local(const WorkspaceFileRouteDeps& dep
         return false;
     }
 
-    const std::string cookie_val = cookie_value_local(req, "pqnas_workspace_session");
-    if (cookie_val.empty()) return false;
+    std::string cookie_val;
+
+    // Security: credential selection must reject duplicate Cookie headers and
+    // duplicate pqnas_workspace_session names instead of choosing first/last.
+    if (extract_strict_session_cookie(
+            req,
+            "pqnas_workspace_session",
+            &cookie_val
+        ) != StrictSessionCookieResult::Ok) {
+        return false;
+    }
 
     std::string claim_b64;
     long exp = 0;
