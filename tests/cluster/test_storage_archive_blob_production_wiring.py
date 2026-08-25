@@ -21,6 +21,11 @@ route_impl = (
     "server/src/routes/routes_file_versions_archive_blob.cpp"
 ).read_text(encoding="utf-8")
 
+bounded_provider_header = (
+    root /
+    "server/include/bounded_file_content_provider.h"
+).read_text(encoding="utf-8")
+
 main = (
     root /
     "server/src/main.cpp"
@@ -40,11 +45,11 @@ def require(condition: bool, message: str) -> None:
 
 
 start_marker = (
-    "    // ---- File Manager file-version archive/blob routes ----"
+    "// ---- File Manager file-version archive/blob routes ----"
 )
 
 end_marker = (
-    "    // ---- File version read routes ----"
+    "// ---- File version read routes ----"
 )
 
 start = routes.find(start_marker)
@@ -148,6 +153,59 @@ require(
         "authenticated_projection_revision"
     ) >= 4,
     "route handlers must propagate auth revision to root resolution",
+)
+
+# RT-012: authenticated version blob downloads must remain streaming and
+# bounded. Never restore a whole-file std::string response on this route.
+blob_route_start = route_impl.find(
+    'srv.Get("/api/v4/files/versions/blob"'
+)
+
+blob_route = (
+    route_impl[blob_route_start:]
+    if blob_route_start >= 0
+    else ""
+)
+
+require(
+    blob_route_start >= 0,
+    "version blob route must exist",
+)
+
+require(
+    "install_bounded_file_content_provider(" in blob_route,
+    "version blob route must install bounded content provider",
+)
+
+require(
+    "std::istreambuf_iterator<char>" not in blob_route,
+    "version blob route must not read the entire blob into memory",
+)
+
+require(
+    "res.set_content(std::move(body)" not in blob_route,
+    "version blob route must not return a whole-file response body",
+)
+
+require(
+    'res.set_header(\n                "Accept-Ranges",\n                "bytes"' in blob_route,
+    "version blob route must expose byte-range streaming",
+)
+
+require(
+    "response.set_content_provider(" in bounded_provider_header,
+    "bounded file helper must use httplib content provider",
+)
+
+require(
+    "kBoundedFileContentProviderBufferBytes" in bounded_provider_header and
+    "64 * 1024" in bounded_provider_header,
+    "bounded file helper must retain a 64 KiB buffer ceiling",
+)
+
+require(
+    "sink.write(" in bounded_provider_header,
+    "bounded file helper must stream provider chunks to DataSink",
 )
 
 # Security invariant: Storage file wiring must not open browser handoff.
