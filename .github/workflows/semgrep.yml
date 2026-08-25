@@ -18,6 +18,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
+      - name: Run security Python suite
+        run: python3 tests/cluster/run_all_security_python.py
+
       - name: Install Semgrep
         run: python3 -m pip install --user semgrep
 

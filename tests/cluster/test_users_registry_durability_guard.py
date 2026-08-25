@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
+import re
 
 source = Path(
     "server/src/users_registry.cpp"
@@ -87,65 +88,73 @@ require(
     "UsersRegistry must implement locked durability healing",
 )
 
-persisted_functions = [
-    "upsert_persisted",
-    "set_status_persisted",
-    "set_storage_metadata_persisted",
-    "switch_storage_mapping_persisted_if_pool_current",
-    "set_home_node_persisted",
-    "set_home_node_persisted_if_current",
-    "clear_home_node_persisted_if_current",
-    "set_placement_policy_id_persisted",
-    "erase_persisted_if_unplaced",
-]
+# NEW-007: discover persisted mutation APIs instead of maintaining a brittle
+# numeric census. Any newly added persisted UsersRegistry bool method is
+# automatically brought under the durability assertions below.
+header_persisted_functions = set(
+    re.findall(
+        r"\bbool\s+"
+        r"([A-Za-z_][A-Za-z0-9_]*persisted[A-Za-z0-9_]*)"
+        r"\s*\(",
+        header,
+    )
+)
+
+source_bool_definitions = list(
+    re.finditer(
+        r"\nbool\s+UsersRegistry::\s*"
+        r"([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+        source,
+    )
+)
+
+source_persisted_functions = {
+    match.group(1)
+    for match in source_bool_definitions
+    if "persisted" in match.group(1)
+}
 
 require(
-    source.count(
-        "bool registry_commit_visible = false;"
-    ) == len(persisted_functions),
-    "every persisted UsersRegistry mutation must track rename visibility",
+    bool(header_persisted_functions),
+    "persisted UsersRegistry mutation API census must not be empty",
 )
 
 require(
-    source.count(
-        "if (registry_commit_visible)"
-    ) == len(persisted_functions),
-    "every persisted mutation must avoid rollback after committed rename",
+    header_persisted_functions ==
+        source_persisted_functions,
+    "persisted UsersRegistry declarations and definitions must match",
 )
 
+definition_by_name = {
+    match.group(1): (index, match)
+    for index, match in enumerate(
+        source_bool_definitions
+    )
+}
 
-for name in persisted_functions:
-    marker = f"bool UsersRegistry::{name}("
-    start = source.find(marker)
+for name in sorted(header_persisted_functions):
+    definition = definition_by_name.get(name)
 
     require(
-        start >= 0,
+        definition is not None,
         f"persisted UsersRegistry function exists: {name}",
     )
 
-    if start < 0:
+    if definition is None:
         continue
 
-    next_candidates = [
-        pos
-        for token in (
-            "\nbool UsersRegistry::",
-            "\nstd::unordered_map<",
-            "\nvoid UsersRegistry::",
-        )
-        if (pos := source.find(
-            token,
-            start + len(marker)
-        )) >= 0
-    ]
+    index, match = definition
 
     end = (
-        min(next_candidates)
-        if next_candidates
+        source_bool_definitions[index + 1].start()
+        if index + 1 < len(source_bool_definitions)
         else len(source)
     )
 
-    body = source[start:end]
+    body = source[
+        match.start():
+        end
+    ]
 
     require(
         "ensure_durable_locked(error)" in body,
@@ -155,6 +164,11 @@ for name in persisted_functions:
     require(
         "bool registry_commit_visible = false;" in body,
         f"{name} must distinguish pre/post-rename persistence failure",
+    )
+
+    require(
+        "if (registry_commit_visible)" in body,
+        f"{name} must not roll back after a visible rename commit",
     )
 
 

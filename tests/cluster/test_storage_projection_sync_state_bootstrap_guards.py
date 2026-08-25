@@ -87,9 +87,23 @@ require(
 )
 
 require(
-    'if os.path.lexists(target):\n        return "preserved"'
-    in bootstrap,
-    "existing Director sync-state must never be reset by bootstrap",
+    "confirmed_exists = os.path.lexists(" in bootstrap and
+    "transition_exists = os.path.lexists(" in bootstrap and
+    'if confirmed_exists and transition_exists:\n'
+    '        return "preserved"' in bootstrap,
+    "existing complete Director authorization-state pair must be preserved",
+)
+
+require(
+    'if os.path.lexists(target):\n'
+    '            continue' in bootstrap,
+    "bootstrap must never replace either existing Director state file",
+)
+
+require(
+    "DIRECTOR_PROJECTION_SYNC_STATE_FILENAME" in bootstrap and
+    "DIRECTOR_PROJECTION_TRANSITION_JOURNAL_FILENAME" in bootstrap,
+    "bootstrap must manage confirmed state and transition journal as one pair",
 )
 
 

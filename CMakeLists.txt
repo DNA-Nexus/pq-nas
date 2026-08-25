@@ -5537,3 +5537,15 @@ add_custom_target(run_test_auth_credentials_stale_write
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         DEPENDS test_auth_credentials_stale_write
 )
+
+# -----------------------------------------------------------------------------
+# NEW-007: aggregate Python security/installer regression suite
+#
+# Discovery happens at execution time so adding another test_*.py guard does
+# not require maintaining a second hand-written CMake dependency census.
+# -----------------------------------------------------------------------------
+add_custom_target(run_all_cluster_security_guards
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/run_all_security_python.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
