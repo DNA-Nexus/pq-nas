@@ -359,17 +359,24 @@ A projection is not a copy of the Director's complete user database.
 Storage Nodes should not require normal Director user secrets merely to serve
 files.
 
-A projection must be sufficient to establish at least:
+A projection must be sufficient to establish the Storage authorization
+and root-resolution inputs required by the current implementation:
 
-- user identity anchor
+- user identity anchor / fingerprint
 - enabled state
 - allocated storage state
+- quota
+- root-relative storage path
 - current home-node assignment
 - storage pool assignment
-- authorization role required by Storage
 - non-zero projection revision
 
-The exact serialized schema is defined by the implementation.
+Normal Director user roles, browser credentials, OPAQUE material and other
+Director-only identity state are deliberately not part of the Storage
+projection.
+
+The exact serialized schema remains implementation-owned, but additions must
+preserve this secret-minimization boundary.
 
 ---
 
@@ -435,24 +442,90 @@ Director users / placement
 build desired projection
           |
           v
-compare sync state
+compare confirmed + pending state
+          |
+          +-- new authorization target?
+          |       |
+          |       +-- re-read authoritative Director user
+          |       +-- durably journal pending Node/revision
           |
           v
 authenticated internal POST
           |
           v
 Storage projection store
+          |
+          v
+durably confirm accepted Node/revision
 ```
 
-The current internal Storage projection endpoint is:
+The current internal Storage projection mutation endpoint is:
 
 ```text
 POST /internal/storage/user-projection
 ```
 
-It must require authenticated internal cluster communication.
+The authenticated projection readback/audit endpoint is:
 
+```text
+POST /internal/storage/user-projection/audit
+```
+
+The audit/readback path proves the expected projection namespace in bounded
+ranges and allows the Director to detect missing, conflicting or unexpected
+Storage authorization state without weakening the mutation path.
+
+Both endpoints require authenticated internal cluster communication.
 Unauthenticated requests must fail closed.
+
+## Authorization transition ordering
+
+A Storage Node that may have accepted usable authorization must be represented
+durably on Director as either:
+
+```text
+confirmed
+```
+
+or:
+
+```text
+pending
+```
+
+before cluster lifecycle code may treat that Node/user relationship as absent.
+
+For a new authorization target the required ordering is:
+
+```text
+acquire shared transition boundary
+        |
+re-read authoritative Director user
+        |
+verify desired projection is still current
+        |
+durably persist pending Node/revision
+        |
+release shared transition boundary
+        |
+Storage HTTPS synchronization
+        |
+durably persist confirmed Node/revision
+        |
+CAS-remove the exact pending record
+```
+
+Storage HTTPS and projection-audit network I/O MUST NOT run while the shared
+user/Node deletion transition mutex is held. The mutex protects only the
+short authoritative re-read + durable pending boundary required before a new
+authorization can escape to Storage.
+
+For placement A -> B, the old Node A must be tombstoned before B is
+authorized. B must then be durably journaled as pending before B receives its
+usable projection.
+
+For explicit unplacement A -> empty, the last confirmed Node must receive the
+newer tombstone before the exact confirmed state can be erased.
 
 ---
 
@@ -496,6 +569,36 @@ empty state.
 This prevents loss of synchronization history from being mistaken for a
 fresh deployment.
 
+## Pending authorization transition journal
+
+The Director also persists write-ahead knowledge for a Node/revision that may
+receive authorization before confirmed synchronization state can be committed.
+
+Current production path:
+
+```text
+/srv/pqnas/config/storage_projection_transition_journal.json
+```
+
+This journal is authorization state, not disposable retry metadata.
+
+Security rules:
+
+- a pending record is written durably before a newly authorized Node receives
+  its usable projection
+- a transport failure does not erase pending state because the request may have
+  reached Storage
+- confirmed-state persistence failure does not erase pending state
+- pending removal is conditional on the exact expected fingerprint, Node and
+  revision
+- a missing or unsafe journal on an established Director must fail closed
+  rather than being silently recreated as empty
+- physical user deletion and Node deletion must treat relevant pending state as
+  a live cluster authorization relationship
+
+The confirmed sync-state store and pending transition journal therefore form
+one crash-safe authorization knowledge model.
+
 ---
 
 # 12. Storage Projection Store
@@ -530,6 +633,7 @@ Examples include:
 ```text
 /internal/node/status
 /internal/storage/user-projection
+/internal/storage/user-projection/audit
 ```
 
 Unauthenticated access must fail closed.
@@ -576,6 +680,22 @@ user file request
 
 This gives Storage its own request-authentication boundary while still using
 Director as the user and placement authority.
+
+## Storage session cryptographic isolation
+
+Storage-scoped user sessions use a purpose-derived signing key rather than the
+raw normal Director/Standalone browser-session key.
+
+The Storage session signing domain is additionally bound to the canonical
+local Node ID. Therefore:
+
+```text
+normal Director/Standalone session -> not a Storage session
+Storage session for Node A         -> not valid on Node B
+```
+
+This separation is cryptographic. It must not depend only on claim parsing,
+cookie naming or a later projection lookup rejecting the request.
 
 ---
 
@@ -868,10 +988,17 @@ The current implementation includes:
 - Director Node registry
 - Director heartbeat worker
 - protected internal Node status route
-- protected internal Storage user projection route
+- protected internal Storage user projection mutation route
+- authenticated Storage projection audit/readback route
 - Storage user projection store
-- Director projection synchronization state store
+- Director confirmed projection synchronization state store
+- Director durable pending authorization transition journal
 - Director projection reconciliation worker
+- crash-safe pending -> confirmed projection transition handling
+- cluster-safe physical user deletion and Node deletion checks against
+  confirmed and pending authorization state
+- narrow shared reconciliation/deletion transition boundary with Storage
+  network I/O outside the mutex
 - explicit first-deployment Director sync-state bootstrap
 - Storage user request authenticator
 - projection revision propagation from authentication
@@ -879,7 +1006,11 @@ The current implementation includes:
 - strict projected pool resolution
 - Storage user access runtime composition
 - canonical existing-path containment helper
-- role-aware Storage archive/blob route wiring
+- role-aware Storage archive/blob route wiring with projection/revision
+  authorization
+- bounded streaming for version blob responses
+- explicit Node-role gating for legacy file-version read/manage/restore route
+  families that have not yet been migrated
 - production guards preventing premature handoff activation
 
 Live staging has confirmed that:
@@ -903,9 +1034,11 @@ At the time this document was created:
 - production handoff preauthentication remains closed
 - not all user File API routes have been migrated to Node projection-backed
   authorization
-- file-version read/manage/restore paths still require role-wiring review
-- remaining routes using standalone `UsersRegistry` assumptions must be
-  reviewed for Node role
+- file-version read/manage/restore route families remain intentionally
+  unavailable on Node role until they are migrated to projection-backed
+  authorization
+- remaining routes using standalone `UsersRegistry` assumptions must remain
+  Node-gated unless and until they receive projection-backed authorization
 - the first complete allocated-user projection synchronization has not yet
   been exercised end-to-end
 - the final browser -> Director -> Storage session -> file access flow has not
@@ -1126,10 +1259,26 @@ The following are architecture invariants.
 13. Production handoff must remain closed until the complete trust chain is
     ready.
 
-14. Director projection sync state must never be silently reset to empty on an
-    established installation.
+14. Director confirmed projection sync state must never be silently reset to
+    empty on an established installation.
 
-15. Storage tiering must not bypass user-root or cluster-placement
+15. Director pending authorization transition state must never be silently
+    reset to empty on an established installation.
+
+16. A newly authorized Storage target must be durably represented as pending
+    before usable authorization is sent to that Node.
+
+17. Physical user deletion and Node deletion must fail closed while relevant
+    confirmed or pending Storage authorization state exists.
+
+18. Storage network and projection-audit I/O must not hold the shared physical
+    user/Node deletion transition mutex.
+
+19. Storage user-session signing must remain cryptographically separate from
+    normal Director/Standalone browser-session signing and bound to the local
+    Storage Node identity.
+
+20. Storage tiering must not bypass user-root or cluster-placement
     authorization.
 
 ---
@@ -1144,9 +1293,11 @@ same pull request:
 - Director-to-Storage trust
 - projection schema or semantics
 - projection revision behavior
+- confirmed/pending projection transition semantics
+- reconciliation/deletion concurrency boundaries
 - placement rules
 - Storage handoff
-- Storage session behavior
+- Storage session behavior and key-domain separation
 - pool resolution
 - user-root resolution
 - cluster-aware File API route wiring
