@@ -103,8 +103,9 @@ inline bool canonical_pqnas_session_cookie_value(
 }
 
 inline StrictSessionCookieResult
-extract_strict_pqnas_session_cookie(
+extract_strict_session_cookie(
     const httplib::Request& request,
+    const std::string& target_name,
     std::string* output
 ) {
     if (!output) {
@@ -114,6 +115,26 @@ extract_strict_pqnas_session_cookie(
     }
 
     output->clear();
+
+    // Security: callers may select the credential cookie by name, but the
+    // target itself must be a canonical cookie-name token.
+    if (target_name.empty()) {
+        return
+            StrictSessionCookieResult::
+                InvalidCookieHeader;
+    }
+
+    for (const char raw_character :
+         target_name) {
+        if (!strict_cookie_name_character(
+                static_cast<unsigned char>(
+                    raw_character
+                ))) {
+            return
+                StrictSessionCookieResult::
+                    InvalidCookieHeader;
+        }
+    }
 
     const auto cookie_range =
         request.headers.equal_range(
@@ -229,7 +250,7 @@ extract_strict_pqnas_session_cookie(
                 segment_end - value_start
             );
 
-        if (name == "pqnas_session") {
+        if (name == target_name) {
             // Security: duplicate target names enable cookie tossing / parser
             // ambiguity. Never select first or last.
             if (found ||
@@ -276,6 +297,25 @@ extract_strict_pqnas_session_cookie(
     return
         StrictSessionCookieResult::
             Ok;
+}
+
+
+// Compatibility wrapper for the normal browser user/admin session.
+//
+// Security: keep all existing pqnas_session consumers on the same strict
+// duplicate-header / duplicate-name parser while allowing other credential
+// domains, such as pqnas_workspace_session, to use identical parsing rules.
+inline StrictSessionCookieResult
+extract_strict_pqnas_session_cookie(
+    const httplib::Request& request,
+    std::string* output
+) {
+    return
+        extract_strict_session_cookie(
+            request,
+            "pqnas_session",
+            output
+        );
 }
 
 } // namespace pqnas

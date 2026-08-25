@@ -25,6 +25,7 @@
 #include "allowlist.h"
 #include "authz.h"
 #include "session_cookie.h"
+#include "strict_session_cookie.h"
 
 static std::string b64std_enc(const unsigned char* data, size_t len) {
     // Standard base64 with padding (Variant ORIGINAL), matches server decoding.
@@ -134,6 +135,218 @@ int main() {
         }
         return true;
     };
+
+    auto require_workspace_cookie_result =
+        [&](
+            const httplib::Request& request,
+            pqnas::StrictSessionCookieResult expected,
+            const std::string& expected_value,
+            const char* label
+        ) -> bool {
+            std::string parsed = "stale";
+
+            const auto result =
+                pqnas::extract_strict_session_cookie(
+                    request,
+                    "pqnas_workspace_session",
+                    &parsed
+                );
+
+            if (result != expected) {
+                std::cerr
+                    << "FAIL: "
+                    << label
+                    << " unexpected parser result\n";
+                return false;
+            }
+
+            if (expected ==
+                    pqnas::StrictSessionCookieResult::Ok &&
+                parsed != expected_value) {
+                std::cerr
+                    << "FAIL: "
+                    << label
+                    << " parsed wrong cookie value\n";
+                return false;
+            }
+
+            if (expected !=
+                    pqnas::StrictSessionCookieResult::Ok &&
+                !parsed.empty()) {
+                std::cerr
+                    << "FAIL: "
+                    << label
+                    << " left stale parser output\n";
+                return false;
+            }
+
+            return true;
+        };
+
+    // NEW-003: pqnas_workspace_session must use the same strict credential
+    // selection rules as pqnas_session.
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_workspace_session=") +
+                cookieVal
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::Ok,
+                cookieVal,
+                "canonical workspace session cookie"
+            )) {
+            return 20;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string(
+                "theme=dark; pqnas_workspace_session="
+            ) +
+                cookieVal
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::Ok,
+                cookieVal,
+                "workspace session with unrelated cookie"
+            )) {
+            return 21;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_session=") +
+                cookieVal +
+                "; pqnas_workspace_session=" +
+                cookieVal
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::Ok,
+                cookieVal,
+                "workspace and normal sessions coexist"
+            )) {
+            return 22;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_workspace_session=") +
+                cookieVal
+        );
+        request.headers.emplace(
+            "Cookie",
+            std::string("theme=dark")
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "duplicate Cookie headers for workspace session"
+            )) {
+            return 23;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_workspace_session=") +
+                cookieVal +
+                "; pqnas_workspace_session=" +
+                cookieVal
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "duplicate workspace session names"
+            )) {
+            return 24;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_session=") +
+                cookieVal
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    MissingSessionCookie,
+                "",
+                "missing workspace session cookie"
+            )) {
+            return 25;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string(
+                "broken; pqnas_workspace_session="
+            ) +
+                cookieVal
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "malformed workspace Cookie segment"
+            )) {
+            return 26;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string(
+                "pqnas_workspace_session= "
+            ) +
+                cookieVal
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "noncanonical workspace session value"
+            )) {
+            return 27;
+        }
+    }
 
     if (!require_allowed(std::string("pqnas_session=") + cookieVal, "canonical session cookie")) return 6;
     if (!require_allowed(std::string("theme=dark; pqnas_session=") + cookieVal, "session cookie with unrelated cookie")) return 7;

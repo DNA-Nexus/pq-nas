@@ -6,6 +6,10 @@ wiring = Path(
     "server/src/routes/routes_admin_stats_badges.inc"
 ).read_text()
 
+workspace_route = Path(
+    "server/src/routes/routes_workspaces_files.cpp"
+).read_text()
+
 errors = []
 
 
@@ -44,6 +48,22 @@ mint_block = (
     else ""
 )
 
+cookie_actor_anchor = workspace_route.find(
+    "bool try_workspace_external_cookie_actor_local("
+)
+
+cookie_actor_end = workspace_route.find(
+    "bool require_workspace_file_actor_for_workspace_local(",
+    cookie_actor_anchor,
+)
+
+cookie_actor_block = (
+    workspace_route[cookie_actor_anchor:cookie_actor_end]
+    if cookie_actor_anchor >= 0 and
+    cookie_actor_end > cookie_actor_anchor
+    else ""
+)
+
 require(
     verify_anchor >= 0 and
     verify_end > verify_anchor,
@@ -74,6 +94,35 @@ require(
 require(
     "return session_cookie_mint(" not in mint_block,
     "workspace session mint must not sign with raw COOKIE_KEY",
+)
+
+# Security: NEW-003 was caused by first-match credential parsing. The
+# workspace session must use the shared strict parser that rejects duplicate
+# Cookie headers, duplicate target names and malformed cookie syntax.
+require(
+    cookie_actor_anchor >= 0 and
+    cookie_actor_end > cookie_actor_anchor,
+    "workspace external cookie actor helper missing",
+)
+
+require(
+    "extract_strict_session_cookie(" in cookie_actor_block,
+    "workspace session must use strict cookie extraction",
+)
+
+require(
+    '"pqnas_workspace_session"' in cookie_actor_block,
+    "workspace strict parser must target pqnas_workspace_session",
+)
+
+require(
+    "cookie_value_local(" not in workspace_route,
+    "legacy first-match workspace cookie parser returned",
+)
+
+require(
+    'ws_header_value(req, "Cookie")' not in workspace_route,
+    "workspace credential parsing must not select first Cookie header",
 )
 
 if errors:
