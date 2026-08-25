@@ -1,4 +1,5 @@
 #include "users_registry.h"
+#include "storage_projection_revision_policy.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <filesystem>
@@ -1770,6 +1771,20 @@ raise_storage_projection_revision_floor_persisted_if_unplaced(
 
   if (expectation_matched) {
     *expectation_matched = true;
+  }
+
+  // FINAL-001: this primitive persists Director-authoritative revision state.
+  // Refuse an exhausted or remotely-forced unbounded repair floor even if a
+  // higher layer accidentally omits its own trust-boundary check.
+  if (!storage_projection_revision_floor_is_automatic_repair_safe(
+          expected_revision,
+          minimum_revision)) {
+    if (error) {
+      *error =
+          "storage projection revision floor exceeds automatic repair bound";
+    }
+
+    return false;
   }
 
   const UserRec previous =

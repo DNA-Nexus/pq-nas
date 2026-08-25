@@ -2,10 +2,12 @@
 
 #include "cluster/storage_user_projection_sync_state_store.h"
 #include "cluster/storage_user_projection_transition_store.h"
+#include "storage_projection_revision_policy.h"
 #include "users_registry.h"
 
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -1051,6 +1053,144 @@ int main() {
                 "10"
             ),
             "NEW-006 orphan tombstone durably ratchets Director revision and re-audits clean"
+        );
+    }
+
+    // FINAL-001: authenticated Storage evidence may be newer than Director,
+    // but it must not arbitrarily ratchet Director-authoritative revision
+    // state beyond the automatic recovery window.
+    {
+        const auto before_poison =
+            users.get(
+                unplaced.fingerprint
+            );
+
+        const std::uint64_t poisoned_revision =
+            before_poison.has_value()
+                ? before_poison->
+                      storage_projection_revision +
+                      pqnas::
+                          kStorageProjectionMaxAutomaticRepairAdvance
+                : 0;
+
+        auto poisoned_audit_config =
+            config;
+
+        poisoned_audit_config.audit_emit = {};
+
+        poisoned_audit_config.list_audit_capable_nodes =
+            []() {
+                return std::vector<std::string>{
+                    "storage-01",
+                    "storage-empty"
+                };
+            };
+
+        poisoned_audit_config.list_audit_online_nodes =
+            []() {
+                return std::vector<std::string>{
+                    "storage-01",
+                    "storage-empty"
+                };
+            };
+
+        std::size_t
+            storage_empty_audits = 0;
+
+        poisoned_audit_config.audit_projection_range =
+            [&](const pqnas::cluster::
+                    StorageUserProjectionAuditRequest& request) {
+                if (request.node_id ==
+                    "storage-01") {
+                    return audit_match(
+                        request
+                    );
+                }
+
+                auto result =
+                    audit_match(
+                        request
+                    );
+
+                ++storage_empty_audits;
+
+                pqnas::cluster::
+                    StorageUserProjectionAuditMismatch
+                        mismatch;
+
+                mismatch.code =
+                    pqnas::cluster::
+                        StorageUserProjectionAuditMismatchCode::
+                            UnexpectedAuthorization;
+
+                mismatch.fingerprint =
+                    unplaced.fingerprint;
+
+                mismatch.expected_revision = 0;
+                mismatch.actual_revision =
+                    poisoned_revision;
+
+                result.result.mismatches.push_back(
+                    std::move(mismatch)
+                );
+
+                return result;
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                poisoned_reconciler(
+                    poisoned_audit_config
+                );
+
+        sent.clear();
+
+        const auto result =
+            poisoned_reconciler.
+                reconcile_once();
+
+        const auto after_poison =
+            users.get(
+                unplaced.fingerprint
+            );
+
+        pqnas::UsersRegistry
+            reloaded_after_poison;
+
+        const bool poison_reloads =
+            reloaded_after_poison.load(
+                users_path.string()
+            );
+
+        const auto durable_after_poison =
+            poison_reloads
+                ? reloaded_after_poison.get(
+                    unplaced.fingerprint
+                  )
+                : std::optional<
+                      pqnas::UserRec
+                  >{};
+
+        expect(
+            before_poison.has_value() &&
+            poisoned_revision != 0 &&
+            !result.ok &&
+            result.failed == 1 &&
+            result.state_conflicts == 1 &&
+            storage_empty_audits == 1 &&
+            sent.empty() &&
+            after_poison.has_value() &&
+            after_poison->
+                storage_projection_revision ==
+                    before_poison->
+                        storage_projection_revision &&
+            poison_reloads &&
+            durable_after_poison.has_value() &&
+            durable_after_poison->
+                storage_projection_revision ==
+                    before_poison->
+                        storage_projection_revision,
+            "FINAL-001 oversized automatic repair fails closed without Director mutation or tombstone"
         );
     }
 

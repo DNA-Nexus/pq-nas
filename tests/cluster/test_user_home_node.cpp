@@ -1,4 +1,5 @@
 #include "users_registry.h"
+#include "storage_projection_revision_policy.h"
 
 #include <nlohmann/json.hpp>
 
@@ -8,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <sys/stat.h>
 #include <thread>
@@ -1649,6 +1651,186 @@ int main() {
         );
     }
 
+
+
+    // FINAL-001: the persisted revision-floor primitive itself must
+    // refuse unbounded remote advancement and a floor that exhausts the
+    // counter.
+    {
+        const fs::path floor_path =
+            directory /
+            "final001_revision_floor_users.json";
+
+        const std::uint64_t near_exhaustion =
+            std::numeric_limits<
+                std::uint64_t
+            >::max() - 1;
+
+        const json floor_fixture{
+            {
+                "users",
+                json::array({
+                    json{
+                        {
+                            "fingerprint",
+                            "final001-bounded-floor"
+                        },
+                        {
+                            "status",
+                            "disabled"
+                        },
+                        {
+                            "home_node",
+                            ""
+                        },
+                        {
+                            "storage_projection_revision",
+                            7
+                        }
+                    },
+                    json{
+                        {
+                            "fingerprint",
+                            "final001-exhaustion-floor"
+                        },
+                        {
+                            "status",
+                            "disabled"
+                        },
+                        {
+                            "home_node",
+                            ""
+                        },
+                        {
+                            "storage_projection_revision",
+                            near_exhaustion
+                        }
+                    }
+                })
+            }
+        };
+
+        expect(
+            write_json(
+                floor_path,
+                floor_fixture
+            ),
+            "FINAL-001 floor fixture should be written"
+        );
+
+        pqnas::UsersRegistry
+            floor_registry;
+
+        expect(
+            floor_registry.load(
+                floor_path.string()
+            ),
+            "FINAL-001 floor fixture should load"
+        );
+
+        bool floor_changed = false;
+        bool expectation_matched = false;
+        std::string floor_error;
+
+        const std::uint64_t too_far_floor =
+            7 +
+            pqnas::
+                kStorageProjectionMaxAutomaticRepairAdvance +
+            1;
+
+        expect(
+            !floor_registry.
+                raise_storage_projection_revision_floor_persisted_if_unplaced(
+                    "final001-bounded-floor",
+                    7,
+                    too_far_floor,
+                    &floor_changed,
+                    &expectation_matched,
+                    &floor_error
+                ) &&
+            !floor_changed &&
+            expectation_matched &&
+            !floor_error.empty(),
+            "FINAL-001 primitive rejects floor beyond automatic repair window"
+        );
+
+        const auto after_too_far =
+            floor_registry.get(
+                "final001-bounded-floor"
+            );
+
+        floor_changed = false;
+        expectation_matched = false;
+        floor_error.clear();
+
+        expect(
+            !floor_registry.
+                raise_storage_projection_revision_floor_persisted_if_unplaced(
+                    "final001-exhaustion-floor",
+                    near_exhaustion,
+                    std::numeric_limits<
+                        std::uint64_t
+                    >::max(),
+                    &floor_changed,
+                    &expectation_matched,
+                    &floor_error
+                ) &&
+            !floor_changed &&
+            expectation_matched &&
+            !floor_error.empty(),
+            "FINAL-001 primitive rejects exhausted revision floor"
+        );
+
+        const auto after_exhaustion =
+            floor_registry.get(
+                "final001-exhaustion-floor"
+            );
+
+        pqnas::UsersRegistry
+            floor_reloaded;
+
+        const bool floor_reloads =
+            floor_reloaded.load(
+                floor_path.string()
+            );
+
+        const auto durable_bounded =
+            floor_reloads
+                ? floor_reloaded.get(
+                    "final001-bounded-floor"
+                  )
+                : std::optional<
+                      pqnas::UserRec
+                  >{};
+
+        const auto durable_exhaustion =
+            floor_reloads
+                ? floor_reloaded.get(
+                    "final001-exhaustion-floor"
+                  )
+                : std::optional<
+                      pqnas::UserRec
+                  >{};
+
+        expect(
+            after_too_far.has_value() &&
+            after_too_far->
+                storage_projection_revision == 7 &&
+            after_exhaustion.has_value() &&
+            after_exhaustion->
+                storage_projection_revision ==
+                    near_exhaustion &&
+            floor_reloads &&
+            durable_bounded.has_value() &&
+            durable_bounded->
+                storage_projection_revision == 7 &&
+            durable_exhaustion.has_value() &&
+            durable_exhaustion->
+                storage_projection_revision ==
+                    near_exhaustion,
+            "FINAL-001 rejected floors leave memory and users.json unchanged"
+        );
+    }
 
 
 #if defined(__linux__)

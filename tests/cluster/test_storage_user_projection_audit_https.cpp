@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -197,6 +198,42 @@ int main() {
                     StorageUserProjectionAuditMismatchCode::
                         UnexpectedAuthorization,
             "unexpected authorization proof accepted"
+        );
+    }
+
+    {
+        const auto fingerprint =
+            std::string(128, 'c');
+
+        const std::uint64_t poisoned_revision =
+            std::numeric_limits<
+                std::uint64_t
+            >::max() - 1;
+
+        const std::string body =
+            std::string(
+                R"({"version":1,"ok":true,"node_id":"storage-01","complete":true,"matched":1,"safe_tombstones_ignored":0,"mismatches":[{"fingerprint":")"
+            ) +
+            fingerprint +
+            R"(","kind":"unexpected_authorization","expected_revision":0,"actual_revision":)" +
+            std::to_string(
+                poisoned_revision
+            ) +
+            R"(}]})";
+
+        const auto result =
+            pqnas::cluster::
+                parse_storage_user_projection_audit_https_response(
+                    200,
+                    "application/json",
+                    body,
+                    request_fixture()
+                );
+
+        expect(
+            result.code ==
+                Code::InvalidResponse,
+            "FINAL-001 near-exhaustion unexpected authorization is rejected at HTTPS trust boundary"
         );
     }
 
