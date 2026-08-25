@@ -24,8 +24,77 @@
  */
 
 #include <sodium.h>
+#include <array>
 #include <cstdlib>
 #include <cstring>
+
+
+namespace {
+
+constexpr char kWorkspaceSessionDomain[] =
+    "pqnas-workspace-session-v1";
+
+class ScopedWorkspaceSessionKey {
+public:
+    ScopedWorkspaceSessionKey() = default;
+
+    ~ScopedWorkspaceSessionKey() {
+        sodium_memzero(
+            bytes_.data(),
+            bytes_.size()
+        );
+    }
+
+    ScopedWorkspaceSessionKey(
+        const ScopedWorkspaceSessionKey&
+    ) = delete;
+
+    ScopedWorkspaceSessionKey& operator=(
+        const ScopedWorkspaceSessionKey&
+    ) = delete;
+
+    unsigned char* data() noexcept {
+        return bytes_.data();
+    }
+
+    const unsigned char* data() const noexcept {
+        return bytes_.data();
+    }
+
+private:
+    std::array<
+        unsigned char,
+        crypto_auth_hmacsha256_BYTES
+    > bytes_{};
+};
+
+bool derive_workspace_session_key(
+    const unsigned char* base_key32,
+    ScopedWorkspaceSessionKey* output
+) noexcept {
+    if (!base_key32 ||
+        !output ||
+        sodium_is_zero(
+            base_key32,
+            crypto_auth_hmacsha256_KEYBYTES
+        ) != 0) {
+        return false;
+    }
+
+    // Security: workspace sessions must never share the raw user-session MAC
+    // key. A workspace cookie must fail MAC verification as pqnas_session and
+    // a pqnas_session must fail MAC verification as pqnas_workspace_session.
+    return crypto_auth_hmacsha256(
+        output->data(),
+        reinterpret_cast<const unsigned char*>(
+            kWorkspaceSessionDomain
+        ),
+        sizeof(kWorkspaceSessionDomain) - 1,
+        base_key32
+    ) == 0;
+}
+
+} // namespace
 
 // -----------------------------------------------------------------------------
 // Base64url helpers (no padding)
@@ -217,6 +286,65 @@ bool session_cookie_verify(const unsigned char key32[32],
 
     // strtol reads until non-digit; safe because we control mint format
     out_exp = std::strtol(claims.c_str() + e + 6, nullptr, 10);
+
+    return true;
+}
+
+bool workspace_session_cookie_mint(
+    const unsigned char base_key32[32],
+    const std::string& workspace_claim_b64,
+    long iat,
+    long exp,
+    std::string& out_cookie_value
+) {
+    out_cookie_value.clear();
+
+    ScopedWorkspaceSessionKey derived_key;
+
+    if (!derive_workspace_session_key(
+            base_key32,
+            &derived_key
+        )) {
+        return false;
+    }
+
+    return session_cookie_mint(
+        derived_key.data(),
+        workspace_claim_b64,
+        iat,
+        exp,
+        out_cookie_value
+    );
+}
+
+bool workspace_session_cookie_verify(
+    const unsigned char base_key32[32],
+    const std::string& cookie_value,
+    std::string& out_workspace_claim_b64,
+    long& out_exp
+) {
+    out_workspace_claim_b64.clear();
+    out_exp = 0;
+
+    ScopedWorkspaceSessionKey derived_key;
+
+    if (!derive_workspace_session_key(
+            base_key32,
+            &derived_key
+        )) {
+        return false;
+    }
+
+    if (!session_cookie_verify(
+            derived_key.data(),
+            cookie_value,
+            out_workspace_claim_b64,
+            out_exp
+        )) {
+        out_workspace_claim_b64.clear();
+        out_exp = 0;
+        return false;
+    }
 
     return true;
 }

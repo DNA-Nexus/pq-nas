@@ -1497,13 +1497,20 @@ LIMIT 2000;
     ws_file_deps.erase_user_persisted_cluster_safe =
         cluster_safe_user_delete;
     ws_file_deps.workspaces_path = workspaces_path;
+    // Security: COOKIE_KEY is base material only. Workspace cookies use a
+    // domain-separated MAC key inside workspace_session_cookie_verify().
     ws_file_deps.cookie_key = COOKIE_KEY;
     ws_file_deps.session_cookie_verify =
         [&](const unsigned char* cookie_key,
             const std::string& cookie_value,
             std::string& out_fingerprint_b64,
             long& out_exp) -> bool {
-            return session_cookie_verify(cookie_key, cookie_value, out_fingerprint_b64, out_exp);
+            return workspace_session_cookie_verify(
+                cookie_key,
+                cookie_value,
+                out_fingerprint_b64,
+                out_exp
+            );
         };
     ws_file_deps.b64_std_decode =
         [&](const std::string& b64,
@@ -1620,6 +1627,8 @@ ws_external_session_deps.external_sessions = &workspace_external_sessions;
 ws_external_session_deps.workspaces_path = workspaces_path;
 ws_external_session_deps.origin = &ORIGIN;
 ws_external_session_deps.app = &APP_NAME;
+// Security: COOKIE_KEY is base material only. Workspace cookies use a
+// domain-separated MAC key inside workspace_session_cookie_mint().
 ws_external_session_deps.cookie_key = COOKIE_KEY;
 ws_external_session_deps.session_cookie_mint =
     [&](const unsigned char* cookie_key,
@@ -1627,7 +1636,13 @@ ws_external_session_deps.session_cookie_mint =
         long iat,
         long exp,
         std::string& out_cookie_val) -> bool {
-        return session_cookie_mint(cookie_key, fp_b64, iat, exp, out_cookie_val);
+        return workspace_session_cookie_mint(
+            cookie_key,
+            fp_b64,
+            iat,
+            exp,
+            out_cookie_val
+        );
     };
 ws_external_session_deps.b64_std =
     [&](const unsigned char* data, size_t len) {

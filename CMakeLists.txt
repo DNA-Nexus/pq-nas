@@ -1174,6 +1174,51 @@ add_custom_target(run_test_admin_cookie
 )
 
 # -----------------------------------------------------------------------------
+# RT-018: workspace/user session cookie cryptographic domain separation
+# -----------------------------------------------------------------------------
+add_executable(test_session_cookie_domains
+        tests/cookies/test_session_cookie_domains.cpp
+        server/src/session_cookie.cc
+)
+
+target_include_directories(test_session_cookie_domains PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/include
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_session_cookie_domains PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_session_cookie_domains
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_session_cookie_domains PRIVATE
+        ${SODIUM_LIBRARIES}
+)
+
+set_target_properties(test_session_cookie_domains PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_session_cookie_domains
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_session_cookie_domains"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_session_cookie_domains
+)
+
+add_custom_target(run_test_workspace_session_domain_wiring
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cookies/test_workspace_session_domain_wiring.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# -----------------------------------------------------------------------------
 # Tool: pqnas_opaque_helper
 #
 # Phase 2 scaffold only:
