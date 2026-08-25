@@ -1096,6 +1096,15 @@ bool UsersRegistry::upsert(const UserRec& in) {
       by_fp_.find(u.fingerprint);
 
   if (existing != by_fp_.end()) {
+    // Security: generic upsert must never write a stale authorization snapshot
+    // back at the registry's current revision. Placement/status/storage changes
+    // must use the locked write-through persisted mutation APIs.
+    if (!storage_projection_semantics_equal(
+            existing->second,
+            u)) {
+      return false;
+    }
+
     // Security: projection revisions are registry-owned. A generic caller
     // cannot forge, rewind or advance the Director's control-plane version.
     u.storage_projection_revision =
@@ -1503,6 +1512,211 @@ bool UsersRegistry::set_profile_persisted(
 
   return true;
 }
+
+
+bool UsersRegistry::set_non_auth_metadata_persisted(
+    const std::string& fp_hex,
+    const UserNonAuthMetadataUpdate& update,
+    const std::string& path,
+    bool* changed,
+    UserRec* updated,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (updated) {
+    *updated = UserRec{};
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) {
+      *error = "fingerprint is empty";
+    }
+
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) {
+      *error = "users registry path is empty";
+    }
+
+    return false;
+  }
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  // Security: heal any rename-visible durability uncertainty before another
+  // persisted mutation is allowed to commit.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  auto iterator =
+      by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) {
+      *error = "user not found";
+    }
+
+    return false;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  // Security: always start from CURRENT state. Request-local UserRec snapshots
+  // are never written back through this API.
+  UserRec candidate =
+      previous;
+
+  if (update.name.has_value()) {
+    candidate.name =
+        *update.name;
+  }
+
+  if (update.email.has_value()) {
+    candidate.email =
+        *update.email;
+  }
+
+  if (update.avatar_url.has_value()) {
+    candidate.avatar_url =
+        *update.avatar_url;
+  }
+
+  if (update.app_prefs_json.has_value()) {
+    candidate.app_prefs_json =
+        *update.app_prefs_json;
+  }
+
+  if (update.vault_master_recovery_status.has_value()) {
+    candidate.vault_master_recovery_status =
+        *update.vault_master_recovery_status;
+  }
+
+  if (update.vault_master_recovery_public_key_b64.has_value()) {
+    candidate.vault_master_recovery_public_key_b64 =
+        *update.vault_master_recovery_public_key_b64;
+  }
+
+  if (update.vault_master_recovery_public_key_sha256.has_value()) {
+    candidate.vault_master_recovery_public_key_sha256 =
+        *update.vault_master_recovery_public_key_sha256;
+  }
+
+  if (update.vault_master_recovery_created_at.has_value()) {
+    candidate.vault_master_recovery_created_at =
+        *update.vault_master_recovery_created_at;
+  }
+
+  if (update.vault_master_recovery_label.has_value()) {
+    candidate.vault_master_recovery_label =
+        *update.vault_master_recovery_label;
+  }
+
+  // Defense in depth: maintenance of this API must never grow into an
+  // authorization mutation without an explicit persisted projection path.
+  if (!storage_projection_semantics_equal(
+          previous,
+          candidate) ||
+      !storage_metadata_fields_equal(
+          previous,
+          candidate) ||
+      candidate.role !=
+          previous.role ||
+      candidate.status !=
+          previous.status ||
+      candidate.home_node !=
+          previous.home_node ||
+      candidate.placement_policy_id !=
+          previous.placement_policy_id ||
+      candidate.storage_projection_revision !=
+          previous.storage_projection_revision) {
+    if (error) {
+      *error =
+          "non-auth metadata mutation changed protected user state";
+    }
+
+    return false;
+  }
+
+  const bool metadata_changed =
+      candidate.name != previous.name ||
+      candidate.email != previous.email ||
+      candidate.avatar_url != previous.avatar_url ||
+      candidate.app_prefs_json != previous.app_prefs_json ||
+      candidate.vault_master_recovery_status !=
+          previous.vault_master_recovery_status ||
+      candidate.vault_master_recovery_public_key_b64 !=
+          previous.vault_master_recovery_public_key_b64 ||
+      candidate.vault_master_recovery_public_key_sha256 !=
+          previous.vault_master_recovery_public_key_sha256 ||
+      candidate.vault_master_recovery_created_at !=
+          previous.vault_master_recovery_created_at ||
+      candidate.vault_master_recovery_label !=
+          previous.vault_master_recovery_label;
+
+  if (!metadata_changed) {
+    if (updated) {
+      *updated = previous;
+    }
+
+    return true;
+  }
+
+  iterator->second =
+      candidate;
+
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      // Security: rename already made candidate authoritative; never restore
+      // stale process memory after a parent-directory fsync failure.
+      if (updated) {
+        *updated = candidate;
+      }
+
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    iterator->second =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  if (updated) {
+    *updated = candidate;
+  }
+
+  return true;
+}
+
 
 
 /*

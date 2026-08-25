@@ -14206,33 +14206,57 @@ srv.Post("/api/v4/user/vault/master-recovery", [&](const httplib::Request& req, 
         return;
     }
 
-    pqnas::UserRec u = *cur;
-    u.vault_master_recovery_status = norm.value("status", std::string("not_configured"));
-    u.vault_master_recovery_public_key_b64 = norm.value("public_key_b64", std::string(""));
-    u.vault_master_recovery_public_key_sha256 = norm.value("public_key_sha256", std::string(""));
-    u.vault_master_recovery_created_at = norm.value("created_at", 0LL);
-    u.vault_master_recovery_label = norm.value("label", std::string(""));
+    pqnas::UserNonAuthMetadataUpdate update;
+    update.vault_master_recovery_status =
+        norm.value("status", std::string("not_configured"));
+    update.vault_master_recovery_public_key_b64 =
+        norm.value("public_key_b64", std::string(""));
+    update.vault_master_recovery_public_key_sha256 =
+        norm.value("public_key_sha256", std::string(""));
+    update.vault_master_recovery_created_at =
+        norm.value("created_at", 0LL);
+    update.vault_master_recovery_label =
+        norm.value("label", std::string(""));
 
-    const bool ok_upsert = users.upsert(u);
-    const bool ok_save = ok_upsert ? users.save(users_path) : false;
+    pqnas::UserRec updated_user;
+
+    // Security: Vault recovery metadata is merged into CURRENT registry state.
+    const bool saved =
+        users.set_non_auth_metadata_persisted(
+            actor_fp,
+            update,
+            users_path,
+            nullptr,
+            &updated_user,
+            nullptr
+        );
 
     {
         pqnas::AuditEvent ev;
         ev.event = "user.vault_master_recovery_update";
-        ev.outcome = (ok_upsert && ok_save) ? "ok" : "fail";
+        ev.outcome = saved ? "ok" : "fail";
         ev.f["actor_fp"] = actor_fp;
         ev.f["role"] = actor_role;
-        ev.f["status"] = u.vault_master_recovery_status;
-        ev.f["key_id"] = pqnas::shorten(u.vault_master_recovery_public_key_sha256, 24);
+        ev.f["status"] =
+            saved
+                ? updated_user.vault_master_recovery_status
+                : norm.value("status", std::string("not_configured"));
+        ev.f["key_id"] =
+            pqnas::shorten(
+                saved
+                    ? updated_user.vault_master_recovery_public_key_sha256
+                    : norm.value("public_key_sha256", std::string("")),
+                24
+            );
         ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
         audit_append(ev);
     }
 
-    if (!ok_upsert || !ok_save) {
+    if (!saved) {
         reply_json(res, 500, json{
             {"ok", false},
             {"error", "server_error"},
-            {"message", ok_upsert ? "users save failed" : "user update failed"}
+            {"message", "user update failed"}
         }.dump());
         return;
     }
@@ -14242,7 +14266,7 @@ srv.Post("/api/v4/user/vault/master-recovery", [&](const httplib::Request& req, 
         {"ok", true},
         {"fingerprint_hex", actor_fp},
         {"role", actor_role},
-        {"vault_master_recovery", vault_master_recovery_to_json(u)}
+        {"vault_master_recovery", vault_master_recovery_to_json(updated_user)}
     }.dump());
 });
 
@@ -14322,20 +14346,30 @@ srv.Post("/api/v4/user/profile/update", [&](const httplib::Request& req, httplib
         return;
     }
 
-    pqnas::UserRec u = *cur;
+    pqnas::UserNonAuthMetadataUpdate update;
 
     // Safe self-edit fields only.
-    u.name = name;
-    u.email = email;
-    u.avatar_url = avatar_url;
+    update.name = name;
+    update.email = email;
+    update.avatar_url = avatar_url;
 
-    const bool ok_upsert = users.upsert(u);
-    const bool ok_save = ok_upsert ? users.save(users_path) : false;
+    pqnas::UserRec updated_user;
+
+    // Security: self-service metadata is applied to CURRENT registry state.
+    const bool saved =
+        users.set_non_auth_metadata_persisted(
+            actor_fp,
+            update,
+            users_path,
+            nullptr,
+            &updated_user,
+            nullptr
+        );
 
     {
         pqnas::AuditEvent ev;
         ev.event = "user.profile_update";
-        ev.outcome = (ok_upsert && ok_save) ? "ok" : "fail";
+        ev.outcome = saved ? "ok" : "fail";
         ev.f["actor_fp"] = actor_fp;
         ev.f["role"] = actor_role;
         if (!name.empty()) ev.f["name"] = pqnas::shorten(name, 80);
@@ -14345,20 +14379,11 @@ srv.Post("/api/v4/user/profile/update", [&](const httplib::Request& req, httplib
         audit_append(ev);
     }
 
-    if (!ok_upsert) {
+    if (!saved) {
         reply_json(res, 500, json{
             {"ok", false},
             {"error", "server_error"},
             {"message", "profile update failed"}
-        }.dump());
-        return;
-    }
-
-    if (!ok_save) {
-        reply_json(res, 500, json{
-            {"ok", false},
-            {"error", "server_error"},
-            {"message", "users save failed"}
         }.dump());
         return;
     }
@@ -14368,11 +14393,11 @@ srv.Post("/api/v4/user/profile/update", [&](const httplib::Request& req, httplib
         {"profile", {
             {"fingerprint", actor_fp},
             {"role", actor_role},
-            {"status", u.status},
-            {"name", u.name},
-            {"email", u.email},
-            {"avatar_url", u.avatar_url},
-            {"group", u.group}
+            {"status", updated_user.status},
+            {"name", updated_user.name},
+            {"email", updated_user.email},
+            {"avatar_url", updated_user.avatar_url},
+            {"group", updated_user.group}
         }}
     }.dump());
 });

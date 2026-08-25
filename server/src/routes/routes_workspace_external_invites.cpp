@@ -2453,7 +2453,20 @@ void register_workspace_external_invite_routes(
                 }
             };
 
-            if (!deps.users->upsert(u)) {
+            // Security: external-user creation is one durable registry
+            // commit. A failed post-rename commit is cleaned through the same
+            // persisted user rollback used by later transaction failures.
+            if (!deps.users->upsert_persisted(
+                    u,
+                    deps.users_path,
+                    nullptr,
+                    nullptr
+                )) {
+                (void)workspace_external_rollback_user_record_local(
+                    deps,
+                    fp_hex
+                );
+
                 deps.reply_json(res, 500, json{
                     {"ok", false},
                     {"error", "user_create_failed"},
@@ -2468,17 +2481,6 @@ void register_workspace_external_invite_routes(
                     {"ok", false},
                     {"error", "member_update_failed"},
                     {"message", "failed to add external workspace member"}
-                }.dump());
-                return;
-            }
-
-            if (!deps.users->save(deps.users_path)) {
-                deps.workspaces->remove_member(workspace_id, fp_hex);
-                (void)workspace_external_rollback_user_record_local(deps, fp_hex);
-                deps.reply_json(res, 500, json{
-                    {"ok", false},
-                    {"error", "users_save_failed"},
-                    {"message", "failed to save external user"}
                 }.dump());
                 return;
             }
@@ -2732,7 +2734,19 @@ void register_workspace_external_invite_routes(
             member.responded_by = actor_fp;
             pqnas::normalize_workspace_member_v1(&member);
 
-            if (!deps.users->upsert(u)) {
+            // Security: external-user creation is persisted atomically
+            // before dependent credential/workspace state is committed.
+            if (!deps.users->upsert_persisted(
+                    u,
+                    deps.users_path,
+                    nullptr,
+                    nullptr
+                )) {
+                (void)workspace_external_rollback_user_record_local(
+                    deps,
+                    fp_hex
+                );
+
                 clear_string_best_effort_local(temp_password);
                 deps.reply_json(res, 500, json{
                     {"ok", false},
@@ -2769,28 +2783,6 @@ void register_workspace_external_invite_routes(
                     {"ok", false},
                     {"error", "member_update_failed"},
                     {"message", "failed to add external workspace member"}
-                }.dump());
-                return;
-            }
-
-            if (!deps.users->save(deps.users_path)) {
-                deps.workspaces->remove_member(workspace_id, fp_hex);
-
-                const bool user_rolled_back =
-                    workspace_external_rollback_user_record_local(
-                        deps,
-                        fp_hex
-                    );
-
-                if (user_rolled_back) {
-                    creds.erase(login);
-                }
-
-                clear_string_best_effort_local(temp_password);
-                deps.reply_json(res, 500, json{
-                    {"ok", false},
-                    {"error", "users_save_failed"},
-                    {"message", "failed to save external user"}
                 }.dump());
                 return;
             }

@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <atomic>
 #include <cerrno>
 #include <cstdlib>
 #include <filesystem>
@@ -9,6 +10,7 @@
 #include <iostream>
 #include <string>
 #include <sys/stat.h>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 
@@ -988,6 +990,116 @@ int main() {
             "RT-005 placement must be newer than stale profile snapshot"
         );
 
+        // NEW-002: the primitive itself must reject a stale full-record
+        // write-back. Preserving only the current revision is insufficient:
+        // doing so would pair stale node-01 authorization with node-02's newer
+        // revision.
+        if (stale_snapshot.has_value() &&
+            after_move.has_value()) {
+          pqnas::UserRec stale_upsert =
+              *stale_snapshot;
+
+          stale_upsert.name =
+              "must-not-commit";
+
+          expect(
+              !profile_registry.upsert(
+                  stale_upsert
+              ),
+              "NEW-002 generic upsert must reject stale projection semantics"
+          );
+
+          const auto after_rejected_upsert =
+              profile_registry.get(
+                  user.fingerprint
+              );
+
+          expect(
+              after_rejected_upsert.has_value() &&
+              after_rejected_upsert->home_node ==
+                  "node-02" &&
+              after_rejected_upsert->
+                  storage_projection_revision ==
+                  after_move->
+                      storage_projection_revision &&
+              after_rejected_upsert->name ==
+                  after_move->name,
+              "NEW-002 rejected stale upsert must preserve current authoritative state"
+          );
+        }
+
+        pqnas::UserNonAuthMetadataUpdate
+            metadata_update;
+
+        metadata_update.avatar_url =
+            "/avatars/current-safe.png";
+
+        metadata_update.app_prefs_json =
+            R"({"view":"grid"})";
+
+        metadata_update.vault_master_recovery_status =
+            "active";
+
+        metadata_update.vault_master_recovery_public_key_b64 =
+            "public-key";
+
+        metadata_update.vault_master_recovery_public_key_sha256 =
+            "public-key-sha256";
+
+        metadata_update.vault_master_recovery_created_at =
+            123456789LL;
+
+        metadata_update.vault_master_recovery_label =
+            "Recovery";
+
+        bool metadata_changed = false;
+
+        pqnas::UserRec
+            metadata_updated;
+
+        profile_error.clear();
+
+        expect(
+            profile_registry.set_non_auth_metadata_persisted(
+                user.fingerprint,
+                metadata_update,
+                profile_path.string(),
+                &metadata_changed,
+                &metadata_updated,
+                &profile_error
+            ) &&
+            metadata_changed,
+            "NEW-002 partial metadata update should persist: " +
+                profile_error
+        );
+
+        expect(
+            after_move.has_value() &&
+            metadata_updated.home_node ==
+                after_move->home_node &&
+            metadata_updated.status ==
+                after_move->status &&
+            metadata_updated.storage_state ==
+                after_move->storage_state &&
+            metadata_updated.quota_bytes ==
+                after_move->quota_bytes &&
+            metadata_updated.root_rel ==
+                after_move->root_rel &&
+            metadata_updated.storage_pool_id ==
+                after_move->storage_pool_id &&
+            metadata_updated.placement_policy_id ==
+                after_move->placement_policy_id &&
+            metadata_updated.storage_projection_revision ==
+                after_move->storage_projection_revision &&
+            metadata_updated.avatar_url ==
+                "/avatars/current-safe.png" &&
+            metadata_updated.app_prefs_json ==
+                R"({"view":"grid"})" &&
+            metadata_updated.vault_master_recovery_status ==
+                "active",
+            "NEW-002 partial metadata mutation must preserve CURRENT authorization state"
+        );
+
         pqnas::UserProfileUpdate
             profile_update;
 
@@ -1133,6 +1245,410 @@ int main() {
             "RT-005 durable reload must retain new placement and profile"
         );
     }
+
+
+    // ---------------------------------------------------------------------
+    // NEW-002 concurrent authorization + metadata regression
+    // ---------------------------------------------------------------------
+    //
+    // Security: these races model request-local metadata work happening while
+    // another Director operation changes authorization state. Both successful
+    // operations must survive regardless of which thread acquires mu_ first.
+    {
+        const fs::path race_path =
+            directory /
+            "new002_concurrent_users.json";
+
+        pqnas::UsersRegistry race_registry;
+
+        pqnas::UserRec race_user;
+        race_user.fingerprint =
+            "new002-concurrent-user";
+        race_user.name =
+            "Concurrent";
+        race_user.role =
+            "user";
+        race_user.status =
+            "enabled";
+        race_user.avatar_url =
+            "/avatars/original.png";
+        race_user.app_prefs_json =
+            R"({"view":"list"})";
+        race_user.storage_state =
+            "allocated";
+        race_user.quota_bytes =
+            4096;
+        race_user.root_rel =
+            "users/new002-concurrent-user";
+        race_user.storage_pool_id =
+            "pool01";
+        race_user.storage_set_at =
+            "2026-08-25T00:00:00Z";
+        race_user.storage_set_by =
+            "admin-fingerprint";
+        race_user.home_node =
+            "node-01";
+        race_user.placement_policy_id =
+            "business-backup";
+
+        bool seed_projection_changed = false;
+        std::string race_error;
+
+        expect(
+            race_registry.upsert_persisted(
+                race_user,
+                race_path.string(),
+                &seed_projection_changed,
+                &race_error
+            ) &&
+            seed_projection_changed,
+            "NEW-002 concurrency fixture should persist initial user: " +
+                race_error
+        );
+
+        const auto run_concurrently =
+            [](auto left, auto right) {
+                std::atomic<int> ready{0};
+                std::atomic<bool> go{false};
+
+                std::thread left_thread(
+                    [&]() {
+                        ready.fetch_add(1);
+
+                        while (!go.load()) {
+                            std::this_thread::yield();
+                        }
+
+                        left();
+                    }
+                );
+
+                std::thread right_thread(
+                    [&]() {
+                        ready.fetch_add(1);
+
+                        while (!go.load()) {
+                            std::this_thread::yield();
+                        }
+
+                        right();
+                    }
+                );
+
+                while (ready.load() != 2) {
+                    std::this_thread::yield();
+                }
+
+                go.store(true);
+
+                left_thread.join();
+                right_thread.join();
+            };
+
+
+        // -------------------------------------------------------------
+        // Placement change racing avatar metadata.
+        // -------------------------------------------------------------
+        {
+            const auto before =
+                race_registry.get(
+                    race_user.fingerprint
+                );
+
+            expect(
+                before.has_value(),
+                "NEW-002 placement race should have current user"
+            );
+
+            if (before.has_value()) {
+                bool placement_ok = false;
+                bool placement_changed = false;
+                std::string placement_error;
+
+                bool metadata_ok = false;
+                bool metadata_changed = false;
+                std::string metadata_error;
+
+                pqnas::UserNonAuthMetadataUpdate
+                    metadata_update;
+
+                metadata_update.avatar_url =
+                    "/avatars/concurrent-placement.png";
+
+                run_concurrently(
+                    [&]() {
+                        placement_ok =
+                            race_registry.set_home_node_persisted(
+                                race_user.fingerprint,
+                                "node-02",
+                                race_path.string(),
+                                &placement_changed,
+                                &placement_error
+                            );
+                    },
+                    [&]() {
+                        metadata_ok =
+                            race_registry.set_non_auth_metadata_persisted(
+                                race_user.fingerprint,
+                                metadata_update,
+                                race_path.string(),
+                                &metadata_changed,
+                                nullptr,
+                                &metadata_error
+                            );
+                    }
+                );
+
+                const auto after =
+                    race_registry.get(
+                        race_user.fingerprint
+                    );
+
+                expect(
+                    placement_ok &&
+                    placement_changed &&
+                    metadata_ok &&
+                    metadata_changed &&
+                    after.has_value() &&
+                    after->home_node ==
+                        "node-02" &&
+                    after->avatar_url ==
+                        "/avatars/concurrent-placement.png" &&
+                    after->storage_projection_revision ==
+                        before->storage_projection_revision + 1,
+                    "NEW-002 concurrent placement/avatar writes must both survive"
+                );
+            }
+        }
+
+
+        // -------------------------------------------------------------
+        // Status change racing app-preference metadata.
+        // -------------------------------------------------------------
+        {
+            const auto before =
+                race_registry.get(
+                    race_user.fingerprint
+                );
+
+            expect(
+                before.has_value(),
+                "NEW-002 status race should have current user"
+            );
+
+            if (before.has_value()) {
+                bool status_ok = false;
+                bool status_changed = false;
+                std::string status_error;
+
+                bool metadata_ok = false;
+                bool metadata_changed = false;
+                std::string metadata_error;
+
+                pqnas::UserNonAuthMetadataUpdate
+                    metadata_update;
+
+                metadata_update.app_prefs_json =
+                    R"({"view":"grid","race":true})";
+
+                run_concurrently(
+                    [&]() {
+                        status_ok =
+                            race_registry.set_status_persisted(
+                                race_user.fingerprint,
+                                "disabled",
+                                race_path.string(),
+                                &status_changed,
+                                &status_error
+                            );
+                    },
+                    [&]() {
+                        metadata_ok =
+                            race_registry.set_non_auth_metadata_persisted(
+                                race_user.fingerprint,
+                                metadata_update,
+                                race_path.string(),
+                                &metadata_changed,
+                                nullptr,
+                                &metadata_error
+                            );
+                    }
+                );
+
+                const auto after =
+                    race_registry.get(
+                        race_user.fingerprint
+                    );
+
+                expect(
+                    status_ok &&
+                    status_changed &&
+                    metadata_ok &&
+                    metadata_changed &&
+                    after.has_value() &&
+                    after->status ==
+                        "disabled" &&
+                    after->app_prefs_json ==
+                        R"({"view":"grid","race":true})" &&
+                    after->storage_projection_revision ==
+                        before->storage_projection_revision + 1,
+                    "NEW-002 concurrent status/app-prefs writes must both survive"
+                );
+            }
+        }
+
+
+        // -------------------------------------------------------------
+        // Storage projection change racing profile metadata.
+        // -------------------------------------------------------------
+        {
+            const auto before =
+                race_registry.get(
+                    race_user.fingerprint
+                );
+
+            expect(
+                before.has_value(),
+                "NEW-002 storage race should have current user"
+            );
+
+            if (before.has_value()) {
+                pqnas::UserStorageMetadataUpdate
+                    storage_update;
+
+                storage_update.storage_state =
+                    before->storage_state;
+                storage_update.quota_bytes =
+                    before->quota_bytes + 4096;
+                storage_update.root_rel =
+                    before->root_rel;
+                storage_update.storage_pool_id =
+                    before->storage_pool_id;
+                storage_update.storage_set_at =
+                    "2026-08-25T00:01:00Z";
+                storage_update.storage_set_by =
+                    "concurrent-admin";
+
+                bool storage_ok = false;
+                bool storage_changed = false;
+                bool projection_changed = false;
+                std::string storage_error;
+
+                bool metadata_ok = false;
+                bool metadata_changed = false;
+                std::string metadata_error;
+
+                pqnas::UserNonAuthMetadataUpdate
+                    metadata_update;
+
+                metadata_update.name =
+                    "Concurrent metadata";
+
+                run_concurrently(
+                    [&]() {
+                        storage_ok =
+                            race_registry.set_storage_metadata_persisted(
+                                race_user.fingerprint,
+                                storage_update,
+                                race_path.string(),
+                                &storage_changed,
+                                &projection_changed,
+                                &storage_error
+                            );
+                    },
+                    [&]() {
+                        metadata_ok =
+                            race_registry.set_non_auth_metadata_persisted(
+                                race_user.fingerprint,
+                                metadata_update,
+                                race_path.string(),
+                                &metadata_changed,
+                                nullptr,
+                                &metadata_error
+                            );
+                    }
+                );
+
+                const auto after =
+                    race_registry.get(
+                        race_user.fingerprint
+                    );
+
+                expect(
+                    storage_ok &&
+                    storage_changed &&
+                    projection_changed &&
+                    metadata_ok &&
+                    metadata_changed &&
+                    after.has_value() &&
+                    after->quota_bytes ==
+                        before->quota_bytes + 4096 &&
+                    after->name ==
+                        "Concurrent metadata" &&
+                    after->home_node ==
+                        before->home_node &&
+                    after->status ==
+                        before->status &&
+                    after->storage_projection_revision ==
+                        before->storage_projection_revision + 1,
+                    "NEW-002 concurrent storage/profile writes must both survive"
+                );
+            }
+        }
+
+
+        // A fresh registry proves the combined result, not merely process
+        // memory, reached the durable users.json snapshot.
+        pqnas::UsersRegistry race_reloaded;
+
+        expect(
+            race_reloaded.load(
+                race_path.string()
+            ),
+            "NEW-002 concurrent fixture should reload"
+        );
+
+        const auto durable =
+            race_reloaded.get(
+                race_user.fingerprint
+            );
+
+        bool durable_prefs_match = false;
+
+        if (durable.has_value()) {
+            try {
+                durable_prefs_match =
+                    json::parse(
+                        durable->app_prefs_json
+                    ) ==
+                    json{
+                        {"view", "grid"},
+                        {"race", true}
+                    };
+            } catch (...) {
+                durable_prefs_match = false;
+            }
+        }
+
+        expect(
+            durable.has_value() &&
+            durable->home_node ==
+                "node-02" &&
+            durable->status ==
+                "disabled" &&
+            durable->quota_bytes ==
+                8192 &&
+            durable->avatar_url ==
+                "/avatars/concurrent-placement.png" &&
+            durable_prefs_match &&
+            durable->name ==
+                "Concurrent metadata" &&
+            durable->storage_projection_revision ==
+                4,
+            "NEW-002 concurrent durable snapshot must contain all three authorization and metadata writes"
+        );
+    }
+
 
 
 #if defined(__linux__)

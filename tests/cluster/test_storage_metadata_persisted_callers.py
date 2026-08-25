@@ -16,6 +16,17 @@ registry_h = Path(
 
 errors = []
 
+production_user_mutation_sources = [
+    Path("server/src/main.cpp"),
+]
+
+routes_root = Path("server/src/routes")
+
+for pattern in ("*.cpp", "*.cc", "*.inc"):
+    production_user_mutation_sources.extend(
+        sorted(routes_root.rglob(pattern))
+    )
+
 
 def require(condition, message):
     if not condition:
@@ -56,6 +67,21 @@ require(
     "set_storage_metadata_persisted_if_pool_current(" not in registry_h,
     "old full-storage-snapshot migration CAS must stay removed",
 )
+
+# Security: NEW-002 was reachable whenever a route copied a full UserRec,
+# called generic upsert(), then saved it after a concurrent authorization
+# mutation. Production routes must use narrow/write-through persisted APIs.
+for source_path in production_user_mutation_sources:
+    source = source_path.read_text()
+
+    require(
+        "users->upsert(" not in source and
+        "users.upsert(" not in source,
+        (
+            f"{source_path}: generic UsersRegistry upsert must not be used "
+            "in production routes"
+        ),
+    )
 
 if errors:
     for error in errors:
