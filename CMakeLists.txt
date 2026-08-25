@@ -1842,6 +1842,19 @@ target_link_libraries(test_user_home_node PRIVATE
         Threads::Threads
 )
 
+if (
+    CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+    CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
+)
+    # Security regression only: inject parent-directory fsync failure after
+    # rename without adding any production runtime fault hook.
+    target_link_options(
+        test_user_home_node
+        PRIVATE
+        "-Wl,--wrap=fsync"
+    )
+endif()
+
 set_target_properties(test_user_home_node PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
