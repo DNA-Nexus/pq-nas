@@ -158,6 +158,21 @@ public:
         std::string* error
     ) const;
 
+    // Raise only the Director-owned Storage projection revision while the user
+    // remains unplaced.
+    //
+    // Security: used when RT-008 observes a restored Node revision ahead of
+    // Director. The CAS prevents a concurrent placement from being overwritten.
+    // A stale expectation is a successful no-op with expectation_matched=false.
+    bool raise_storage_projection_revision_floor_persisted_if_unplaced(
+        const std::string& fp_hex,
+        std::uint64_t expected_revision,
+        std::uint64_t minimum_revision,
+        bool* changed,
+        bool* expectation_matched,
+        std::string* error
+    );
+
     // Post-commit hook for Director audit correlation and reconciliation.
     // Security: notification happens only after a successful durable
     // projection-relevant registry commit and runs outside the registry lock.

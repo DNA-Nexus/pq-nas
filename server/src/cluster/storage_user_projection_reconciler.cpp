@@ -9,6 +9,7 @@
 #include "users_registry.h"
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <string>
@@ -648,6 +649,52 @@ void emit_reconcile_audit_best_effort(
     }
 }
 
+
+void emit_orphan_repair_audit_best_effort(
+    const StorageUserProjectionReconcilerConfig& config,
+    const std::string& node_id,
+    std::uint64_t node_revision,
+    std::uint64_t tombstone_revision
+) noexcept {
+    if (!config.audit_emit) {
+        return;
+    }
+
+    try {
+        // Security: identify the affected Node and mismatch category without
+        // putting a user fingerprint into the operational audit record.
+        config.audit_emit(
+            "cluster.storage_projection.orphan_revoked",
+            "ok",
+            {
+                {
+                    "node_id",
+                    node_id
+                },
+                {
+                    "mismatch_kind",
+                    "unexpected_authorization"
+                },
+                {
+                    "node_revision",
+                    std::to_string(
+                        node_revision
+                    )
+                },
+                {
+                    "projection_revision",
+                    std::to_string(
+                        tombstone_revision
+                    )
+                }
+            }
+        );
+    } catch (...) {
+        // Best-effort only after Storage accepted the disabling projection.
+    }
+}
+
+
 bool heal_confirmed_state_durability(
     StorageUserProjectionSyncStateStore* store,
     const StorageUserProjectionSyncState& state,
@@ -830,8 +877,15 @@ StorageUserProjectionReconciler::reconcile_once() const {
             config_.audit_projection_range
         );
 
+    const bool has_audit_online_node_list =
+        static_cast<bool>(
+            config_.list_audit_online_nodes
+        );
+
     if (has_audit_node_list !=
-        has_audit_invoke) {
+            has_audit_invoke ||
+        (has_audit_online_node_list &&
+         !has_audit_node_list)) {
         // Security: never partially enable RT-008 proof mode.
         ++result.state_conflicts;
         ++result.failed;
@@ -897,6 +951,9 @@ StorageUserProjectionReconciler::reconcile_once() const {
     std::unordered_set<std::string>
         audit_capable_nodes;
 
+    std::unordered_set<std::string>
+        audit_nodes_this_pass;
+
     if (has_audit_node_list) {
         try {
             audit_nodes =
@@ -922,6 +979,63 @@ StorageUserProjectionReconciler::reconcile_once() const {
                 ++result.failed;
                 return result;
             }
+        }
+
+        if (has_audit_online_node_list) {
+            std::vector<std::string>
+                online_nodes;
+
+            try {
+                online_nodes =
+                    config_.list_audit_online_nodes();
+            } catch (...) {
+                ++result.failed;
+                return result;
+            }
+
+            std::sort(
+                online_nodes.begin(),
+                online_nodes.end()
+            );
+
+            std::unordered_set<std::string>
+                seen_online;
+
+            for (const auto& node_id :
+                 online_nodes) {
+                if (!valid_cluster_node_id(
+                        node_id) ||
+                    audit_capable_nodes.find(
+                        node_id
+                    ) == audit_capable_nodes.end() ||
+                    !seen_online.insert(
+                        node_id
+                    ).second) {
+                    ++result.state_conflicts;
+                    ++result.failed;
+                    return result;
+                }
+            }
+
+            result.audit_deferred_nodes =
+                audit_nodes.size() -
+                online_nodes.size();
+
+            audit_nodes =
+                std::move(
+                    online_nodes
+                );
+        }
+
+        audit_nodes_this_pass.reserve(
+            audit_nodes.size()
+        );
+
+        for (const auto& node_id :
+             audit_nodes) {
+            audit_nodes_this_pass.insert(
+                node_id
+            );
         }
     }
 
@@ -1745,6 +1859,19 @@ StorageUserProjectionReconciler::reconcile_once() const {
             }
         }
 
+        struct OrphanAuthorizationRepair {
+            StorageUserProjectionAuditRequest request;
+            StorageUserProjection tombstone;
+            std::uint64_t node_revision = 0;
+        };
+
+        std::vector<OrphanAuthorizationRepair>
+            orphan_repairs;
+
+        std::vector<
+            StorageUserProjectionAuditRequest
+        > orphan_reaudit_requests;
+
         std::unordered_set<std::string>
             repair_fingerprints;
 
@@ -1793,18 +1920,93 @@ StorageUserProjectionReconciler::reconcile_once() const {
                             break;
 
                         case StorageUserProjectionAuditMismatchCode::
-                                UnexpectedAuthorization:
-                            if (current_fingerprints.find(
-                                    mismatch.fingerprint) ==
-                                current_fingerprints.end()) {
-                                ++result.orphaned_states;
-                            } else {
+                                UnexpectedAuthorization: {
+                            const bool director_knows_user =
+                                current_fingerprints.find(
+                                    mismatch.fingerprint
+                                ) !=
+                                current_fingerprints.end();
+
+                            const auto director_user =
+                                director_knows_user
+                                    ? users.find(
+                                        mismatch.fingerprint
+                                      )
+                                    : users.end();
+
+                            // Auto-revoke only identities that Director no
+                            // longer authorizes anywhere: absent users and
+                            // explicitly unplaced users. A user placed on some
+                            // other Node remains an invariant conflict.
+                            if (director_user != users.end() &&
+                                !director_user->
+                                    second.home_node.empty()) {
                                 ++result.state_conflicts;
+                                ++result.failed;
+                                audit_failed = true;
+                                break;
                             }
 
-                            ++result.failed;
-                            audit_failed = true;
+                            const std::uint64_t
+                                director_revision =
+                                    director_user ==
+                                            users.end()
+                                        ? 0
+                                        : director_user->
+                                            second.
+                                            storage_projection_revision;
+
+                            const std::uint64_t
+                                revision_floor =
+                                    std::max(
+                                        mismatch.actual_revision,
+                                        director_revision
+                                    );
+
+                            if (revision_floor ==
+                                std::numeric_limits<
+                                    std::uint64_t
+                                >::max()) {
+                                ++result.state_conflicts;
+                                ++result.failed;
+                                audit_failed = true;
+                                break;
+                            }
+
+                            StorageUserProjection
+                                tombstone;
+
+                            tombstone.fingerprint =
+                                mismatch.fingerprint;
+
+                            tombstone.enabled = false;
+                            tombstone.storage_allocated = false;
+                            tombstone.quota_bytes = 0;
+                            tombstone.root_rel.clear();
+                            tombstone.storage_pool_id.clear();
+
+                            tombstone.home_node =
+                                observation.request.node_id;
+
+                            // Security: restored live authorization may carry
+                            // revision knowledge newer than Director. Revoke
+                            // strictly above BOTH observed revision floors.
+                            tombstone.revision =
+                                revision_floor + 1;
+
+                            orphan_repairs.push_back(
+                                OrphanAuthorizationRepair{
+                                    observation.request,
+                                    std::move(
+                                        tombstone
+                                    ),
+                                    mismatch.actual_revision
+                                }
+                            );
+
+                            ++result.orphaned_states;
                             break;
+                        }
 
                         default:
                             ++result.state_conflicts;
@@ -1821,6 +2023,193 @@ StorageUserProjectionReconciler::reconcile_once() const {
                 if (audit_failed) {
                     break;
                 }
+            }
+        }
+
+        if (!audit_failed &&
+            !orphan_repairs.empty()) {
+            std::sort(
+                orphan_repairs.begin(),
+                orphan_repairs.end(),
+                [](
+                    const OrphanAuthorizationRepair& left,
+                    const OrphanAuthorizationRepair& right
+                ) {
+                    if (left.tombstone.home_node !=
+                        right.tombstone.home_node) {
+                        return
+                            left.tombstone.home_node <
+                            right.tombstone.home_node;
+                    }
+
+                    return
+                        left.tombstone.fingerprint <
+                        right.tombstone.fingerprint;
+                }
+            );
+
+            for (const auto& repair :
+                 orphan_repairs) {
+                StorageUserProjection
+                    tombstone =
+                        repair.tombstone;
+
+                const auto current_user =
+                    config_.users->get(
+                        tombstone.fingerprint
+                    );
+
+                const bool expected_user_present =
+                    current_user.has_value();
+
+                if (repair.node_revision ==
+                    std::numeric_limits<
+                        std::uint64_t
+                    >::max()) {
+                    ++result.state_conflicts;
+                    ++result.failed;
+                    audit_failed = true;
+                    break;
+                }
+
+                if (current_user.has_value()) {
+                    if (!current_user->
+                            home_node.empty()) {
+                        // A concurrent placement won after the audit snapshot.
+                        // Never revoke authorization based on stale unplaced
+                        // knowledge.
+                        ++result.stale_states;
+                        ++result.failed;
+                        audit_failed = true;
+                        break;
+                    }
+
+                    const std::uint64_t
+                        target_revision =
+                            std::max(
+                                repair.node_revision + 1,
+                                current_user->
+                                    storage_projection_revision
+                            );
+
+                    bool floor_changed = false;
+                    bool expectation_matched = false;
+                    std::string floor_error;
+
+                    if (!config_.users->
+                            raise_storage_projection_revision_floor_persisted_if_unplaced(
+                                tombstone.fingerprint,
+                                current_user->
+                                    storage_projection_revision,
+                                target_revision,
+                                &floor_changed,
+                                &expectation_matched,
+                                &floor_error
+                            )) {
+                        floor_error.clear();
+
+                        ++result.persist_failures;
+                        ++result.failed;
+                        audit_failed = true;
+                        break;
+                    }
+
+                    (void)floor_changed;
+
+                    if (!expectation_matched) {
+                        ++result.stale_states;
+                        ++result.failed;
+                        audit_failed = true;
+                        break;
+                    }
+
+                    tombstone.revision =
+                        target_revision;
+                } else {
+                    // Deleted users have no Director UserRec revision to
+                    // ratchet. The disabling write still has to dominate the
+                    // live revision observed by the authenticated range audit.
+                    tombstone.revision =
+                        repair.node_revision + 1;
+                }
+
+                // NEW-005-style final authoritative check immediately before
+                // network I/O. Do not let a concurrent re-placement cross the
+                // revision-floor persistence boundary.
+                const auto authoritative_before_send =
+                    config_.users->get(
+                        tombstone.fingerprint
+                    );
+
+                if (expected_user_present) {
+                    if (!authoritative_before_send.has_value() ||
+                        !authoritative_before_send->
+                            home_node.empty() ||
+                        authoritative_before_send->
+                            storage_projection_revision !=
+                                tombstone.revision) {
+                        ++result.stale_states;
+                        ++result.failed;
+                        audit_failed = true;
+                        break;
+                    }
+                } else if (
+                    authoritative_before_send.has_value()
+                ) {
+                    ++result.stale_states;
+                    ++result.failed;
+                    audit_failed = true;
+                    break;
+                }
+
+                StorageUserProjectionSyncResult
+                    revoke_result;
+
+                try {
+                    revoke_result =
+                        config_.sync_projection(
+                            tombstone
+                        );
+                } catch (...) {
+                    ++result.failed;
+                    audit_failed = true;
+                    break;
+                }
+
+                if (!sync_succeeded(
+                        revoke_result.code)) {
+                    ++result.failed;
+                    audit_failed = true;
+                    break;
+                }
+
+                const bool request_remembered =
+                    std::any_of(
+                        orphan_reaudit_requests.begin(),
+                        orphan_reaudit_requests.end(),
+                        [&](const auto& request) {
+                            return
+                                request.node_id ==
+                                    repair.request.node_id &&
+                                request.range_start ==
+                                    repair.request.range_start &&
+                                request.range_end ==
+                                    repair.request.range_end;
+                        }
+                    );
+
+                if (!request_remembered) {
+                    orphan_reaudit_requests.push_back(
+                        repair.request
+                    );
+                }
+
+                emit_orphan_repair_audit_best_effort(
+                    config_,
+                    tombstone.home_node,
+                    repair.node_revision,
+                    tombstone.revision
+                );
             }
         }
 
@@ -1911,6 +2300,48 @@ StorageUserProjectionReconciler::reconcile_once() const {
             }
         }
 
+        // RT-008 orphan repair is not considered converged merely because
+        // the disabling POST succeeded. Re-read every affected range so a
+        // restored live authorization cannot silently survive the repair.
+        if (!audit_failed &&
+            !orphan_reaudit_requests.empty()) {
+            for (const auto& request :
+                 orphan_reaudit_requests) {
+                StorageUserProjectionAuditClientResult
+                    verify_result;
+
+                try {
+                    verify_result =
+                        config_.audit_projection_range(
+                            request
+                        );
+                } catch (...) {
+                    ++result.failed;
+                    audit_failed = true;
+                    break;
+                }
+
+                if (verify_result.code !=
+                        StorageUserProjectionAuditClientCode::Ok ||
+                    !verify_result.result.complete) {
+                    ++result.failed;
+                    audit_failed = true;
+                    break;
+                }
+
+                if (!audit_result_consistent(
+                        request,
+                        verify_result.result) ||
+                    !verify_result.result.
+                        mismatches.empty()) {
+                    ++result.state_conflicts;
+                    ++result.failed;
+                    audit_failed = true;
+                    break;
+                }
+            }
+        }
+
         // Equal/current projections with no mismatch are already synchronized
         // only now: the Storage range proof, not Director durable memory,
         // establishes their current authorization state.
@@ -1954,6 +2385,15 @@ StorageUserProjectionReconciler::reconcile_once() const {
                     break;
                 }
 
+                if (audit_nodes_this_pass.find(
+                        deferred->second.home_node
+                    ) ==
+                    audit_nodes_this_pass.end()) {
+                    // Known v2 capability is retained, but this offline Node
+                    // was deliberately not contacted during this pass.
+                    continue;
+                }
+
                 const auto state =
                     projection_state_from_projection(
                         deferred->second
@@ -1970,7 +2410,8 @@ StorageUserProjectionReconciler::reconcile_once() const {
     }
 
     result.ok =
-        result.failed == 0;
+        result.failed == 0 &&
+        result.audit_deferred_nodes == 0;
 
     return result;
 }

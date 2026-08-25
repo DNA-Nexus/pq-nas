@@ -656,6 +656,61 @@ int main() {
         );
     }
 
+    // NEW-006: a known v2 Node that is currently offline remains audit-capable
+    // but is not contacted and must never fall back to the legacy POST path.
+    {
+        auto offline_audit_config =
+            config;
+
+        offline_audit_config.audit_emit = {};
+
+        offline_audit_config.list_audit_capable_nodes =
+            []() {
+                return std::vector<std::string>{
+                    "storage-01"
+                };
+            };
+
+        offline_audit_config.list_audit_online_nodes =
+            []() {
+                return std::vector<std::string>{};
+            };
+
+        std::size_t offline_audit_calls = 0;
+
+        offline_audit_config.audit_projection_range =
+            [&](const pqnas::cluster::
+                    StorageUserProjectionAuditRequest& request) {
+                ++offline_audit_calls;
+
+                return audit_match(
+                    request
+                );
+            };
+
+        pqnas::cluster::
+            StorageUserProjectionReconciler
+                offline_audit_reconciler(
+                    offline_audit_config
+                );
+
+        sent.clear();
+
+        const auto result =
+            offline_audit_reconciler.
+                reconcile_once();
+
+        expect(
+            !result.ok &&
+            result.failed == 0 &&
+            result.audit_deferred_nodes == 1 &&
+            result.already_synced == 0 &&
+            offline_audit_calls == 0 &&
+            sent.empty(),
+            "NEW-006 offline v2 audit is deferred without transport failure or legacy POST"
+        );
+    }
+
     // Original RT-008 regression: Director says A@rev is confirmed, but
     // Storage lost the projection. Missing readback replays the exact same
     // current projection and only then reports convergence.
@@ -813,13 +868,28 @@ int main() {
         );
     }
 
-    // A Storage authorization unknown to current Director users is an orphan
-    // signal. Never invent stored_revision+1 or perform destructive repair.
+    // NEW-006 / RT-008: a restored live authorization for an explicitly
+    // unplaced Director user is revoked above the Node's observed revision and
+    // the affected range is re-audited before convergence is reported.
     {
         auto orphan_audit_config =
             config;
 
-        orphan_audit_config.audit_emit = {};
+        std::vector<AuditRecord>
+            orphan_audits;
+
+        orphan_audit_config.audit_emit =
+            [&](const std::string& event,
+                const std::string& outcome,
+                const std::map<std::string, std::string>& fields) {
+                orphan_audits.push_back(
+                    AuditRecord{
+                        event,
+                        outcome,
+                        fields
+                    }
+                );
+            };
 
         orphan_audit_config.list_audit_capable_nodes =
             []() {
@@ -829,8 +899,18 @@ int main() {
                 };
             };
 
+        orphan_audit_config.list_audit_online_nodes =
+            []() {
+                return std::vector<std::string>{
+                    "storage-01",
+                    "storage-empty"
+                };
+            };
+
+        std::size_t storage_empty_audits = 0;
+
         orphan_audit_config.audit_projection_range =
-            [](const pqnas::cluster::
+            [&](const pqnas::cluster::
                     StorageUserProjectionAuditRequest& request) {
                 if (request.node_id ==
                     "storage-01") {
@@ -844,27 +924,32 @@ int main() {
                         request
                     );
 
-                pqnas::cluster::
-                    StorageUserProjectionAuditMismatch
-                        mismatch;
+                ++storage_empty_audits;
 
-                mismatch.code =
+                if (storage_empty_audits == 1) {
                     pqnas::cluster::
-                        StorageUserProjectionAuditMismatchCode::
-                            UnexpectedAuthorization;
+                        StorageUserProjectionAuditMismatch
+                            mismatch;
 
-                mismatch.fingerprint =
-                    std::string(
-                        128,
-                        'c'
+                    mismatch.code =
+                        pqnas::cluster::
+                            StorageUserProjectionAuditMismatchCode::
+                                UnexpectedAuthorization;
+
+                    mismatch.fingerprint =
+                        unplaced.fingerprint;
+
+                    mismatch.expected_revision = 0;
+                    mismatch.actual_revision = 9;
+
+                    result.result.mismatches.push_back(
+                        std::move(mismatch)
                     );
-
-                mismatch.expected_revision = 0;
-                mismatch.actual_revision = 9;
-
-                result.result.mismatches.push_back(
-                    std::move(mismatch)
-                );
+                } else {
+                    // Storage retains the accepted canonical tombstone as a
+                    // safe revision floor, so the second range proof ignores it.
+                    result.result.safe_tombstones_ignored = 1;
+                }
 
                 return result;
             };
@@ -881,12 +966,91 @@ int main() {
             orphan_audit_reconciler.
                 reconcile_once();
 
+        const bool audit_has_fingerprint =
+            !orphan_audits.empty() &&
+            orphan_audits[0].fields.find(
+                "fingerprint"
+            ) !=
+            orphan_audits[0].fields.end();
+
+        const auto ratcheted_unplaced_user =
+            users.get(
+                unplaced.fingerprint
+            );
+
+        pqnas::UsersRegistry
+            reloaded_after_orphan_floor;
+
+        const bool orphan_floor_reloads =
+            reloaded_after_orphan_floor.load(
+                users_path.string()
+            );
+
+        const auto reloaded_unplaced_user =
+            orphan_floor_reloads
+                ? reloaded_after_orphan_floor.get(
+                    unplaced.fingerprint
+                  )
+                : std::optional<pqnas::UserRec>{};
+
         expect(
-            !result.ok &&
+            result.ok &&
+            result.failed == 0 &&
             result.orphaned_states == 1 &&
-            result.already_synced == 0 &&
-            sent.empty(),
-            "RT-008 unexpected orphan authorization fails closed without mutation"
+            result.audit_deferred_nodes == 0 &&
+            result.already_synced == 1 &&
+            storage_empty_audits == 2 &&
+            sent.size() == 1 &&
+            sent[0].fingerprint ==
+                unplaced.fingerprint &&
+            sent[0].home_node ==
+                "storage-empty" &&
+            !sent[0].enabled &&
+            !sent[0].storage_allocated &&
+            sent[0].quota_bytes == 0 &&
+            sent[0].root_rel.empty() &&
+            sent[0].storage_pool_id.empty() &&
+            sent[0].revision == 10 &&
+            ratcheted_unplaced_user.has_value() &&
+            ratcheted_unplaced_user->
+                home_node.empty() &&
+            ratcheted_unplaced_user->
+                storage_projection_revision ==
+                    sent[0].revision &&
+            orphan_floor_reloads &&
+            reloaded_unplaced_user.has_value() &&
+            reloaded_unplaced_user->
+                home_node.empty() &&
+            reloaded_unplaced_user->
+                storage_projection_revision ==
+                    sent[0].revision &&
+            orphan_audits.size() == 1 &&
+            orphan_audits[0].event ==
+                "cluster.storage_projection.orphan_revoked" &&
+            orphan_audits[0].outcome ==
+                "ok" &&
+            !audit_has_fingerprint &&
+            audit_field_equals(
+                orphan_audits[0],
+                "node_id",
+                "storage-empty"
+            ) &&
+            audit_field_equals(
+                orphan_audits[0],
+                "mismatch_kind",
+                "unexpected_authorization"
+            ) &&
+            audit_field_equals(
+                orphan_audits[0],
+                "node_revision",
+                "9"
+            ) &&
+            audit_field_equals(
+                orphan_audits[0],
+                "projection_revision",
+                "10"
+            ),
+            "NEW-006 orphan tombstone durably ratchets Director revision and re-audits clean"
         );
     }
 

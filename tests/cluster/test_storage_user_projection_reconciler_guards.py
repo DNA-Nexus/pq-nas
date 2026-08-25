@@ -16,6 +16,14 @@ header = Path(
     "storage_user_projection_reconciler.h"
 ).read_text()
 
+users_source = Path(
+    "server/src/users_registry.cpp"
+).read_text()
+
+users_header = Path(
+    "server/src/users_registry.h"
+).read_text()
+
 main = Path(
     "server/src/main.cpp"
 ).read_text()
@@ -317,8 +325,58 @@ require(
 )
 
 require(
-    "orphaned_states" in source,
-    "orphaned persistent state must be surfaced, not silently deleted",
+    "orphaned_states" in source and
+    "OrphanAuthorizationRepair" in source and
+    '"cluster.storage_projection.orphan_revoked"' in source and
+    '"mismatch_kind"' in source and
+    '"unexpected_authorization"' in source,
+    "NEW-006 unexpected authorization must be revoked and audit-correlated",
+)
+
+require(
+    "list_audit_online_nodes" in header and
+    "audit_deferred_nodes" in header and
+    "audit_nodes_this_pass" in source,
+    "NEW-006 offline v2 Nodes must defer audit without legacy downgrade",
+)
+
+revision_floor_name = (
+    "raise_storage_projection_revision_floor_"
+    "persisted_if_unplaced"
+)
+
+revision_floor_start = users_source.find(
+    "bool UsersRegistry::\n" +
+    revision_floor_name + "("
+)
+
+revision_floor_end = users_source.find(
+    "/*\nset_status(), set_role()",
+    revision_floor_start,
+)
+
+revision_floor_block = (
+    users_source[
+        revision_floor_start:
+        revision_floor_end
+    ]
+    if revision_floor_start >= 0 and
+    revision_floor_end > revision_floor_start
+    else ""
+)
+
+require(
+    revision_floor_name in users_header and
+    revision_floor_start >= 0 and
+    "ensure_durable_locked(error)" in
+        revision_floor_block and
+    "home_node.empty()" in
+        revision_floor_block and
+    "expected_revision" in
+        revision_floor_block and
+    "registry_commit_visible" in
+        revision_floor_block,
+    "NEW-006 Director revision floor must use durable unplaced-user CAS",
 )
 
 require(

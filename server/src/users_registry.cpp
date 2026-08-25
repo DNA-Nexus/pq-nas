@@ -1719,6 +1719,123 @@ bool UsersRegistry::set_non_auth_metadata_persisted(
 
 
 
+bool UsersRegistry::
+raise_storage_projection_revision_floor_persisted_if_unplaced(
+    const std::string& fp_hex,
+    std::uint64_t expected_revision,
+    std::uint64_t minimum_revision,
+    bool* changed,
+    bool* expectation_matched,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (expectation_matched) {
+    *expectation_matched = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty() ||
+      minimum_revision == 0) {
+    if (error) {
+      *error =
+          "invalid storage projection revision floor";
+    }
+
+    return false;
+  }
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  // Security: heal any rename-visible users.json commit before changing the
+  // authoritative revision floor again.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  auto iterator =
+      by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end() ||
+      !iterator->second.home_node.empty() ||
+      iterator->second.storage_projection_revision !=
+          expected_revision) {
+    return true;
+  }
+
+  if (expectation_matched) {
+    *expectation_matched = true;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  if (previous.storage_projection_revision >=
+      minimum_revision) {
+    return true;
+  }
+
+  if (durability_path_.empty()) {
+    if (error) {
+      *error =
+          "users registry durability path unavailable";
+    }
+
+    return false;
+  }
+
+  UserRec candidate =
+      previous;
+
+  candidate.storage_projection_revision =
+      minimum_revision;
+
+  iterator->second =
+      candidate;
+
+  const std::string persistence_path =
+      durability_path_;
+
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          persistence_path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      // Security: rename already made the higher revision authoritative.
+      // Never roll memory back below a Node revision floor.
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    iterator->second =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  return true;
+}
+
+
 /*
 set_status(), set_role()
   - Small mutation helpers used by admin operations.
