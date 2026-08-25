@@ -30,6 +30,10 @@ struct WorkspaceExternalSessionRouteDeps {
     const std::string* app = nullptr;
     const unsigned char* cookie_key = nullptr;
 
+    // Security: credential-minting routes default to disabled unless the
+    // composition root explicitly permits normal interactive user login.
+    bool interactive_user_login_allowed = false;
+
     std::function<bool(const unsigned char* cookie_key,
                        const std::string& fp_b64,
                        long iat,

@@ -14,6 +14,15 @@ strict_cookie = (ROOT / "server/include/strict_session_cookie.h").read_text()
 put = (ROOT / "server/src/routes/routes_files_put.inc").read_text()
 routes_v5 = (ROOT / "server/src/routes/routes_v5.cc").read_text()
 routes_v5_h = (ROOT / "server/include/routes_v5.h").read_text()
+workspace_wiring = (
+    ROOT / "server/src/routes/routes_admin_stats_badges.inc"
+).read_text()
+workspace_session_source = (
+    ROOT / "server/src/routes/routes_workspace_external_sessions.cpp"
+).read_text()
+workspace_session_header = (
+    ROOT / "server/src/routes/routes_workspace_external_sessions.h"
+).read_text()
 
 def require(cond, msg):
     if not cond:
@@ -83,6 +92,83 @@ require(
 #include "routes/routes_files_core.inc"
     }''' in main,
     "legacy Files core routes must not register on Storage Node",
+)
+
+# FINAL-002: the remaining legacy route families must not be registered
+# on Storage Nodes. These routes still resolve state through users.json,
+# workspaces.json and/or legacy share state rather than Storage projections.
+workspace_gate_start = workspace_wiring.index(
+    "// FINAL-002: these workspace routes still use local users.json"
+)
+workspace_gate_end = workspace_wiring.index(
+    "} // !cluster_config.is_node(): legacy workspace routes",
+    workspace_gate_start,
+)
+workspace_gate = workspace_wiring[
+    workspace_gate_start:workspace_gate_end
+]
+
+require(
+    "if (!cluster_config.is_node()) {" in workspace_gate,
+    "legacy workspace route family must be Node role-gated",
+)
+
+for registration in (
+    "register_workspace_file_routes(",
+    "register_workspace_link_routes(",
+    "register_workspace_external_invite_routes(",
+    "register_workspace_external_session_routes(",
+):
+    require(
+        registration in workspace_gate,
+        f"legacy workspace registration escaped Node gate: {registration}",
+    )
+
+require(
+    '''if (!cluster_config.is_node()) {
+#include "routes/routes_gallery_reelstack.inc"
+    }''' in main,
+    "legacy Gallery/ReelStack routes must not register on Storage Node",
+)
+
+require(
+    '''if (!cluster_config.is_node()) {
+#include "routes/routes_shares_public.inc"
+    }''' in main,
+    "legacy share/public-share routes must not register on Storage Node",
+)
+
+# FINAL-002: workspace external-session consume mints a credential, so route
+# registration is not the only security boundary. Keep an independent,
+# fail-closed interactive-login policy at the minting handler.
+require(
+    "bool interactive_user_login_allowed = false;" in
+    workspace_session_header,
+    "workspace session mint policy must default to denied",
+)
+
+consume_start = workspace_session_source.index(
+    'srv.Post("/api/v4/workspaces/external-sessions/consume"'
+)
+consume_end = workspace_session_source.index(
+    "const long cookie_ttl",
+    consume_start,
+)
+consume_segment = workspace_session_source[
+    consume_start:consume_end
+]
+
+require(
+    "pqnas::require_interactive_user_login(" in consume_segment and
+    "deps.interactive_user_login_allowed" in consume_segment,
+    "workspace session consume must enforce interactive-login policy",
+)
+
+require(
+    "ws_external_session_deps.interactive_user_login_allowed =" in
+    workspace_wiring and
+    "!cluster_config.is_node();" in workspace_wiring,
+    "production workspace session mint policy must deny Storage Node",
 )
 
 # Chunked upload is another legacy filesystem route outside files_core.
@@ -201,4 +287,4 @@ require(
     "production must wire cleanup-only signed-cookie identity",
 )
 
-print("OK: RT-001 legacy Node route-gating guards passed")
+print("OK: RT-001 / FINAL-002 legacy Node route-gating guards passed")

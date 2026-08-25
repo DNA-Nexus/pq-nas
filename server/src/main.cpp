@@ -15877,8 +15877,11 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
     }
 
     // ---- Gallery / ReelStack routes ----
-    // Transitional bulk split: route/helper block lives in routes_gallery_reelstack.inc.
+    // Security: these legacy routes resolve user roots through users.json.
+    // Keep them off Storage Nodes until projection-backed migration exists.
+    if (!cluster_config.is_node()) {
 #include "routes/routes_gallery_reelstack.inc"
+    }
 
 
     // ---- Files PUT upload route ----
@@ -15887,8 +15890,11 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
 
 
     // ---- Shares / public share / gallery export routes ----
-    // Transitional bulk split: route/helper block lives in routes_shares_public.inc.
+    // Security: share tokens must not revive Node-local users.json authority.
+    // Keep this legacy route family off Storage Nodes.
+    if (!cluster_config.is_node()) {
 #include "routes/routes_shares_public.inc"
+    }
 
 
     // ************************* END OF ROUTES *************************** //
