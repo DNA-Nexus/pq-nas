@@ -54,6 +54,9 @@ inline bool strict_cookie_name_character(
     }
 }
 
+using StrictSessionCookieValueValidator =
+    bool (*)(const std::string&) noexcept;
+
 inline bool canonical_pqnas_session_cookie_value(
     const std::string& value
 ) noexcept {
@@ -102,13 +105,46 @@ inline bool canonical_pqnas_session_cookie_value(
         dot_position + 1 < value.size();
 }
 
+inline bool canonical_pqnas_share_recipient_cookie_value(
+    const std::string& value
+) noexcept {
+    // Security: recipient sessions are minted from exactly 24 random bytes,
+    // encoded as unpadded base64url.
+    if (value.size() != 32) {
+        return false;
+    }
+
+    for (const char raw_character : value) {
+        const unsigned char character =
+            static_cast<unsigned char>(raw_character);
+
+        const bool alpha =
+            (character >= 'A' && character <= 'Z') ||
+            (character >= 'a' && character <= 'z');
+
+        const bool digit =
+            character >= '0' && character <= '9';
+
+        if (!alpha &&
+            !digit &&
+            character != '-' &&
+            character != '_') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 inline StrictSessionCookieResult
 extract_strict_session_cookie(
     const httplib::Request& request,
     const std::string& target_name,
-    std::string* output
+    std::string* output,
+    StrictSessionCookieValueValidator value_validator =
+        canonical_pqnas_session_cookie_value
 ) {
-    if (!output) {
+    if (!output || !value_validator) {
         return
             StrictSessionCookieResult::
                 InvalidCookieHeader;
@@ -254,8 +290,7 @@ extract_strict_session_cookie(
             // Security: duplicate target names enable cookie tossing / parser
             // ambiguity. Never select first or last.
             if (found ||
-                !canonical_pqnas_session_cookie_value(
-                    value)) {
+                !value_validator(value)) {
                 output->clear();
 
                 return

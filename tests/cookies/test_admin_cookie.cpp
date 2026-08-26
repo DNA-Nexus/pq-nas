@@ -183,6 +183,54 @@ int main() {
             return true;
         };
 
+    auto require_share_recipient_cookie_result =
+        [&](
+            const httplib::Request& request,
+            pqnas::StrictSessionCookieResult expected,
+            const std::string& expected_value,
+            const char* label
+        ) -> bool {
+            std::string parsed = "stale";
+
+            const auto result =
+                pqnas::extract_strict_session_cookie(
+                    request,
+                    "pqnas_share_recipient",
+                    &parsed,
+                    pqnas::canonical_pqnas_share_recipient_cookie_value
+                );
+
+            if (result != expected) {
+                std::cerr
+                    << "FAIL: "
+                    << label
+                    << " unexpected share-recipient parser result\n";
+                return false;
+            }
+
+            if (expected ==
+                    pqnas::StrictSessionCookieResult::Ok &&
+                parsed != expected_value) {
+                std::cerr
+                    << "FAIL: "
+                    << label
+                    << " parsed wrong share-recipient value\n";
+                return false;
+            }
+
+            if (expected !=
+                    pqnas::StrictSessionCookieResult::Ok &&
+                !parsed.empty()) {
+                std::cerr
+                    << "FAIL: "
+                    << label
+                    << " left stale share-recipient parser output\n";
+                return false;
+            }
+
+            return true;
+        };
+
     // NEW-003: pqnas_workspace_session must use the same strict credential
     // selection rules as pqnas_session.
     {
@@ -345,6 +393,147 @@ int main() {
                 "noncanonical workspace session value"
             )) {
             return 27;
+        }
+    }
+
+    // FINAL-004: share-recipient cookies use the same strict header/name
+    // selection rules, with their own canonical bare-base64url value format.
+    const std::string shareSessionId(32, 'A');
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_share_recipient=") +
+                shareSessionId
+        );
+
+        if (!require_share_recipient_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::Ok,
+                shareSessionId,
+                "canonical share-recipient cookie"
+            )) {
+            return 28;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("theme=dark; pqnas_share_recipient=") +
+                shareSessionId
+        );
+
+        if (!require_share_recipient_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::Ok,
+                shareSessionId,
+                "share-recipient with unrelated cookie"
+            )) {
+            return 29;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_share_recipient=") +
+                shareSessionId
+        );
+        request.headers.emplace(
+            "Cookie",
+            "theme=dark"
+        );
+
+        if (!require_share_recipient_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "duplicate Cookie headers for share recipient"
+            )) {
+            return 30;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_share_recipient=") +
+                shareSessionId +
+                "; pqnas_share_recipient=" +
+                shareSessionId
+        );
+
+        if (!require_share_recipient_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "duplicate share-recipient cookie names"
+            )) {
+            return 31;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("broken; pqnas_share_recipient=") +
+                shareSessionId
+        );
+
+        if (!require_share_recipient_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "malformed share-recipient Cookie segment"
+            )) {
+            return 32;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_share_recipient=") +
+                cookieVal
+        );
+
+        if (!require_share_recipient_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "dotted user-session value rejected for share recipient"
+            )) {
+            return 33;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_share_recipient=") +
+                std::string(31, 'A')
+        );
+
+        if (!require_share_recipient_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "wrong-length share-recipient value"
+            )) {
+            return 34;
         }
     }
 
