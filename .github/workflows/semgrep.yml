@@ -32,7 +32,8 @@ jobs:
             libsqlite3-dev \
             libsodium-dev \
             libqrencode-dev \
-            libjsoncpp-dev
+            libjsoncpp-dev \
+            nlohmann-json3-dev
 
       - name: Select Rust toolchain
         run: |
