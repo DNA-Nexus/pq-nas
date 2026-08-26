@@ -430,6 +430,29 @@ int main() {
                     CredentialPersisted,
             pqnas::cluster::
                 NodeEnrollmentProvisioningStage::
+                    TlsTrustBound,
+            &consumed_record,
+            &error
+        ) ==
+            pqnas::cluster::
+                NodeEnrollmentRegistryResult::Ok,
+        "advance consumed TLS fixture: " +
+            error
+    );
+
+    expect(
+        registry.advance_provisioning_stage(
+            consume_fixture
+                .enrollment()
+                .enrollment_id,
+            consume_fixture
+                .enrollment()
+                .generation,
+            pqnas::cluster::
+                NodeEnrollmentProvisioningStage::
+                    TlsTrustBound,
+            pqnas::cluster::
+                NodeEnrollmentProvisioningStage::
                     NodeRegistered,
             &consumed_record,
             &error

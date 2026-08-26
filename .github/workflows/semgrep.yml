@@ -21,6 +21,33 @@ jobs:
       - name: Run security Python suite
         run: python3 tests/cluster/run_all_security_python.py
 
+      - name: Install C++ regression dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            pkg-config \
+            libssl-dev \
+            libsqlite3-dev \
+            libsodium-dev \
+            libqrencode-dev \
+            libjsoncpp-dev
+
+      - name: Select Rust toolchain
+        run: |
+          rustup toolchain install 1.85.0 --profile minimal
+          rustup default 1.85.0
+
+      - name: Configure C++ regression build
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build C++ regression binaries
+        run: cmake --build build -j2
+
+      - name: Run C++ regression suite
+        run: python3 tests/cluster/run_all_cpp_regressions.py --build-dir build
+
       - name: Install Semgrep
         run: python3 -m pip install --user semgrep
 
