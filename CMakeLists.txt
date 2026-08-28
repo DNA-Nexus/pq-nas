@@ -4773,6 +4773,173 @@ target_link_libraries(pqnas_storage_user_projection_audit_https PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Director -> Storage browser handoff ticket client
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_handoff_ticket_client STATIC
+        server/src/cluster/storage_handoff_ticket_client.cpp
+        server/src/cluster/storage_handoff_ticket_client.h
+)
+
+target_include_directories(pqnas_storage_handoff_ticket_client PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_handoff_ticket_client
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_handoff_ticket_client PUBLIC
+        pqnas_node_credential_registry
+        pqnas_node_tls_trust_store
+        pqnas_cluster_identity_validation
+        pqnas_storage_handoff_ticket_store
+)
+
+
+# -----------------------------------------------------------------------------
+# Director -> Storage browser handoff ticket HTTPS transport
+# -----------------------------------------------------------------------------
+add_library(pqnas_storage_handoff_ticket_https STATIC
+        server/src/cluster/storage_handoff_ticket_https.cpp
+        server/src/cluster/storage_handoff_ticket_https.h
+)
+
+target_include_directories(pqnas_storage_handoff_ticket_https PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(pqnas_storage_handoff_ticket_https PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+target_compile_definitions(
+        pqnas_storage_handoff_ticket_https
+        PRIVATE
+        CPPHTTPLIB_OPENSSL_SUPPORT
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_storage_handoff_ticket_https
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(pqnas_storage_handoff_ticket_https PUBLIC
+        pqnas_storage_handoff_ticket_client
+        pqnas_node_tls_https_client
+        pqnas_storage_handoff_ticket_store
+        OpenSSL::SSL
+        OpenSSL::Crypto
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: Director -> Storage browser handoff ticket client
+# -----------------------------------------------------------------------------
+add_executable(test_storage_handoff_ticket_client
+        tests/cluster/test_storage_handoff_ticket_client.cpp
+        server/src/cluster/node_registry.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(test_storage_handoff_ticket_client PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_options(test_storage_handoff_ticket_client PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_handoff_ticket_client
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_handoff_ticket_client PRIVATE
+        pqnas_storage_handoff_ticket_client
+        ${SODIUM_LIBRARIES}
+        Threads::Threads
+)
+
+set_target_properties(test_storage_handoff_ticket_client PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_handoff_ticket_client
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_handoff_ticket_client"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_handoff_ticket_client
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: Director -> Storage browser handoff ticket HTTPS protocol
+# -----------------------------------------------------------------------------
+add_executable(test_storage_handoff_ticket_https
+        tests/cluster/test_storage_handoff_ticket_https.cpp
+        server/src/cluster/internal_auth.cpp
+)
+
+target_include_directories(test_storage_handoff_ticket_https PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+        ${SODIUM_INCLUDE_DIRS}
+)
+
+target_compile_definitions(
+        test_storage_handoff_ticket_https
+        PRIVATE
+        CPPHTTPLIB_OPENSSL_SUPPORT
+)
+
+target_compile_options(test_storage_handoff_ticket_https PRIVATE
+        ${SODIUM_CFLAGS_OTHER}
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_storage_handoff_ticket_https
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(test_storage_handoff_ticket_https PRIVATE
+        pqnas_storage_handoff_ticket_https
+        ${SODIUM_LIBRARIES}
+        OpenSSL::SSL
+        OpenSSL::Crypto
+)
+
+set_target_properties(test_storage_handoff_ticket_https PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_storage_handoff_ticket_https
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_storage_handoff_ticket_https"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_storage_handoff_ticket_https
+)
+
+add_custom_target(run_test_storage_handoff_ticket_client_guards
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_storage_handoff_ticket_client_guards.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: Director -> Storage projection synchronization client
 # -----------------------------------------------------------------------------
 add_executable(test_storage_user_projection_sync_client

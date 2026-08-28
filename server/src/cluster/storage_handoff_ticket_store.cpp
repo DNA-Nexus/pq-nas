@@ -196,14 +196,6 @@ bool valid_encoded_32_text(
     }
 }
 
-bool valid_ticket_text(
-    const std::string& ticket
-) noexcept {
-    return valid_encoded_32_text(
-        ticket
-    );
-}
-
 bool generate_ticket(
     std::string* output
 ) {
@@ -255,7 +247,7 @@ bool hash_ticket(
     std::string* output_hash
 ) {
     if (!output_hash ||
-        !valid_ticket_text(ticket)) {
+        !valid_storage_handoff_ticket_text(ticket)) {
         return false;
     }
 
@@ -299,6 +291,14 @@ bool hash_ticket(
 }
 
 } // namespace
+
+bool valid_storage_handoff_ticket_text(
+    const std::string& value
+) noexcept {
+    return valid_encoded_32_text(
+        value
+    );
+}
 
 const char* storage_handoff_ticket_result_code(
     StorageHandoffTicketResult result
@@ -606,7 +606,7 @@ StorageHandoffTicketStore::consume(
     *out_claims =
         StorageHandoffTicketClaims{};
 
-    if (!valid_ticket_text(ticket) ||
+    if (!valid_storage_handoff_ticket_text(ticket) ||
         !valid_encoded_32_text(
             browser_binding_secret
         )) {
