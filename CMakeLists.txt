@@ -3797,6 +3797,15 @@ add_custom_target(run_test_storage_handoff_preauth_production_wiring
 )
 
 
+# Security: the service-to-service ticket endpoint may be production-enabled
+# independently while both browser-facing handoff endpoints remain closed.
+add_custom_target(run_test_internal_storage_handoff_production_wiring
+        COMMAND python3
+                "${CMAKE_SOURCE_DIR}/tests/cluster/test_internal_storage_handoff_production_wiring.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+
 # -----------------------------------------------------------------------------
 # Storage Node session authenticator
 # -----------------------------------------------------------------------------
@@ -4066,6 +4075,7 @@ target_link_libraries(pqnas_internal_storage_user_projection_routes PUBLIC
 target_link_libraries(pqnas_server PRIVATE
         pqnas_storage_path_validation
         pqnas_internal_storage_user_projection_routes
+        pqnas_internal_storage_handoff_routes
         pqnas_storage_user_access_runtime
 )
 

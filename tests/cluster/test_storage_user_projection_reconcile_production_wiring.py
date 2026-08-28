@@ -217,10 +217,17 @@ require(
     "projection reconciliation must stop before heartbeat shutdown",
 )
 
-# Security boundary remains closed: this phase synchronizes projections only.
+# Security boundary: projection reconciliation must not open either
+# browser-facing handoff endpoint. The authenticated internal ticket service is
+# intentionally production-enabled by its own dedicated wiring guard.
 require(
-    "register_internal_storage_handoff_routes(" not in production_tu,
-    "Storage handoff route must remain unregistered",
+    "register_storage_handoff_preauth_routes(" not in production_tu,
+    "Storage browser preauth must remain production-disabled",
+)
+
+require(
+    "register_storage_handoff_consume_routes(" not in production_tu,
+    "Storage browser consume must remain production-disabled",
 )
 
 pqnas_server_link_blocks = re.findall(
