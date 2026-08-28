@@ -219,11 +219,6 @@ require(
     "Storage handoff preauth must remain production-disabled",
 )
 
-require(
-    "register_internal_storage_handoff_routes(" not in production_tu,
-    "internal Storage handoff must remain production-disabled",
-)
-
 if errors:
     for error in errors:
         print(f"FAIL: {error}")

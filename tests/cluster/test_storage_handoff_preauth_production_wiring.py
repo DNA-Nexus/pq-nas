@@ -48,11 +48,6 @@ require(
     "Storage browser preauth endpoint must not be hand-wired in main.cpp",
 )
 
-require(
-    "register_internal_storage_handoff_routes(" not in production_tu,
-    "internal Storage handoff ticket route must remain production-disabled",
-)
-
 if errors:
     for error in errors:
         print(f"FAIL: {error}")

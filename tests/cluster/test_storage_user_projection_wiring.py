@@ -81,11 +81,17 @@ require(
 )
 
 # Security architecture invariant:
-# handoff stays disabled until Director projection/revision synchronization is
-# complete and authorization is wired to this projection store.
+# the authenticated internal handoff ticket service may now use this
+# projection-backed authorization state, while browser-facing handoff remains
+# deliberately closed.
 require(
-    "register_internal_storage_handoff_routes(" not in production_tu,
-    "handoff ticket route is still not production-registered",
+    "register_storage_handoff_preauth_routes(" not in production_tu,
+    "Storage browser preauth must remain production-disabled",
+)
+
+require(
+    "register_storage_handoff_consume_routes(" not in production_tu,
+    "Storage browser consume must remain production-disabled",
 )
 
 # RT010: physical Node deletion must share the exact durable confirmed-state

@@ -117,8 +117,9 @@ require(
 # are separately wired and tested.
 
 
-# Production phase: hardened HTTPS projection sync is now intentionally
-# Director-wired. Handoff remains a separate, still-closed security boundary.
+# Production phase: hardened HTTPS projection sync is intentionally
+# Director-wired. The authenticated internal handoff ticket service is now
+# independently enabled, but browser-facing handoff remains closed.
 require(
     "StorageUserProjectionSyncClient" in main,
     "Director must production-wire the projection sync client",
@@ -130,8 +131,13 @@ require(
 )
 
 require(
-    "register_internal_storage_handoff_routes(" not in production_tu,
-    "production projection sync must not implicitly enable Storage handoff",
+    "register_storage_handoff_preauth_routes(" not in production_tu,
+    "projection sync must not implicitly enable Storage browser preauth",
+)
+
+require(
+    "register_storage_handoff_consume_routes(" not in production_tu,
+    "projection sync must not implicitly enable Storage browser consume",
 )
 
 if errors:

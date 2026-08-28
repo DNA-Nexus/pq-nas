@@ -133,7 +133,9 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/storage_node_credential_runtime.h"
 #include "cluster/node_status.h"
 #include "cluster/storage_user_projection_store.h"
+#include "cluster/storage_user_session_policy.h"
 #include "cluster/storage_user_access_runtime.h"
+#include "cluster/storage_handoff_ticket_store.h"
 #include "cluster/node_registry.h"
 #include "cluster/node_credential_registry.h"
 #include "cluster/node_tls_trust_store.h"
@@ -166,6 +168,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "routes/routes_internal_node_status.h"
 #include "routes/routes_internal_node_credential_rotation.h"
 #include "routes/routes_internal_storage_user_projection.h"
+#include "routes/routes_internal_storage_handoff.h"
 #include "routes/routes_admin_cluster_nodes.h"
 #include "routes/routes_admin_node_enrollments.h"
 #include "routes/routes_node_enrollment_bootstrap.h"
@@ -9466,6 +9469,15 @@ int main()
         pqnas::cluster::StorageUserAccessRuntime
     > storage_user_access_runtime;
 
+    // Short-lived handoff bearer state is intentionally process-local.
+    //
+    // Security: a restart invalidates outstanding tickets. The browser must
+    // restart handoff instead of recovering or persisting plaintext bearer
+    // capability across process lifetime.
+    std::unique_ptr<
+        pqnas::cluster::StorageHandoffTicketStore
+    > storage_handoff_ticket_store;
+
     if (cluster_config.is_node()) {
         std::string credential_err;
 
@@ -11065,6 +11077,16 @@ std::cerr << "[cfg] workspace_external_invites_path=" << workspace_external_invi
         std::cerr
             << "[cluster] Storage user access runtime composed"
             << std::endl;
+
+        storage_handoff_ticket_store =
+            std::make_unique<
+                pqnas::cluster::
+                    StorageHandoffTicketStore
+            >();
+
+        std::cerr
+            << "[cluster] Storage handoff ticket store composed"
+            << std::endl;
     }
 
     {
@@ -11764,6 +11786,100 @@ v5.app_pair_build_qr_uri =
 
         std::cerr
             << "[cluster] internal storage user projection "
+               "route registered"
+            << std::endl;
+    }
+
+    if (cluster_config.is_node()) {
+        pqnas::cluster::
+            InternalStorageHandoffRoutesContext
+                internal_storage_handoff_context;
+
+        internal_storage_handoff_context.verify_authorization =
+            [&cluster_credential_runtime](
+                const std::string& authorization
+            ) {
+                return
+                    cluster_credential_runtime.
+                        verify_authorization(
+                            authorization
+                        );
+            };
+
+        internal_storage_handoff_context.ticket_store =
+            storage_handoff_ticket_store.get();
+
+        // Security: handoff issuance reuses the canonical Storage session
+        // policy. It reads current Node-local projection authority on every
+        // call and rejects disabled, unallocated, invalid or wrong-node state.
+        const auto* storage_session_policy =
+            &storage_user_access_runtime->
+                session_policy();
+
+        internal_storage_handoff_context.authorize_user =
+            [storage_session_policy](
+                const std::string& fingerprint,
+                std::string* out_home_node,
+                std::uint64_t* out_projection_revision
+            ) -> bool {
+                if (!storage_session_policy ||
+                    !out_home_node ||
+                    !out_projection_revision) {
+                    return false;
+                }
+
+                pqnas::cluster::
+                    StorageUserSessionAuthorization
+                        authorization;
+
+                const auto result =
+                    storage_session_policy->
+                        authorize(
+                            fingerprint,
+                            &authorization
+                        );
+
+                if (result !=
+                        pqnas::cluster::
+                            StorageUserSessionPolicyResult::
+                                Authorized ||
+                    authorization.fingerprint !=
+                        fingerprint ||
+                    authorization.home_node.empty() ||
+                    authorization.projection_revision == 0) {
+                    return false;
+                }
+
+                *out_home_node =
+                    authorization.home_node;
+
+                *out_projection_revision =
+                    authorization.projection_revision;
+
+                return true;
+            };
+
+        internal_storage_handoff_context.reply_json =
+            [](httplib::Response& response,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    response,
+                    status,
+                    body
+                );
+            };
+
+        // Security: leave consume_rate_limit_slot unset here. Route
+        // registration installs its bounded per-peer default limiter.
+        pqnas::cluster::
+            register_internal_storage_handoff_routes(
+                srv,
+                internal_storage_handoff_context
+            );
+
+        std::cerr
+            << "[cluster] internal Storage handoff ticket "
                "route registered"
             << std::endl;
     }
