@@ -51,6 +51,14 @@ const char* storage_handoff_ticket_result_code(
     StorageHandoffTicketResult result
 ) noexcept;
 
+// Canonical validator for the 32-byte unpadded base64url handoff ticket.
+//
+// Security: every handoff protocol layer must use this shared validator so
+// acceptance rules cannot drift between issuance, transport and consume.
+bool valid_storage_handoff_ticket_text(
+    const std::string& value
+) noexcept;
+
 // Security: callers must clear plaintext tickets after transferring them to
 // the browser. The store itself retains only a SHA-256 verifier.
 void clear_storage_handoff_ticket_text(
