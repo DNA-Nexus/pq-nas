@@ -2,6 +2,7 @@
 
 #include "cluster/internal_auth.h"
 #include "cluster/storage_handoff_ticket_store.h"
+#include "cluster/strict_json_parse.h"
 #include "httplib.h"
 
 #include <nlohmann/json.hpp>
@@ -571,11 +572,11 @@ void handle_internal_storage_handoff_ticket_request(
 
     json body;
 
-    try {
-        body = json::parse(
-            request.body
-        );
-    } catch (...) {
+    // Security: duplicate identity/binding fields are ambiguous protocol input.
+    // Reject them before field selection so every parser layer sees one value.
+    if (!parse_json_reject_duplicate_keys(
+            request.body,
+            &body)) {
         reply_json_local(
             context,
             response,

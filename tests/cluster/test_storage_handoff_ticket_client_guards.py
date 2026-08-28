@@ -12,6 +12,16 @@ https = (
     "server/src/cluster/storage_handoff_ticket_https.cpp"
 ).read_text(encoding="utf-8")
 
+strict_json = (
+    root /
+    "server/src/cluster/strict_json_parse.h"
+).read_text(encoding="utf-8")
+
+internal_route = (
+    root /
+    "server/src/routes/routes_internal_storage_handoff.cpp"
+).read_text(encoding="utf-8")
+
 errors = []
 
 
@@ -145,8 +155,15 @@ require(
 
 require(
     "parse_json_reject_duplicate_keys(" in https and
-    "duplicate_key" in https,
-    "handoff HTTPS parser must reject duplicate protocol fields",
+    "parse_json_reject_duplicate_keys(" in strict_json and
+    "duplicate_key" in strict_json,
+    "handoff HTTPS parser must use the shared duplicate-key rejecting parser",
+)
+
+require(
+    "parse_json_reject_duplicate_keys(" in internal_route and
+    "body = json::parse(" not in internal_route,
+    "internal handoff route must reject duplicate JSON fields before selection",
 )
 
 require(

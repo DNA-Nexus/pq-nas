@@ -741,6 +741,102 @@ int main() {
     }
 
     {
+        const int authorize_calls_before =
+            authorize_calls;
+
+        const std::size_t store_size_before =
+            store.size();
+
+        const std::string body =
+            std::string(
+                "{\"fingerprint\":\""
+            ) +
+            fingerprint +
+            "\",\"fingerprint\":\"" +
+            fingerprint +
+            "\",\"browser_binding_hash\":\"" +
+            browser_binding_hash +
+            "\"}";
+
+        auto request =
+            make_request(
+                "Bearer " + token,
+                "application/json",
+                body
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_internal_storage_handoff_ticket_request(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 400,
+            "duplicate fingerprint field returns 400"
+        );
+
+        expect(
+            authorize_calls ==
+                authorize_calls_before &&
+            store.size() ==
+                store_size_before,
+            "duplicate fingerprint performs no authorization or ticket issue"
+        );
+    }
+
+    {
+        const int authorize_calls_before =
+            authorize_calls;
+
+        const std::size_t store_size_before =
+            store.size();
+
+        const std::string body =
+            std::string(
+                "{\"fingerprint\":\""
+            ) +
+            fingerprint +
+            "\",\"browser_binding_hash\":\"" +
+            browser_binding_hash +
+            "\",\"browser_binding_hash\":\"" +
+            browser_binding_hash +
+            "\"}";
+
+        auto request =
+            make_request(
+                "Bearer " + token,
+                "application/json",
+                body
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_internal_storage_handoff_ticket_request(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 400,
+            "duplicate browser binding field returns 400"
+        );
+
+        expect(
+            authorize_calls ==
+                authorize_calls_before &&
+            store.size() ==
+                store_size_before,
+            "duplicate browser binding performs no authorization or ticket issue"
+        );
+    }
+
+    {
         auto request =
             make_request(
                 "Bearer " + token,
