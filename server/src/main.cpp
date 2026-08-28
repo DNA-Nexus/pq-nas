@@ -10071,7 +10071,7 @@ int main()
         return 2;
     }
     std::atomic<bool> snapshots_stop{false};
-    std::thread snapshots_thread = pqnas::snapshots::start_snapshot_scheduler(admin_settings_path, snapshots_stop);
+    std::thread snapshots_thread;
 
     // ---------------------------
     // Auto-rotation (checked before every audit.append)
@@ -10243,45 +10243,6 @@ auto maybe_auto_rotate_before_append = [&]() {
         audit.append(ev);
     };
 
-
-	pqnas::drive_health_monitor_start(
-    	[&](const pqnas::DriveHealthInfo& d,
-        	const std::string& prev_status,
-	        const std::string& new_status) {
-
-    	    pqnas::AuditEvent ev;
-
-        	if (new_status == "fail") {
-            	ev.event = "system.drive_failure";
-	            ev.outcome = "fail";
-    	    } else if (new_status == "warn") {
-        	    ev.event = "system.drive_warning";
-            	ev.outcome = "fail";
-	        } else if (new_status == "ok") {
-    	        ev.event = "system.drive_recovered";
-        	    ev.outcome = "ok";
-	        } else {
-    	        ev.event = "system.drive_status_changed";
-        	    ev.outcome = "ok";
-        	}
-
-	        ev.f["device"] = d.dev;
-    	    ev.f["model"] = pqnas::shorten(d.model, 120);
-        	ev.f["prev_status"] = prev_status;
-	        ev.f["new_status"] = new_status;
-    	    ev.f["health_text"] = pqnas::shorten(d.health_text, 120);
-
-	        if (d.temperature_c >= 0) ev.f["temperature_c"] = std::to_string(d.temperature_c);
-    	    if (d.percentage_used >= 0) ev.f["percentage_used"] = std::to_string(d.percentage_used);
-        	if (d.available_spare >= 0) ev.f["available_spare"] = std::to_string(d.available_spare);
-	        if (d.media_errors >= 0) ev.f["media_errors"] = std::to_string(d.media_errors);
-    	    if (d.power_on_hours >= 0) ev.f["power_on_hours"] = std::to_string(d.power_on_hours);
-        	if (!d.warning.empty()) ev.f["warning"] = pqnas::shorten(d.warning, 160);
-	        if (!d.selftest_text.empty()) ev.f["selftest"] = pqnas::shorten(d.selftest_text, 160);
-
-    	    audit_append(ev);
-    	}
-	);
 
     httplib::Server srv;
 
@@ -15978,6 +15939,54 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
             audit_append(ev);
         }
     };
+
+    // Reliability: do not start these non-RAII background threads until all
+    // fatal startup validation has completed. An early return with a joinable
+    // std::thread can otherwise end in std::terminate() during teardown.
+    snapshots_thread =
+        pqnas::snapshots::start_snapshot_scheduler(
+            admin_settings_path,
+            snapshots_stop
+        );
+
+    pqnas::drive_health_monitor_start(
+        [&](const pqnas::DriveHealthInfo& d,
+            const std::string& prev_status,
+            const std::string& new_status) {
+
+            pqnas::AuditEvent ev;
+
+            if (new_status == "fail") {
+                ev.event = "system.drive_failure";
+                ev.outcome = "fail";
+            } else if (new_status == "warn") {
+                ev.event = "system.drive_warning";
+                ev.outcome = "fail";
+            } else if (new_status == "ok") {
+                ev.event = "system.drive_recovered";
+                ev.outcome = "ok";
+            } else {
+                ev.event = "system.drive_status_changed";
+                ev.outcome = "ok";
+            }
+
+            ev.f["device"] = d.dev;
+            ev.f["model"] = pqnas::shorten(d.model, 120);
+            ev.f["prev_status"] = prev_status;
+            ev.f["new_status"] = new_status;
+            ev.f["health_text"] = pqnas::shorten(d.health_text, 120);
+
+            if (d.temperature_c >= 0) ev.f["temperature_c"] = std::to_string(d.temperature_c);
+            if (d.percentage_used >= 0) ev.f["percentage_used"] = std::to_string(d.percentage_used);
+            if (d.available_spare >= 0) ev.f["available_spare"] = std::to_string(d.available_spare);
+            if (d.media_errors >= 0) ev.f["media_errors"] = std::to_string(d.media_errors);
+            if (d.power_on_hours >= 0) ev.f["power_on_hours"] = std::to_string(d.power_on_hours);
+            if (!d.warning.empty()) ev.f["warning"] = pqnas::shorten(d.warning, 160);
+            if (!d.selftest_text.empty()) ev.f["selftest"] = pqnas::shorten(d.selftest_text, 160);
+
+            audit_append(ev);
+        }
+    );
 
 	// ---- Start background workers ----
 
