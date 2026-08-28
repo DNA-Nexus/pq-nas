@@ -703,8 +703,18 @@ bool persist_registry_file(
         std::string,
         UserPlacementPolicy
     >& policies,
+    bool* committed,
     std::string* error
 ) {
+    if (!committed) {
+        set_error(
+            error,
+            "missing policy registry commit output"
+        );
+        return false;
+    }
+
+    *committed = false;
     if (policies.size() >
         kMaxPolicyCount) {
         set_error(
@@ -959,11 +969,19 @@ bool persist_registry_file(
         return false;
     }
 
-    // Rename has committed the logical snapshot. Directory fsync remains
-    // best-effort durability hardening, matching the node registry model.
-    (void)::fsync(
-        directory_descriptor.get()
-    );
+    // Security: rename has made the new policy snapshot logically visible.
+    // Report that before directory fsync so process memory never rolls back
+    // to stale control-plane state after an uncertain durability result.
+    *committed = true;
+
+    if (::fsync(
+            directory_descriptor.get()) != 0) {
+        set_error(
+            error,
+            "failed to sync policy registry directory"
+        );
+        return false;
+    }
 
     return true;
 }
@@ -1015,6 +1033,7 @@ bool UserPlacementPolicyRegistry::load(
         policies_ =
             std::move(parsed);
     }
+    durability_uncertain_ = false;
 
     return true;
 }
@@ -1075,12 +1094,12 @@ UserPlacementPolicyRegistry::snapshot() const {
 
 bool UserPlacementPolicyRegistry::
 persist_candidate_locked(
-    const std::unordered_map<
+    std::unordered_map<
         std::string,
         UserPlacementPolicy
-    >& candidate,
+    >&& candidate,
     std::string* error
-) const {
+) {
     if (path_.empty()) {
         set_error(
             error,
@@ -1089,9 +1108,46 @@ persist_candidate_locked(
         return false;
     }
 
-    return persist_registry_file(
-        path_,
-        candidate,
+    bool committed = false;
+
+    const bool durable =
+        persist_registry_file(
+            path_,
+            candidate,
+            &committed,
+            error
+        );
+
+    // Security: rename may already have replaced the authoritative policy
+    // snapshot even when the following parent-directory fsync fails.
+    // Keep process memory aligned with the visible inode.
+    if (committed) {
+        policies_ =
+            std::move(candidate);
+
+        durability_uncertain_ =
+            !durable;
+    }
+
+    return durable;
+}
+
+bool UserPlacementPolicyRegistry::
+ensure_durable_locked(
+    std::string* error
+) {
+    if (!durability_uncertain_) {
+        return true;
+    }
+
+    // Security/correctness: re-persist the exact currently visible snapshot.
+    // This heals a prior rename whose parent-directory fsync failed without
+    // resurrecting or rolling back policy state.
+    auto candidate =
+        policies_;
+
+    return persist_candidate_locked(
+        std::move(candidate),
         error
     );
 }
@@ -1131,13 +1187,10 @@ bool UserPlacementPolicyRegistry::upsert(
         std::move(policy);
 
     if (!persist_candidate_locked(
-            candidate,
+            std::move(candidate),
             error)) {
         return false;
     }
-
-    policies_ =
-        std::move(candidate);
 
     return true;
 }
@@ -1167,6 +1220,11 @@ bool UserPlacementPolicyRegistry::erase(
         policies_;
 
     if (candidate.erase(policy_id) != 1) {
+        if (durability_uncertain_ &&
+            !ensure_durable_locked(error)) {
+            return false;
+        }
+
         set_error(
             error,
             "placement policy not found"
@@ -1175,13 +1233,10 @@ bool UserPlacementPolicyRegistry::erase(
     }
 
     if (!persist_candidate_locked(
-            candidate,
+            std::move(candidate),
             error)) {
         return false;
     }
-
-    policies_ =
-        std::move(candidate);
 
     return true;
 }

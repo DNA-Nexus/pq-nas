@@ -1780,6 +1780,19 @@ target_include_directories(test_user_placement_policy_registry PRIVATE
         ${CMAKE_SOURCE_DIR}/server/third_party
 )
 
+if (
+    CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+    CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
+)
+    # Reliability regression only: inject one parent-directory fsync failure
+    # after the policy registry rename without a production fault hook.
+    target_link_options(
+        test_user_placement_policy_registry
+        PRIVATE
+        "-Wl,--wrap=fsync"
+    )
+endif()
+
 set_target_properties(test_user_placement_policy_registry PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )

@@ -2,6 +2,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cerrno>
+
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -9,6 +11,38 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
+
+#if defined(__linux__)
+
+// Test-only durability fault injection.
+//
+// Security: production code gets no runtime fault hook. The linker wrapper
+// fails only the next parent-directory fsync in this regression executable.
+bool g_fail_next_directory_fsync = false;
+int g_injected_directory_fsync_failures = 0;
+
+extern "C" int __real_fsync(int descriptor);
+
+extern "C" int __wrap_fsync(int descriptor) {
+    struct stat stats {};
+
+    if (g_fail_next_directory_fsync &&
+        ::fstat(
+            descriptor,
+            &stats
+        ) == 0 &&
+        S_ISDIR(stats.st_mode)) {
+        g_fail_next_directory_fsync = false;
+        ++g_injected_directory_fsync_failures;
+
+        errno = EIO;
+        return -1;
+    }
+
+    return __real_fsync(descriptor);
+}
+
+#endif
 
 namespace {
 
@@ -653,6 +687,229 @@ int main() {
             "erasing missing policy should fail"
         );
     }
+
+
+#if defined(__linux__)
+    {
+        const fs::path durability_path =
+            test_directory /
+            "durability-fsync.json";
+
+        pqnas::cluster::
+            UserPlacementPolicyRegistry
+                durability_registry;
+
+        error.clear();
+
+        expect(
+            durability_registry.load(
+                durability_path.string(),
+                &error
+            ),
+            "load durability regression registry: " +
+                error
+        );
+
+        const int failures_before =
+            g_injected_directory_fsync_failures;
+
+        g_fail_next_directory_fsync = true;
+        error.clear();
+
+        expect(
+            !durability_registry.upsert(
+                automatic_policy(
+                    "post-rename-visible"
+                ),
+                &error
+            ),
+            "parent-directory fsync failure must reject durable success"
+        );
+
+        expect(
+            g_injected_directory_fsync_failures ==
+                failures_before + 1,
+            "durability regression must inject exactly one directory fsync failure"
+        );
+
+        expect(
+            error ==
+                "failed to sync policy registry directory",
+            "directory fsync failure must be reported explicitly"
+        );
+
+        // rename() already made the new inode visible. Even though durability
+        // confirmation failed, process memory must not roll back to the stale
+        // pre-mutation policy snapshot.
+        expect(
+            durability_registry.get(
+                "post-rename-visible"
+            ).has_value(),
+            "post-rename fsync failure must keep memory aligned with visible policy snapshot"
+        );
+
+        // Exact retry must be able to establish the missing durability
+        // boundary without requiring a process restart.
+        error.clear();
+
+        expect(
+            durability_registry.upsert(
+                automatic_policy(
+                    "post-rename-visible"
+                ),
+                &error
+            ),
+            "retry must durably persist the visible policy snapshot: " +
+                error
+        );
+
+        pqnas::cluster::
+            UserPlacementPolicyRegistry
+                durability_reloaded;
+
+        error.clear();
+
+        expect(
+            durability_reloaded.load(
+                durability_path.string(),
+                &error
+            ),
+            "reload durability regression registry: " +
+                error
+        );
+
+        expect(
+            durability_reloaded.get(
+                "post-rename-visible"
+            ).has_value(),
+            "durable retry must survive registry reload"
+        );
+    }
+
+    {
+        const fs::path erase_durability_path =
+            test_directory /
+            "erase-durability-fsync.json";
+
+        pqnas::cluster::
+            UserPlacementPolicyRegistry
+                erase_durability_registry;
+
+        error.clear();
+
+        expect(
+            erase_durability_registry.load(
+                erase_durability_path.string(),
+                &error
+            ),
+            "load erase durability registry: " +
+                error
+        );
+
+        error.clear();
+
+        expect(
+            erase_durability_registry.upsert(
+                automatic_policy(
+                    "erase-post-rename"
+                ),
+                &error
+            ),
+            "seed erase durability policy: " +
+                error
+        );
+
+        const int failures_before_erase =
+            g_injected_directory_fsync_failures;
+
+        g_fail_next_directory_fsync = true;
+        error.clear();
+
+        expect(
+            !erase_durability_registry.erase(
+                "erase-post-rename",
+                &error
+            ),
+            "erase parent-directory fsync failure must reject durable success"
+        );
+
+        expect(
+            g_injected_directory_fsync_failures ==
+                failures_before_erase + 1,
+            "erase must inject exactly one directory fsync failure"
+        );
+
+        expect(
+            erase_durability_registry.snapshot().empty(),
+            "post-rename erase failure must keep memory aligned with visible snapshot"
+        );
+
+        // Retry the already-visible erase. Because the policy is now absent
+        // from memory, this specifically verifies that the uncertainty marker
+        // causes the current snapshot to be re-persisted before NotFound.
+        g_fail_next_directory_fsync = true;
+        error.clear();
+
+        expect(
+            !erase_durability_registry.erase(
+                "erase-post-rename",
+                &error
+            ),
+            "uncertain erase retry should still report failure"
+        );
+
+        expect(
+            g_injected_directory_fsync_failures ==
+                failures_before_erase + 2,
+            "uncertain erase retry must re-attempt directory fsync"
+        );
+
+        expect(
+            error ==
+                "failed to sync policy registry directory",
+            "uncertain erase retry must expose durability failure before not-found"
+        );
+
+        // One more retry without injected failure heals the uncertainty.
+        error.clear();
+
+        expect(
+            !erase_durability_registry.erase(
+                "erase-post-rename",
+                &error
+            ),
+            "healed missing erase retains existing not-found API semantics"
+        );
+
+        expect(
+            error ==
+                "placement policy not found",
+            "successful durability healing must restore normal not-found result"
+        );
+
+        pqnas::cluster::
+            UserPlacementPolicyRegistry
+                erase_durability_reloaded;
+
+        error.clear();
+
+        expect(
+            erase_durability_reloaded.load(
+                erase_durability_path.string(),
+                &error
+            ),
+            "reload healed erase registry: " +
+                error
+        );
+
+        expect(
+            !erase_durability_reloaded.get(
+                "erase-post-rename"
+            ).has_value(),
+            "healed erase must remain absent after reload"
+        );
+    }
+#endif
 
     cleanup();
 

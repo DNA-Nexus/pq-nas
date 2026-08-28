@@ -45,12 +45,16 @@ public:
 
 private:
     bool persist_candidate_locked(
-        const std::unordered_map<
+        std::unordered_map<
             std::string,
             UserPlacementPolicy
-        >& candidate,
+        >&& candidate,
         std::string* error
-    ) const;
+    );
+
+    bool ensure_durable_locked(
+        std::string* error
+    );
 
     mutable std::mutex mutex_;
     std::filesystem::path path_;
@@ -59,6 +63,11 @@ private:
         std::string,
         UserPlacementPolicy
     > policies_;
+
+    // A rename may already have changed the visible authoritative snapshot
+    // even when the following parent-directory fsync fails. Exact retries
+    // must re-establish that missing durability boundary.
+    bool durability_uncertain_ = false;
 };
 
 } // namespace pqnas::cluster
