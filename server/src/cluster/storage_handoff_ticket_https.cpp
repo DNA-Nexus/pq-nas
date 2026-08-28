@@ -5,6 +5,7 @@
 #include "cluster/node_tls_https_client.h"
 #include "cluster/node_tls_identity.h"
 #include "cluster/storage_handoff_ticket_store.h"
+#include "cluster/strict_json_parse.h"
 
 #include "storage_metadata_validation.h"
 
@@ -18,7 +19,6 @@
 #include <cstdint>
 #include <limits>
 #include <string>
-#include <unordered_set>
 #include <utility>
 
 namespace pqnas::cluster {
@@ -459,57 +459,6 @@ bool json_positive_i64(
     }
 
     return false;
-}
-
-bool parse_json_reject_duplicate_keys(
-    const std::string& body,
-    json* output
-) {
-    if (!output) {
-        return false;
-    }
-
-    bool duplicate_key = false;
-
-    std::unordered_set<std::string>
-        keys;
-
-    try {
-        *output =
-            json::parse(
-                body,
-                [&](
-                    int,
-                    json::parse_event_t event,
-                    json& parsed
-                ) {
-                    if (event ==
-                        json::parse_event_t::key) {
-                        try {
-                            const std::string& key =
-                                parsed.get_ref<
-                                    const std::string&
-                                >();
-
-                            if (!keys.insert(
-                                    key).second) {
-                                duplicate_key = true;
-                            }
-                        } catch (...) {
-                            duplicate_key = true;
-                        }
-                    }
-
-                    return true;
-                }
-            );
-    } catch (...) {
-        return false;
-    }
-
-    // Security: duplicate protocol fields are ambiguous because different
-    // parser layers may otherwise select different credential/result values.
-    return !duplicate_key;
 }
 
 bool exact_error_body(

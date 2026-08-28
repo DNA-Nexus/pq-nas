@@ -4773,6 +4773,36 @@ target_link_libraries(pqnas_storage_user_projection_audit_https PUBLIC
 
 
 # -----------------------------------------------------------------------------
+# Test: strict security-protocol JSON parsing
+# -----------------------------------------------------------------------------
+add_executable(test_strict_json_parse
+        tests/cluster/test_strict_json_parse.cpp
+)
+
+target_include_directories(test_strict_json_parse PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_strict_json_parse
+        PRIVATE
+        -Werror
+    )
+endif()
+
+set_target_properties(test_strict_json_parse PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_strict_json_parse
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_strict_json_parse"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_strict_json_parse
+)
+
+
+# -----------------------------------------------------------------------------
 # Director -> Storage browser handoff ticket client
 # -----------------------------------------------------------------------------
 add_library(pqnas_storage_handoff_ticket_client STATIC
