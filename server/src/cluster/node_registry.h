@@ -13,7 +13,8 @@ namespace pqnas::cluster {
 struct NodeStatusSnapshot;
 
 inline constexpr int kNodeRegistryLegacySchemaVersion = 1;
-inline constexpr int kNodeRegistrySchemaVersion = 2;
+inline constexpr int kNodeRegistryPreBrowserSchemaVersion = 2;
+inline constexpr int kNodeRegistrySchemaVersion = 3;
 
 enum class NodeRegistryInsertResult {
     Ok,
@@ -30,6 +31,12 @@ const char* node_registry_insert_result_code(
 struct NodeRegistryRecord {
     std::string node_id;
     std::string api_base_url;
+
+    // Director-owned public HTTPS authority used by browser handoff.
+    // Empty means browser routing has not been configured for this Node.
+    // Never derive this from Node-reported heartbeat metadata.
+    std::string browser_base_url;
+
     bool enabled = true;
 
     // Security: this is Director-owned configuration, never Node-reported
@@ -90,7 +97,9 @@ public:
         const std::string& now_iso,
         std::string* err,
         std::optional<std::uint64_t>
-            capacity_ceiling_bytes = std::nullopt
+            capacity_ceiling_bytes = std::nullopt,
+        std::optional<std::string>
+            browser_base_url = std::nullopt
     );
 
     bool set_enabled(

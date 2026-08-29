@@ -347,6 +347,7 @@ json node_record_to_json(
     return json{
         {"node_id", record.node_id},
         {"api_base_url", record.api_base_url},
+        {"browser_base_url", record.browser_base_url},
         {"enabled", record.enabled},
         {
             "capacity_ceiling_bytes",
@@ -631,6 +632,7 @@ void handle_admin_cluster_nodes_create(
             {
                 "node_id",
                 "api_base_url",
+                "browser_base_url",
                 "enabled",
                 "capacity_ceiling_bytes"
             })) {
@@ -795,6 +797,82 @@ void handle_admin_cluster_nodes_create(
                 get<std::uint64_t>();
     }
 
+    std::optional<std::string>
+        normalized_browser_base_url;
+
+    const auto browser_url_iterator =
+        body.find("browser_base_url");
+
+    if (browser_url_iterator != body.end()) {
+        if (!browser_url_iterator->is_string()) {
+            audit_mutation(
+                context,
+                req,
+                actor_fp,
+                "admin.cluster_node.create",
+                node_id,
+                "fail"
+            );
+
+            reply_json_local(
+                context,
+                res,
+                400,
+                json{
+                    {"ok", false},
+                    {"error", "bad_request"},
+                    {
+                        "message",
+                        "browser_base_url must be a string"
+                    }
+                }
+            );
+            return;
+        }
+
+        const std::string requested_browser_url =
+            browser_url_iterator->get<std::string>();
+
+        if (requested_browser_url.empty()) {
+            normalized_browser_base_url =
+                std::string();
+        } else {
+            std::string normalized_browser_url;
+
+            if (!normalize_cluster_https_base_url(
+                    requested_browser_url,
+                    &normalized_browser_url,
+                    nullptr)) {
+                audit_mutation(
+                    context,
+                    req,
+                    actor_fp,
+                    "admin.cluster_node.create",
+                    node_id,
+                    "fail"
+                );
+
+                reply_json_local(
+                    context,
+                    res,
+                    400,
+                    json{
+                        {"ok", false},
+                        {"error", "bad_request"},
+                        {
+                            "message",
+                            "invalid node browser URL"
+                        }
+                    }
+                );
+                return;
+            }
+
+            normalized_browser_base_url =
+                std::move(normalized_browser_url);
+        }
+    }
+
     // Security: direct administrative Node creation shares the Director
     // lifecycle boundary with enrollment consumption. Otherwise bootstrap
     // provisioning could persist a credential and race a second NodeRegistry
@@ -837,7 +915,8 @@ void handle_admin_cluster_nodes_create(
                 context.now_iso_utc()
             ),
             &registry_error,
-            capacity_ceiling_bytes)) {
+            capacity_ceiling_bytes,
+            normalized_browser_base_url)) {
         audit_mutation(
             context,
             req,
@@ -946,6 +1025,7 @@ void handle_admin_cluster_nodes_update(
             {
                 "node_id",
                 "api_base_url",
+                "browser_base_url",
                 "enabled",
                 "capacity_ceiling_bytes"
             })) {
@@ -1033,6 +1113,9 @@ void handle_admin_cluster_nodes_update(
     const auto capacity_ceiling_iterator =
         body.find("capacity_ceiling_bytes");
 
+    const auto browser_url_iterator =
+        body.find("browser_base_url");
+
     const bool has_url =
         url_iterator != body.end();
 
@@ -1042,9 +1125,13 @@ void handle_admin_cluster_nodes_update(
     const bool has_capacity_ceiling =
         capacity_ceiling_iterator != body.end();
 
+    const bool has_browser_url =
+        browser_url_iterator != body.end();
+
     if (!has_url &&
         !has_enabled &&
-        !has_capacity_ceiling) {
+        !has_capacity_ceiling &&
+        !has_browser_url) {
         audit_mutation(
             context,
             req,
@@ -1164,6 +1251,79 @@ void handle_admin_cluster_nodes_update(
                 get<std::uint64_t>();
     }
 
+    std::optional<std::string>
+        requested_browser_base_url;
+
+    if (has_browser_url) {
+        if (!browser_url_iterator->is_string()) {
+            audit_mutation(
+                context,
+                req,
+                actor_fp,
+                "admin.cluster_node.update",
+                node_id,
+                "fail"
+            );
+
+            reply_json_local(
+                context,
+                res,
+                400,
+                json{
+                    {"ok", false},
+                    {"error", "bad_request"},
+                    {
+                        "message",
+                        "browser_base_url must be a string"
+                    }
+                }
+            );
+            return;
+        }
+
+        const std::string requested_browser_url =
+            browser_url_iterator->get<std::string>();
+
+        if (requested_browser_url.empty()) {
+            requested_browser_base_url =
+                std::string();
+        } else {
+            std::string normalized_browser_url;
+
+            if (!normalize_cluster_https_base_url(
+                    requested_browser_url,
+                    &normalized_browser_url,
+                    nullptr)) {
+                audit_mutation(
+                    context,
+                    req,
+                    actor_fp,
+                    "admin.cluster_node.update",
+                    node_id,
+                    "fail"
+                );
+
+                reply_json_local(
+                    context,
+                    res,
+                    400,
+                    json{
+                        {"ok", false},
+                        {"error", "bad_request"},
+                        {
+                            "message",
+                            "invalid node browser URL"
+                        }
+                    }
+                );
+                return;
+            }
+
+            requested_browser_base_url =
+                std::move(normalized_browser_url);
+        }
+    }
+
     std::scoped_lock lock(
         *context.placement_mutex,
         g_cluster_node_mutation_mutex
@@ -1272,7 +1432,8 @@ void handle_admin_cluster_nodes_update(
                 context.now_iso_utc()
             ),
             &registry_error,
-            requested_capacity_ceiling_bytes)) {
+            requested_capacity_ceiling_bytes,
+            requested_browser_base_url)) {
         audit_mutation(
             context,
             req,
@@ -1687,6 +1848,8 @@ void handle_admin_cluster_node_tls_trust_migration(
                 snapshot.updated_at ||
             current->api_base_url !=
                 snapshot.api_base_url ||
+            current->browser_base_url !=
+                snapshot.browser_base_url ||
             current->enabled !=
                 snapshot.enabled ||
             current->capacity_ceiling_bytes !=

@@ -595,6 +595,7 @@ int main() {
                 R"({
                     "node_id":"node-01",
                     "api_base_url":"https://node-01.internal/",
+                    "browser_base_url":"https://storage-01.example.test/",
                     "enabled":true
                 })"
             );
@@ -620,8 +621,10 @@ int main() {
             body.is_object() &&
             body["node"]["node_id"] == "node-01" &&
             body["node"]["api_base_url"] ==
-                "https://node-01.internal",
-            "created node should use normalized URL"
+                "https://node-01.internal" &&
+            body["node"]["browser_base_url"] ==
+                "https://storage-01.example.test",
+            "created node should use normalized URLs"
         );
 
         const auto created =
@@ -632,8 +635,10 @@ int main() {
             created->added_at ==
                 "2026-07-28T07:00:00Z" &&
             created->updated_at ==
-                "2026-07-28T07:00:00Z",
-            "created node should persist canonical timestamps"
+                "2026-07-28T07:00:00Z" &&
+            created->browser_base_url ==
+                "https://storage-01.example.test",
+            "created node should persist Director-owned browser routing"
         );
 
         expect(
@@ -694,6 +699,89 @@ int main() {
         expect(
             capacity_ceiling_exposed,
             "capacity ceiling update should expose Director-owned limit"
+        );
+
+        const auto after_capacity =
+            registry.get("node-01");
+
+        expect(
+            after_capacity.has_value() &&
+            after_capacity->browser_base_url ==
+                "https://storage-01.example.test",
+            "capacity update must preserve browser routing"
+        );
+    }
+
+    {
+        const auto before =
+            registry.get("node-01");
+
+        httplib::Request request =
+            request_with_body(
+                R"({
+                    "node_id":"node-01",
+                    "browser_base_url":"http://storage-invalid.example.test"
+                })"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_nodes_update(
+                request,
+                response,
+                context
+            );
+
+        const auto after =
+            registry.get("node-01");
+
+        expect(
+            response.status == 400,
+            "plaintext browser URL update should be rejected"
+        );
+
+        expect(
+            before.has_value() &&
+            after.has_value() &&
+            after->browser_base_url ==
+                before->browser_base_url,
+            "invalid browser URL must preserve node configuration"
+        );
+    }
+
+    {
+        httplib::Request request =
+            request_with_body(
+                R"({
+                    "node_id":"node-01",
+                    "browser_base_url":"https://storage-new.example.test/"
+                })"
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_admin_cluster_nodes_update(
+                request,
+                response,
+                context
+            );
+
+        const auto updated =
+            registry.get("node-01");
+
+        const json body =
+            response_json(response);
+
+        expect(
+            response.status == 200 &&
+            updated.has_value() &&
+            updated->browser_base_url ==
+                "https://storage-new.example.test" &&
+            body["node"]["browser_base_url"] ==
+                "https://storage-new.example.test",
+            "browser-only update should persist normalized authority"
         );
     }
 
@@ -797,7 +885,9 @@ int main() {
             after->enabled ==
                 before->enabled &&
             after->capacity_ceiling_bytes ==
-                before->capacity_ceiling_bytes,
+                before->capacity_ceiling_bytes &&
+            after->browser_base_url ==
+                before->browser_base_url,
             "rotation-busy update must preserve node configuration"
         );
     }
@@ -849,7 +939,9 @@ int main() {
             after->enabled ==
                 before->enabled &&
             after->capacity_ceiling_bytes ==
-                before->capacity_ceiling_bytes,
+                before->capacity_ceiling_bytes &&
+            after->browser_base_url ==
+                before->browser_base_url,
             "rotation query failure must preserve node configuration"
         );
     }
@@ -888,9 +980,11 @@ int main() {
             updated->api_base_url ==
                 "https://node-01.internal:8443" &&
             updated->capacity_ceiling_bytes == 1000 &&
+            updated->browser_base_url ==
+                "https://storage-new.example.test" &&
             !updated->enabled &&
             updated->health == "disabled",
-            "update should preserve capacity ceiling with URL and enabled state"
+            "update should preserve Director-owned fields with lifecycle state"
         );
 
         expect(
@@ -1011,7 +1105,9 @@ int main() {
                         "2026-08-24T03:39:59Z",
                         &race_error,
                         current->
-                            capacity_ceiling_bytes
+                            capacity_ceiling_bytes,
+                        current->
+                            browser_base_url
                     ),
                     "recreate race fixture Node: " +
                         race_error
