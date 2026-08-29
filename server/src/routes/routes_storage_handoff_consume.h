@@ -43,7 +43,12 @@ using StorageHandoffConsumeRouteService =
     >;
 
 struct StorageHandoffConsumeRoutesContext {
-    std::string expected_director_origin;
+    // Canonical public Storage origin.
+    //
+    // Security: consume is intentionally same-origin with the Storage Node.
+    // This preserves the Strict browser-binding cookie and avoids depending
+    // on cross-site cookie attachment semantics.
+    std::string expected_storage_origin;
 
     std::function<bool(
         const std::string& remote_address,
