@@ -37,6 +37,11 @@ enum class StorageHandoffTicketResult {
     CryptoFailed,
     ClockUnavailable,
     StoreFull,
+
+    // Security: one browser-binding handoff attempt already minted a ticket.
+    // The caller must restart preauth instead of minting another bearer.
+    BindingAlreadyIssued,
+
     NotFound,
     Expired,
 
@@ -118,8 +123,9 @@ public:
     // Security:
     // - plaintext is returned only to the caller
     // - only SHA-256(ticket text) is retained by the store
+    // - one browser-binding hash may mint only one ticket until expiry
     // - TTL is strictly bounded
-    // - the in-memory store has a hard entry cap
+    // - ticket and binding-reservation state are both hard-capped
     StorageHandoffTicketResult issue(
         const std::string& fingerprint,
         const std::string& home_node,
@@ -172,6 +178,12 @@ private:
 
     std::unordered_map<std::string, Entry>
         entries_by_hash_;
+
+    // Security: retain a one-way browser-binding reservation even after a
+    // ticket is consumed. This makes response-loss retries fail closed instead
+    // of creating two simultaneously valid one-time capabilities.
+    std::unordered_map<std::string, std::int64_t>
+        binding_reservations_;
 
     mutable std::mutex mutex_;
 };

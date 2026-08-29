@@ -61,6 +61,11 @@ map_transport_code(
             return StorageHandoffTicketClientCode::
                 UserNotAuthorized;
 
+        case StorageHandoffTicketTransportCode::
+                RestartRequired:
+            return StorageHandoffTicketClientCode::
+                RestartRequired;
+
         case StorageHandoffTicketTransportCode::RateLimited:
             return StorageHandoffTicketClientCode::RateLimited;
 
@@ -112,6 +117,8 @@ const char* storage_handoff_ticket_client_code(
             return "authentication_failed";
         case StorageHandoffTicketClientCode::UserNotAuthorized:
             return "user_not_authorized";
+        case StorageHandoffTicketClientCode::RestartRequired:
+            return "restart_required";
         case StorageHandoffTicketClientCode::RateLimited:
             return "rate_limited";
         case StorageHandoffTicketClientCode::ServiceUnavailable:

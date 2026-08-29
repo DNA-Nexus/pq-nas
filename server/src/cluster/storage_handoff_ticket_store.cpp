@@ -324,6 +324,10 @@ const char* storage_handoff_ticket_result_code(
         case StorageHandoffTicketResult::StoreFull:
             return "handoff_ticket_store_full";
 
+        case StorageHandoffTicketResult::
+                BindingAlreadyIssued:
+            return "handoff_ticket_binding_already_issued";
+
         case StorageHandoffTicketResult::NotFound:
             return "handoff_ticket_not_found";
 
@@ -455,6 +459,20 @@ prune_expired_locked(
             ++iterator;
         }
     }
+
+    for (auto iterator =
+             binding_reservations_.begin();
+         iterator !=
+             binding_reservations_.end();) {
+        if (iterator->second <= now) {
+            iterator =
+                binding_reservations_.erase(
+                    iterator
+                );
+        } else {
+            ++iterator;
+        }
+    }
 }
 
 StorageHandoffTicketResult
@@ -545,10 +563,32 @@ StorageHandoffTicketStore::issue(
 
             prune_expired_locked(now);
 
-            if (entries_by_hash_.size() >=
-                max_entries_) {
+            // Security: this check and both inserts share the same mutex.
+            // Concurrent retries using the same browser binding therefore
+            // cannot both mint a capability.
+            if (binding_reservations_.find(
+                    browser_binding_hash) !=
+                binding_reservations_.end()) {
+                return StorageHandoffTicketResult::
+                    BindingAlreadyIssued;
+            }
+
+            // Reservations survive successful consume until original expiry,
+            // so they are the authoritative bound for active handoff attempts.
+            if (binding_reservations_.size() >=
+                    max_entries_ ||
+                entries_by_hash_.size() >=
+                    max_entries_) {
                 return StorageHandoffTicketResult::
                     StoreFull;
+            }
+
+            // Cryptographic collision is extraordinarily unlikely, but never
+            // replace an existing one-time ticket.
+            if (entries_by_hash_.find(
+                    ticket_hash) !=
+                entries_by_hash_.end()) {
+                continue;
             }
 
             Entry entry;
@@ -563,19 +603,48 @@ StorageHandoffTicketStore::issue(
             entry.issued_at = now;
             entry.expires_at = expires_at;
 
-            inserted =
+            const auto ticket_insertion =
                 entries_by_hash_.emplace(
                     ticket_hash,
                     std::move(entry)
-                ).second;
+                );
+
+            if (!ticket_insertion.second) {
+                continue;
+            }
+
+            try {
+                const auto reservation_insertion =
+                    binding_reservations_.emplace(
+                        browser_binding_hash,
+                        expires_at
+                    );
+
+                if (!reservation_insertion.second) {
+                    entries_by_hash_.erase(
+                        ticket_insertion.first
+                    );
+
+                    return StorageHandoffTicketResult::
+                        BindingAlreadyIssued;
+                }
+            } catch (...) {
+                // Security: never leave a ticket reachable without its retry
+                // reservation if the second allocation fails.
+                entries_by_hash_.erase(
+                    ticket_insertion.first
+                );
+
+                throw;
+            }
+
+            inserted = true;
         } catch (...) {
             return StorageHandoffTicketResult::
                 InternalError;
         }
 
         if (!inserted) {
-            // Cryptographic collision is extraordinarily unlikely,
-            // but never replace an existing one-time ticket.
             continue;
         }
 
@@ -658,6 +727,20 @@ StorageHandoffTicketStore::consume(
     }
 
     if (iterator->second.expires_at <= now) {
+        const auto reservation_iterator =
+            binding_reservations_.find(
+                iterator->second.
+                    browser_binding_hash
+            );
+
+        if (reservation_iterator !=
+                binding_reservations_.end() &&
+            reservation_iterator->second <= now) {
+            binding_reservations_.erase(
+                reservation_iterator
+            );
+        }
+
         entries_by_hash_.erase(iterator);
 
         return StorageHandoffTicketResult::
@@ -705,8 +788,9 @@ StorageHandoffTicketStore::consume(
             InternalError;
     }
 
-    // Security: erase under the same mutex as lookup. Two simultaneous
-    // consumers can never successfully redeem the same ticket.
+    // Security: erase only the one-time ticket. Keep the browser-binding
+    // reservation until its original expiry so a lost-response/retry sequence
+    // cannot mint a second capability after successful consume.
     entries_by_hash_.erase(iterator);
 
     *out_claims = std::move(claims);

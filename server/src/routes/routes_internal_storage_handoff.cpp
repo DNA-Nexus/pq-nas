@@ -712,6 +712,25 @@ void handle_internal_storage_handoff_ticket_request(
             &expires_at
         );
 
+    if (result ==
+        StorageHandoffTicketResult::
+            BindingAlreadyIssued) {
+        // Security: do not mint a replacement ticket for the same browser
+        // binding. The browser must create a fresh preauth binding instead.
+        reply_json_local(
+            context,
+            response,
+            409,
+            json{
+                {"ok", false},
+                {"error",
+                 "handoff_restart_required"}
+            }
+        );
+
+        return;
+    }
+
     if (result !=
         StorageHandoffTicketResult::Ok) {
         reply_json_local(

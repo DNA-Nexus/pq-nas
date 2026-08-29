@@ -516,7 +516,7 @@ void handle_storage_handoff_consume_request(
 
     try {
         if (!canonical_expected_origin(
-                context.expected_director_origin,
+                context.expected_storage_origin,
                 &expected_origin) ||
             !context.consume_rate_limit_slot ||
             !context.consume ||
@@ -552,7 +552,9 @@ void handle_storage_handoff_consume_request(
             kMaximumOriginHeaderBytes
         );
 
-    // Security: only the configured Director may perform the browser handoff.
+    // Security: ticket redemption is same-origin with the configured
+    // Storage authority. This keeps the HttpOnly SameSite=Strict browser
+    // binding usable without weakening it for cross-site attachment.
     // No Bearer or Host/X-Forwarded-* bypass exists here.
     if (!origin ||
         *origin != expected_origin) {

@@ -500,6 +500,14 @@ int main() {
             {
                 pqnas::cluster::
                     StorageHandoffTicketTransportCode::
+                        RestartRequired,
+                pqnas::cluster::
+                    StorageHandoffTicketClientCode::
+                        RestartRequired
+            },
+            {
+                pqnas::cluster::
+                    StorageHandoffTicketTransportCode::
                         RateLimited,
                 pqnas::cluster::
                     StorageHandoffTicketClientCode::
@@ -530,6 +538,18 @@ int main() {
                         TransportFailed
             }
         };
+
+        expect(
+            std::string(
+                pqnas::cluster::
+                    storage_handoff_ticket_client_code(
+                        pqnas::cluster::
+                            StorageHandoffTicketClientCode::
+                                RestartRequired
+                    )
+            ) == "restart_required",
+            "restart-required client code is stable"
+        );
 
         for (const auto& mapping : mappings) {
             next_response.code =

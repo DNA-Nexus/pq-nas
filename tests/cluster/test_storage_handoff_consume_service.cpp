@@ -241,11 +241,62 @@ int main() {
         )
     );
 
+    unsigned int handoff_sequence = 0;
+
     auto issue_ticket =
         [&](const std::string& home_node,
             std::uint64_t revision,
             const std::string& message)
             -> std::string {
+            // Security regression fixture: each independent browser handoff
+            // begins with a fresh preauth binding. Replays of the returned
+            // ticket continue to use this same binding until the next handoff.
+            static constexpr char
+                kFixtureAlphabet[] =
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    "abcdefghijklmnopqrstuvwxyz"
+                    "0123456789-_";
+
+            browser_binding_secret.assign(
+                pqnas::cluster::
+                    kStorageHandoffBrowserBindingChars,
+                'A'
+            );
+
+            browser_binding_secret.front() =
+                kFixtureAlphabet[
+                    handoff_sequence %
+                    (sizeof(kFixtureAlphabet) - 1)
+                ];
+
+            browser_binding_secret[1] =
+                kFixtureAlphabet[
+                    (handoff_sequence /
+                     (sizeof(kFixtureAlphabet) - 1)) %
+                    (sizeof(kFixtureAlphabet) - 1)
+                ];
+
+            ++handoff_sequence;
+
+            browser_binding_hash.clear();
+
+            expect(
+                pqnas::cluster::
+                    storage_handoff_browser_binding_hash(
+                        browser_binding_secret,
+                        &browser_binding_hash
+                    ),
+                message + " binding hashes"
+            );
+
+            wrong_browser_binding_secret =
+                browser_binding_secret;
+
+            wrong_browser_binding_secret.back() =
+                wrong_browser_binding_secret.back() == 'E'
+                    ? 'F'
+                    : 'E';
+
             std::string ticket;
 
             const StorageHandoffTicketResult

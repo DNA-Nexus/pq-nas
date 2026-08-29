@@ -88,6 +88,9 @@ bool has_prefix(
 } // namespace
 
 int main() {
+    const std::string storage_origin =
+        "https://storage-01.example.test";
+
     const std::string director_origin =
         "https://director.example.test";
 
@@ -130,8 +133,8 @@ int main() {
     pqnas::cluster::
         StorageHandoffConsumeRoutesContext context;
 
-    context.expected_director_origin =
-        director_origin;
+    context.expected_storage_origin =
+        storage_origin;
 
     context.consume_rate_limit_slot =
         [&](const std::string& remote_address,
@@ -196,7 +199,7 @@ int main() {
     {
         auto request =
             make_request(
-                director_origin,
+                storage_origin,
                 body,
                 cookie
             );
@@ -267,6 +270,41 @@ int main() {
 
         auto request =
             make_request(
+                director_origin,
+                body,
+                cookie
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_storage_handoff_consume_request(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 403,
+            "cross-site Director Origin is rejected"
+        );
+
+        expect(
+            rate_limit_calls == rate_before &&
+            consume_calls == consume_before,
+            "Director-origin consume performs no security-state work"
+        );
+    }
+
+    {
+        const int rate_before =
+            rate_limit_calls;
+
+        const int consume_before =
+            consume_calls;
+
+        auto request =
+            make_request(
                 "https://evil.example",
                 body,
                 cookie
@@ -304,7 +342,7 @@ int main() {
 
         auto request =
             make_request(
-                director_origin,
+                storage_origin,
                 body,
                 duplicate_cookie
             );
@@ -335,14 +373,14 @@ int main() {
 
         auto request =
             make_request(
-                director_origin,
+                storage_origin,
                 body,
                 cookie
             );
 
         request.headers.emplace(
             "Origin",
-            director_origin
+            storage_origin
         );
 
         httplib::Response response;
@@ -371,7 +409,7 @@ int main() {
 
         auto request =
             make_request(
-                director_origin,
+                storage_origin,
                 body,
                 cookie
             );
@@ -413,7 +451,7 @@ int main() {
 
         auto request =
             make_request(
-                director_origin,
+                storage_origin,
                 body,
                 cookie
             );
@@ -458,7 +496,7 @@ int main() {
 
         auto request =
             make_request(
-                director_origin,
+                storage_origin,
                 body,
                 cookie
             );
@@ -494,7 +532,7 @@ int main() {
 
         auto request =
             make_request(
-                director_origin,
+                storage_origin,
                 body,
                 cookie
             );
@@ -543,7 +581,7 @@ int main() {
 
         auto request =
             make_request(
-                director_origin,
+                storage_origin,
                 body + "&extra=1",
                 cookie
             );
@@ -574,7 +612,7 @@ int main() {
 
         auto request =
             make_request(
-                director_origin,
+                storage_origin,
                 std::string(
                     pqnas::cluster::
                         kStorageHandoffConsumeMaxRequestBytes + 1,
@@ -649,7 +687,7 @@ int main() {
 
         auto request =
             make_request(
-                director_origin,
+                storage_origin,
                 body,
                 cookie
             );
