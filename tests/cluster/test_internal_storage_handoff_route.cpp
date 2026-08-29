@@ -985,6 +985,57 @@ int main() {
         }
     }
 
+    {
+        // Security regression: simulate a Director retry after the original
+        // successful handoff response was lost. The ticket above was already
+        // consumed, but its browser binding must remain reserved until expiry.
+        auto request =
+            make_request(
+                "Bearer " + token,
+                "application/json",
+                json{
+                    {"fingerprint", fingerprint},
+                    {"browser_binding_hash",
+                     browser_binding_hash}
+                }.dump()
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_internal_storage_handoff_ticket_request(
+                request,
+                response,
+                context
+            );
+
+        expect(
+            response.status == 409,
+            "same-binding handoff retry returns 409"
+        );
+
+        expect(
+            authorize_calls == 3 &&
+            store.size() == 0,
+            "handoff retry mints no replacement ticket"
+        );
+
+        expect(
+            response.body.find(
+                "handoff_restart_required"
+            ) != std::string::npos,
+            "handoff retry requires fresh preauth"
+        );
+
+        expect(
+            response_header(
+                response,
+                "Cache-Control"
+            ) == "no-store",
+            "handoff retry response disables caching"
+        );
+    }
+
     pqnas::cluster::
         clear_storage_handoff_browser_binding_secret_text(
             &browser_binding_secret

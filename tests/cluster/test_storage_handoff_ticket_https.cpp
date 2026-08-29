@@ -205,6 +205,20 @@ int main() {
     );
 
     expect_code(
+        409,
+        R"({"ok":false,"error":"handoff_restart_required"})",
+        Code::RestartRequired,
+        "handoff restart classified"
+    );
+
+    expect_code(
+        409,
+        R"({"ok":false,"error":"rate_limited"})",
+        Code::InvalidResponse,
+        "409 with wrong error code rejected"
+    );
+
+    expect_code(
         429,
         R"({"ok":false,"error":"rate_limited"})",
         Code::RateLimited,

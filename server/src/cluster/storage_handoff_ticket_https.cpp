@@ -692,6 +692,17 @@ parse_storage_handoff_ticket_https_response(
             }
             break;
 
+        case 409:
+            if (error_code ==
+                "handoff_restart_required") {
+                return response(
+                    StorageHandoffTicketTransportCode::
+                        RestartRequired,
+                    http_status
+                );
+            }
+            break;
+
         case 429:
             if (error_code ==
                 "rate_limited") {

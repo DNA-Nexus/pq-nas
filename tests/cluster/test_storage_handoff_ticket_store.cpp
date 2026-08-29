@@ -123,6 +123,48 @@ int main() {
         "hash deterministic browser binding fixture"
     );
 
+    std::string browser_binding_secret_two =
+        browser_binding_secret;
+
+    browser_binding_secret_two.front() = 'B';
+
+    std::string browser_binding_hash_two;
+
+    expect(
+        pqnas::cluster::
+            storage_handoff_browser_binding_hash(
+                browser_binding_secret_two,
+                &browser_binding_hash_two
+            ),
+        "hash second browser binding fixture"
+    );
+
+    std::string browser_binding_secret_three =
+        browser_binding_secret;
+
+    browser_binding_secret_three.front() = 'C';
+
+    std::string browser_binding_hash_three;
+
+    expect(
+        pqnas::cluster::
+            storage_handoff_browser_binding_hash(
+                browser_binding_secret_three,
+                &browser_binding_hash_three
+            ),
+        "hash third browser binding fixture"
+    );
+
+    pqnas::cluster::
+        clear_storage_handoff_browser_binding_secret_text(
+            &browser_binding_secret_two
+        );
+
+    pqnas::cluster::
+        clear_storage_handoff_browser_binding_secret_text(
+            &browser_binding_secret_three
+        );
+
     std::string generated_binding_secret;
 
     expect(
@@ -242,6 +284,36 @@ int main() {
     );
 
     {
+        std::string duplicate_ticket =
+            "stale";
+
+        std::int64_t duplicate_expires_at =
+            -1;
+
+        expect_result(
+            store.issue(
+                fingerprint,
+                home_node,
+                projection_revision,
+                browser_binding_hash,
+                30,
+                &duplicate_ticket,
+                &duplicate_expires_at
+            ),
+            StorageHandoffTicketResult::
+                BindingAlreadyIssued,
+            "same browser binding cannot mint second live ticket"
+        );
+
+        expect(
+            duplicate_ticket.empty() &&
+            duplicate_expires_at == 0 &&
+            store.size() == 1,
+            "duplicate issue creates no second capability"
+        );
+    }
+
+    {
         StorageHandoffTicketClaims
             wrong_binding_claims;
 
@@ -308,6 +380,32 @@ int main() {
         "consumed ticket cannot replay"
     );
 
+    {
+        std::string retry_ticket =
+            "stale";
+
+        expect_result(
+            store.issue(
+                fingerprint,
+                home_node,
+                projection_revision,
+                browser_binding_hash,
+                30,
+                &retry_ticket,
+                nullptr
+            ),
+            StorageHandoffTicketResult::
+                BindingAlreadyIssued,
+            "consumed handoff binding remains reserved"
+        );
+
+        expect(
+            retry_ticket.empty() &&
+            store.size() == 0,
+            "post-consume retry creates no replacement ticket"
+        );
+    }
+
     pqnas::cluster::
         clear_storage_handoff_ticket_text(
             &ticket
@@ -317,6 +415,36 @@ int main() {
         ticket.empty(),
         "ticket clear helper"
     );
+
+    {
+        now = 1030;
+
+        std::string renewed_ticket;
+
+        expect_result(
+            store.issue(
+                fingerprint,
+                home_node,
+                projection_revision,
+                browser_binding_hash,
+                30,
+                &renewed_ticket,
+                nullptr
+            ),
+            StorageHandoffTicketResult::Ok,
+            "binding reservation expires at original boundary"
+        );
+
+        expect(
+            store.size() == 1,
+            "expired binding can begin fresh handoff"
+        );
+
+        pqnas::cluster::
+            clear_storage_handoff_ticket_text(
+                &renewed_ticket
+            );
+    }
 
     {
         std::string bad_ticket(43, '!');
@@ -403,7 +531,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
-                browser_binding_hash,
+                browser_binding_hash_two,
                 20,
                 &second,
                 nullptr
@@ -469,7 +597,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
-                browser_binding_hash,
+                browser_binding_hash_two,
                 1,
                 &second,
                 nullptr
@@ -483,7 +611,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
-                browser_binding_hash,
+                browser_binding_hash_three,
                 1,
                 &third,
                 nullptr
@@ -504,7 +632,7 @@ int main() {
                 fingerprint,
                 home_node,
                 projection_revision,
-                browser_binding_hash,
+                browser_binding_hash_three,
                 1,
                 &third,
                 nullptr
@@ -752,6 +880,115 @@ int main() {
         pqnas::cluster::
             clear_storage_handoff_ticket_text(
                 &concurrent_ticket
+            );
+    }
+
+    {
+        now = 5500;
+
+        StorageHandoffTicketStore concurrent_issue_store(
+            4,
+            [&now]() {
+                return now;
+            }
+        );
+
+        std::string first_ticket;
+        std::string second_ticket;
+
+        StorageHandoffTicketResult first_result =
+            StorageHandoffTicketResult::
+                InternalError;
+
+        StorageHandoffTicketResult second_result =
+            StorageHandoffTicketResult::
+                InternalError;
+
+        std::atomic<bool> start_issue{false};
+
+        std::thread first_issuer(
+            [&]() {
+                while (!start_issue.load(
+                    std::memory_order_acquire
+                )) {
+                    std::this_thread::yield();
+                }
+
+                first_result =
+                    concurrent_issue_store.issue(
+                        fingerprint,
+                        home_node,
+                        projection_revision,
+                        browser_binding_hash,
+                        30,
+                        &first_ticket,
+                        nullptr
+                    );
+            }
+        );
+
+        std::thread second_issuer(
+            [&]() {
+                while (!start_issue.load(
+                    std::memory_order_acquire
+                )) {
+                    std::this_thread::yield();
+                }
+
+                second_result =
+                    concurrent_issue_store.issue(
+                        fingerprint,
+                        home_node,
+                        projection_revision,
+                        browser_binding_hash,
+                        30,
+                        &second_ticket,
+                        nullptr
+                    );
+            }
+        );
+
+        start_issue.store(
+            true,
+            std::memory_order_release
+        );
+
+        first_issuer.join();
+        second_issuer.join();
+
+        const int ok_count =
+            (first_result ==
+                StorageHandoffTicketResult::Ok
+                ? 1 : 0) +
+            (second_result ==
+                StorageHandoffTicketResult::Ok
+                ? 1 : 0);
+
+        const int conflict_count =
+            (first_result ==
+                StorageHandoffTicketResult::
+                    BindingAlreadyIssued
+                ? 1 : 0) +
+            (second_result ==
+                StorageHandoffTicketResult::
+                    BindingAlreadyIssued
+                ? 1 : 0);
+
+        expect(
+            ok_count == 1 &&
+            conflict_count == 1 &&
+            concurrent_issue_store.size() == 1,
+            "concurrent same-binding issue mints exactly one ticket"
+        );
+
+        pqnas::cluster::
+            clear_storage_handoff_ticket_text(
+                &first_ticket
+            );
+
+        pqnas::cluster::
+            clear_storage_handoff_ticket_text(
+                &second_ticket
             );
     }
 
