@@ -136,6 +136,8 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/storage_user_session_policy.h"
 #include "cluster/storage_user_access_runtime.h"
 #include "cluster/storage_handoff_ticket_store.h"
+#include "cluster/storage_handoff_ticket_client.h"
+#include "cluster/storage_handoff_ticket_https.h"
 #include "cluster/node_registry.h"
 #include "cluster/node_credential_registry.h"
 #include "cluster/node_tls_trust_store.h"
@@ -9575,6 +9577,13 @@ int main()
             NodeCredentialRotationService
     > director_node_credential_rotation_service;
 
+    // Security: the Director browser-handoff client owns no credential
+    // material itself, but its trusted registry/store dependencies must remain
+    // valid for every future handoff request.
+    [[maybe_unused]] std::unique_ptr<
+        pqnas::cluster::StorageHandoffTicketClient
+    > director_storage_handoff_ticket_client;
+
     pqnas::cluster::UserPlacementPolicyRegistry
         director_placement_policy_registry;
 
@@ -9685,6 +9694,35 @@ int main()
         std::cerr
             << "[cluster] Director node TLS trust store loaded"
             << std::endl;
+
+        // Security: browser-handoff capability minting uses the same
+        // Director-owned Node identity, credential and pinned-TLS authorities
+        // as the other control-plane clients. Construction performs no network
+        // operation; the client revalidates mutable authority again on issue().
+        pqnas::cluster::StorageHandoffTicketClientConfig
+            storage_handoff_ticket_client_config;
+
+        storage_handoff_ticket_client_config.node_registry =
+            &director_node_registry;
+
+        storage_handoff_ticket_client_config.credential_registry =
+            &director_node_credential_registry;
+
+        storage_handoff_ticket_client_config.tls_trust_store =
+            &director_node_tls_trust_store;
+
+        storage_handoff_ticket_client_config.transport =
+            pqnas::cluster::
+                make_https_storage_handoff_ticket_transport();
+
+        director_storage_handoff_ticket_client =
+            std::make_unique<
+                pqnas::cluster::StorageHandoffTicketClient
+            >(
+                std::move(
+                    storage_handoff_ticket_client_config
+                )
+            );
 
         pqnas::cluster::
             NodeCredentialRotationServiceConfig

@@ -4878,6 +4878,12 @@ target_link_libraries(pqnas_storage_handoff_ticket_https PUBLIC
         OpenSSL::Crypto
 )
 
+# Director production composition. Browser-facing route registration remains
+# separate; this only exposes the hardened handoff client to pqnas_server.
+target_link_libraries(pqnas_server PRIVATE
+        pqnas_storage_handoff_ticket_https
+)
+
 
 # -----------------------------------------------------------------------------
 # Test: Director -> Storage browser handoff ticket client

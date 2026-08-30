@@ -22,6 +22,16 @@ internal_route = (
     "server/src/routes/routes_internal_storage_handoff.cpp"
 ).read_text(encoding="utf-8")
 
+main_cpp = (
+    root /
+    "server/src/main.cpp"
+).read_text(encoding="utf-8")
+
+cmake = (
+    root /
+    "CMakeLists.txt"
+).read_text(encoding="utf-8")
+
 errors = []
 
 
@@ -183,6 +193,52 @@ require(
     "bool valid_ticket_text(" not in https,
     "handoff protocol layers must not duplicate ticket validation rules",
 )
+
+
+# Production composition guard: Director must use the hardened handoff client
+# with authoritative Node, credential and pinned-TLS state.
+require(
+    '#include "cluster/storage_handoff_ticket_client.h"' in main_cpp and
+    '#include "cluster/storage_handoff_ticket_https.h"' in main_cpp,
+    "pqnas_server must include handoff client and HTTPS transport",
+)
+
+tls_load_pos = main_cpp.find(
+    "if (!director_node_tls_trust_store.load("
+)
+
+composition_pos = main_cpp.find(
+    "StorageHandoffTicketClientConfig"
+)
+
+require(
+    tls_load_pos >= 0 and
+    composition_pos > tls_load_pos,
+    "Director handoff client must be composed only after TLS trust loads",
+)
+
+require(
+    "storage_handoff_ticket_client_config.node_registry =" in main_cpp and
+    "&director_node_registry;" in main_cpp and
+    "storage_handoff_ticket_client_config.credential_registry =" in main_cpp and
+    "&director_node_credential_registry;" in main_cpp and
+    "storage_handoff_ticket_client_config.tls_trust_store =" in main_cpp and
+    "&director_node_tls_trust_store;" in main_cpp,
+    "Director handoff client must use authoritative Director stores",
+)
+
+require(
+    "make_https_storage_handoff_ticket_transport()" in main_cpp,
+    "Director handoff client must use hardened HTTPS transport",
+)
+
+require(
+    """target_link_libraries(pqnas_server PRIVATE
+        pqnas_storage_handoff_ticket_https
+)""" in cmake,
+    "pqnas_server must link production handoff HTTPS client",
+)
+
 
 if errors:
     for error in errors:
