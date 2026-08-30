@@ -4886,6 +4886,84 @@ target_link_libraries(pqnas_server PRIVATE
 
 
 # -----------------------------------------------------------------------------
+# Director browser handoff start route
+# -----------------------------------------------------------------------------
+add_library(pqnas_director_storage_handoff_start_routes STATIC
+        server/src/routes/routes_director_storage_handoff_start.cpp
+        server/src/routes/routes_director_storage_handoff_start.h
+)
+
+target_include_directories(
+        pqnas_director_storage_handoff_start_routes
+        PUBLIC
+        ${CMAKE_SOURCE_DIR}/server/src
+)
+
+target_include_directories(
+        pqnas_director_storage_handoff_start_routes
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        pqnas_director_storage_handoff_start_routes
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        pqnas_director_storage_handoff_start_routes
+        PUBLIC
+        pqnas_storage_handoff_ticket_client
+        pqnas_storage_handoff_ticket_store
+        pqnas_cluster_identity_validation
+)
+
+
+# -----------------------------------------------------------------------------
+# Test: Director browser handoff start route
+# -----------------------------------------------------------------------------
+add_executable(test_director_storage_handoff_start_route
+        tests/cluster/test_director_storage_handoff_start_route.cpp
+)
+
+target_include_directories(
+        test_director_storage_handoff_start_route
+        PRIVATE
+        ${CMAKE_SOURCE_DIR}/server/src
+        ${CMAKE_SOURCE_DIR}/server/third_party
+)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(
+        test_director_storage_handoff_start_route
+        PRIVATE
+        -Werror
+    )
+endif()
+
+target_link_libraries(
+        test_director_storage_handoff_start_route
+        PRIVATE
+        pqnas_director_storage_handoff_start_routes
+)
+
+set_target_properties(
+        test_director_storage_handoff_start_route
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+add_custom_target(run_test_director_storage_handoff_start_route
+        COMMAND "${CMAKE_BINARY_DIR}/bin/test_director_storage_handoff_start_route"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS test_director_storage_handoff_start_route
+)
+
+
+# -----------------------------------------------------------------------------
 # Test: Director -> Storage browser handoff ticket client
 # -----------------------------------------------------------------------------
 add_executable(test_storage_handoff_ticket_client
