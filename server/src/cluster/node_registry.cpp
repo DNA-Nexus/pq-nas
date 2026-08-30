@@ -389,9 +389,10 @@ bool json_int(
 }
 
 json record_to_json(
-    const NodeRegistryRecord& record
+    const NodeRegistryRecord& record,
+    int schema_version
 ) {
-    return json{
+    json value{
         {"node_id", record.node_id},
         {"api_base_url", record.api_base_url},
         {"enabled", record.enabled},
@@ -419,10 +420,19 @@ json record_to_json(
             {"enabled", record.users_enabled}
         }}
     };
+
+    if (schema_version >=
+        kNodeRegistrySchemaVersion) {
+        value["browser_base_url"] =
+            record.browser_base_url;
+    }
+
+    return value;
 }
 
 bool parse_record(
     const json& value,
+    int schema_version,
     NodeRegistryRecord* out,
     std::string* err
 ) {
@@ -432,6 +442,7 @@ bool parse_record(
             {
                 "node_id",
                 "api_base_url",
+                "browser_base_url",
                 "enabled",
                 "capacity_ceiling_bytes",
                 "added_at",
@@ -466,6 +477,40 @@ bool parse_record(
             &record.api_base_url,
             err)) {
         return false;
+    }
+
+    const auto browser_url_iterator =
+        value.find("browser_base_url");
+
+    if (schema_version <
+        kNodeRegistrySchemaVersion) {
+        if (browser_url_iterator != value.end()) {
+            set_error(
+                err,
+                "browser URL is not valid in legacy registry schema"
+            );
+            return false;
+        }
+    } else {
+        if (browser_url_iterator == value.end() ||
+            !browser_url_iterator->is_string()) {
+            set_error(
+                err,
+                "invalid node browser URL"
+            );
+            return false;
+        }
+
+        const std::string raw_browser_url =
+            browser_url_iterator->get<std::string>();
+
+        if (!raw_browser_url.empty() &&
+            !normalize_cluster_https_base_url(
+                raw_browser_url,
+                &record.browser_base_url,
+                err)) {
+            return false;
+        }
     }
 
     const auto enabled_iterator =
@@ -805,11 +850,16 @@ bool load_registry_file(
     }
 
     std::set<std::string> api_urls;
+    std::set<std::string> browser_urls;
 
     for (const auto& value : *nodes_iterator) {
         NodeRegistryRecord record;
 
-        if (!parse_record(value, &record, err)) {
+        if (!parse_record(
+                value,
+                version,
+                &record,
+                err)) {
             return false;
         }
 
@@ -819,10 +869,43 @@ bool load_registry_file(
             return false;
         }
 
+        if (browser_urls.find(
+                record.api_base_url) !=
+            browser_urls.end()) {
+            set_error(
+                err,
+                "node endpoint URL is shared by multiple nodes"
+            );
+            return false;
+        }
+
         if (!api_urls.insert(
                 record.api_base_url).second) {
             set_error(err, "duplicate node API URL in registry");
             return false;
+        }
+
+        if (!record.browser_base_url.empty()) {
+            if (record.browser_base_url !=
+                    record.api_base_url &&
+                api_urls.find(
+                    record.browser_base_url) !=
+                    api_urls.end()) {
+                set_error(
+                    err,
+                    "node endpoint URL is shared by multiple nodes"
+                );
+                return false;
+            }
+
+            if (!browser_urls.insert(
+                    record.browser_base_url).second) {
+                set_error(
+                    err,
+                    "duplicate node browser URL in registry"
+                );
+                return false;
+            }
         }
 
         parsed->emplace(
@@ -893,14 +976,34 @@ bool persist_registry_file(
 
     std::sort(node_ids.begin(), node_ids.end());
 
+    // Rolling-upgrade compatibility: merely running browser-aware code must
+    // not rewrite a v2 registry into rollback-incompatible v3. Emit v3 only
+    // after a Director-owned browser URL has actually been configured.
+    bool browser_schema_required = false;
+
+    for (const auto& entry : nodes) {
+        if (!entry.second.browser_base_url.empty()) {
+            browser_schema_required = true;
+            break;
+        }
+    }
+
+    const int persisted_schema_version =
+        browser_schema_required
+            ? kNodeRegistrySchemaVersion
+            : kNodeRegistryPreBrowserSchemaVersion;
+
     json root{
-        {"version", kNodeRegistrySchemaVersion},
+        {"version", persisted_schema_version},
         {"nodes", json::array()}
     };
 
     for (const std::string& node_id : node_ids) {
         root["nodes"].push_back(
-            record_to_json(nodes.at(node_id))
+            record_to_json(
+                nodes.at(node_id),
+                persisted_schema_version
+            )
         );
     }
 
@@ -1302,7 +1405,9 @@ bool NodeRegistry::upsert_configured_node(
     const std::string& now_iso,
     std::string* err,
     std::optional<std::uint64_t>
-        capacity_ceiling_bytes
+        capacity_ceiling_bytes,
+    std::optional<std::string>
+        browser_base_url
 ) {
     if (err) {
         err->clear();
@@ -1323,15 +1428,73 @@ bool NodeRegistry::upsert_configured_node(
         return false;
     }
 
+    std::optional<std::string>
+        normalized_browser_url;
+
+    if (browser_base_url.has_value()) {
+        if (browser_base_url->empty()) {
+            normalized_browser_url =
+                std::string();
+        } else {
+            std::string normalized;
+
+            if (!normalize_cluster_https_base_url(
+                    *browser_base_url,
+                    &normalized,
+                    err)) {
+                return false;
+            }
+
+            normalized_browser_url =
+                std::move(normalized);
+        }
+    }
+
     std::lock_guard<std::mutex> lock(mutex_);
 
     auto candidate = nodes_;
 
     for (const auto& entry : candidate) {
-        if (entry.first != node_id &&
-            entry.second.api_base_url == normalized_url) {
+        if (entry.first == node_id) {
+            continue;
+        }
+
+        if (entry.second.api_base_url == normalized_url) {
             set_error(err, "node API URL is already registered");
             return false;
+        }
+
+        // Security: browser and service endpoint namespaces belong to the
+        // same Node identity. A different Node may not claim either form
+        // of an already-trusted authority.
+        if (!entry.second.browser_base_url.empty() &&
+            entry.second.browser_base_url == normalized_url) {
+            set_error(
+                err,
+                "node endpoint URL is already registered"
+            );
+            return false;
+        }
+
+        if (normalized_browser_url.has_value() &&
+            !normalized_browser_url->empty()) {
+            if (entry.second.browser_base_url ==
+                    *normalized_browser_url) {
+                set_error(
+                    err,
+                    "node browser URL is already registered"
+                );
+                return false;
+            }
+
+            if (entry.second.api_base_url ==
+                    *normalized_browser_url) {
+                set_error(
+                    err,
+                    "node endpoint URL is already registered"
+                );
+                return false;
+            }
         }
     }
 
@@ -1341,6 +1504,10 @@ bool NodeRegistry::upsert_configured_node(
         NodeRegistryRecord record;
         record.node_id = node_id;
         record.api_base_url = normalized_url;
+        record.browser_base_url =
+            normalized_browser_url.value_or(
+                std::string()
+            );
         record.enabled = enabled;
         record.capacity_ceiling_bytes =
             capacity_ceiling_bytes.value_or(0);
@@ -1366,6 +1533,13 @@ bool NodeRegistry::upsert_configured_node(
             // may change the trusted capacity ceiling.
             record.capacity_ceiling_bytes =
                 *capacity_ceiling_bytes;
+        }
+
+        if (normalized_browser_url.has_value()) {
+            // Security: browser routing is Director-owned configuration.
+            // Heartbeats and unrelated lifecycle updates must preserve it.
+            record.browser_base_url =
+                *normalized_browser_url;
         }
 
         if (!enabled) {

@@ -158,6 +158,51 @@ int main() {
         "add node-02: " + error
     );
 
+    // Rolling-upgrade regression: until browser routing is explicitly
+    // configured, persistence stays at the pre-browser v2 schema.
+    json pre_browser_persisted;
+
+    try {
+        std::ifstream input(registry_path);
+        input >> pre_browser_persisted;
+    } catch (...) {
+        expect(
+            false,
+            "pre-browser registry should contain JSON"
+        );
+    }
+
+    expect(
+        pre_browser_persisted["version"] ==
+            pqnas::cluster::
+                kNodeRegistryPreBrowserSchemaVersion &&
+        !pre_browser_persisted["nodes"][0].
+            contains("browser_base_url"),
+        "unconfigured browser routing must remain v2-compatible"
+    );
+
+    pqnas::cluster::NodeRegistry
+        pre_browser_reloaded;
+
+    error.clear();
+
+    expect(
+        pre_browser_reloaded.load(
+            registry_path.string(),
+            &error
+        ),
+        "reload pre-browser v2 registry: " + error
+    );
+
+    const auto pre_browser_node =
+        pre_browser_reloaded.get("node-02");
+
+    expect(
+        pre_browser_node.has_value() &&
+        pre_browser_node->browser_base_url.empty(),
+        "v2 node must load with browser routing disabled"
+    );
+
     error.clear();
 
     expect(
@@ -167,7 +212,10 @@ int main() {
             true,
             "2026-07-28T06:02:00Z",
             &error,
-            2000
+            2000,
+            std::string(
+                "https://node-01.public.example/"
+            )
         ),
         "add node-01: " + error
     );
@@ -183,6 +231,70 @@ int main() {
             &error
         ),
         "duplicate node URL must be rejected"
+    );
+
+    error.clear();
+
+    expect(
+        !registry.upsert_configured_node(
+            "node-03",
+            "https://node-03.internal",
+            true,
+            "2026-07-28T06:03:10Z",
+            &error,
+            std::nullopt,
+            std::string(
+                "https://node-01.public.example"
+            )
+        ),
+        "duplicate browser URL must be rejected"
+    );
+
+    error.clear();
+
+    expect(
+        !registry.upsert_configured_node(
+            "node-03",
+            "https://node-03.internal",
+            true,
+            "2026-07-28T06:03:20Z",
+            &error,
+            std::nullopt,
+            std::string(
+                "http://node-03.public.example"
+            )
+        ),
+        "plaintext browser URL must be rejected"
+    );
+
+    error.clear();
+
+    expect(
+        !registry.upsert_configured_node(
+            "node-03",
+            "https://node-01.public.example",
+            true,
+            "2026-07-28T06:03:30Z",
+            &error
+        ),
+        "another Node API URL must not alias a browser URL"
+    );
+
+    error.clear();
+
+    expect(
+        !registry.upsert_configured_node(
+            "node-03",
+            "https://node-03.internal",
+            true,
+            "2026-07-28T06:03:40Z",
+            &error,
+            std::nullopt,
+            std::string(
+                "https://node-02.internal"
+            )
+        ),
+        "another Node browser URL must not alias an API URL"
     );
 
     const auto snapshot = registry.snapshot();
@@ -252,6 +364,13 @@ int main() {
         "persisted Director-owned capacity ceilings"
     );
 
+    expect(
+        persisted["nodes"][0]["browser_base_url"] ==
+            "https://node-01.public.example" &&
+        persisted["nodes"][1]["browser_base_url"] == "",
+        "persisted Director-owned browser URLs"
+    );
+
     pqnas::cluster::NodeRegistry reloaded;
 
     error.clear();
@@ -285,6 +404,13 @@ int main() {
         "reloaded Director-owned capacity ceiling"
     );
 
+    expect(
+        node_one.has_value() &&
+        node_one->browser_base_url ==
+            "https://node-01.public.example",
+        "reloaded Director-owned browser URL"
+    );
+
     // Security/backward compatibility: a schema-v1 registry has no trusted
     // Director capacity envelope. It must load as zero, which makes placement
     // fail closed until an administrator configures the ceiling.
@@ -297,6 +423,7 @@ int main() {
 
     for (auto& node : legacy["nodes"]) {
         node.erase("capacity_ceiling_bytes");
+        node.erase("browser_base_url");
     }
 
     expect(
@@ -336,8 +463,9 @@ int main() {
 
     expect(
         legacy_node.has_value() &&
-        legacy_node->capacity_ceiling_bytes == 0,
-        "legacy node capacity must migrate fail closed"
+        legacy_node->capacity_ceiling_bytes == 0 &&
+        legacy_node->browser_base_url.empty(),
+        "legacy node configuration must migrate fail closed"
     );
 
     pqnas::cluster::NodeStatusSnapshot status;
@@ -408,8 +536,10 @@ int main() {
 
     expect(
         observed.has_value() &&
-        observed->capacity_ceiling_bytes == 2000,
-        "heartbeat must preserve Director-owned capacity ceiling"
+        observed->capacity_ceiling_bytes == 2000 &&
+        observed->browser_base_url ==
+            "https://node-01.public.example",
+        "heartbeat must preserve Director-owned configuration"
     );
 
     pqnas::cluster::NodeStatusSnapshot upgraded_status =
