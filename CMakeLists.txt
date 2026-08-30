@@ -4921,6 +4921,12 @@ target_link_libraries(
         pqnas_cluster_identity_validation
 )
 
+# Director production composition. The route itself is runtime-registered only
+# when cluster_config.is_director() is true.
+target_link_libraries(pqnas_server PRIVATE
+        pqnas_director_storage_handoff_start_routes
+)
+
 
 # -----------------------------------------------------------------------------
 # Test: Director browser handoff start route

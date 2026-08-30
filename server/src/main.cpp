@@ -171,6 +171,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "routes/routes_internal_node_credential_rotation.h"
 #include "routes/routes_internal_storage_user_projection.h"
 #include "routes/routes_internal_storage_handoff.h"
+#include "routes/routes_director_storage_handoff_start.h"
 #include "routes/routes_admin_cluster_nodes.h"
 #include "routes/routes_admin_node_enrollments.h"
 #include "routes/routes_node_enrollment_bootstrap.h"
@@ -12675,6 +12676,165 @@ v5.app_pair_build_qr_uri =
 
         std::cerr
             << "[cluster] Director admin user placement route registered"
+            << std::endl;
+
+        // -----------------------------------------------------------------
+        // Director -> Storage browser handoff start
+        // -----------------------------------------------------------------
+        //
+        // Security:
+        // - browser authentication is cookie-only
+        // - the browser never chooses its Storage Node
+        // - users.json placement must match the durable projection that the
+        //   Storage Node is known to have accepted
+        // - browser/service URLs come only from the Director-owned NodeRegistry
+        // - the route itself performs a second authority read after ticket mint
+        //
+        // This route is registered only inside the Director role block.
+        pqnas::cluster::
+            DirectorStorageHandoffStartRoutesContext
+                storage_handoff_start_context;
+
+        storage_handoff_start_context.expected_director_origin =
+            ORIGIN;
+
+        storage_handoff_start_context.require_user_cookie =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* fingerprint,
+                std::string* role) -> bool {
+                return require_user_cookie_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    &users,
+                    fingerprint,
+                    role
+                );
+            };
+
+        storage_handoff_start_context.consume_rate_limit_slot =
+            pqnas::cluster::
+                make_default_director_storage_handoff_start_rate_limiter();
+
+        storage_handoff_start_context.resolve_authoritative_target =
+            [
+                &users,
+                &director_storage_projection_sync_state_store,
+                &director_node_registry
+            ](
+                const std::string& fingerprint
+            ) {
+                pqnas::cluster::
+                    DirectorStorageHandoffTargetResult result;
+
+                // Security: always re-read the authoritative user record.
+                // The authenticated browser does not provide placement data.
+                const auto user =
+                    users.get(fingerprint);
+
+                if (!user.has_value()) {
+                    result.code =
+                        pqnas::cluster::
+                            DirectorStorageHandoffTargetCode::
+                                UserNotAuthorized;
+
+                    return result;
+                }
+
+                if (user->status != "enabled" ||
+                    user->storage_state != "allocated" ||
+                    user->home_node.empty() ||
+                    user->storage_projection_revision == 0) {
+                    result.code =
+                        pqnas::cluster::
+                            DirectorStorageHandoffTargetCode::
+                                UserNotAuthorized;
+
+                    return result;
+                }
+
+                // Security: users.json alone is not sufficient authority for
+                // ticket minting. Require the exact Node/revision that the
+                // Director durably knows Storage has accepted.
+                const auto confirmed =
+                    director_storage_projection_sync_state_store.get(
+                        fingerprint
+                    );
+
+                if (!confirmed.has_value() ||
+                    confirmed->home_node != user->home_node ||
+                    confirmed->revision !=
+                        user->storage_projection_revision) {
+                    return result;
+                }
+
+                // Browser routing is Director-owned configuration. Never use
+                // Node-reported heartbeat hostname or request headers here.
+                const auto node =
+                    director_node_registry.get(
+                        user->home_node
+                    );
+
+                if (!node.has_value() ||
+                    !node->enabled ||
+                    node->api_base_url.empty() ||
+                    node->browser_base_url.empty()) {
+                    return result;
+                }
+
+                result.target.home_node =
+                    user->home_node;
+
+                result.target.projection_revision =
+                    user->storage_projection_revision;
+
+                result.target.api_base_url =
+                    node->api_base_url;
+
+                result.target.browser_base_url =
+                    node->browser_base_url;
+
+                result.code =
+                    pqnas::cluster::
+                        DirectorStorageHandoffTargetCode::Ok;
+
+                return result;
+            };
+
+        auto* const storage_handoff_ticket_client =
+            director_storage_handoff_ticket_client.get();
+
+        if (!storage_handoff_ticket_client) {
+            std::cerr
+                << "[cluster] FATAL: Director storage handoff "
+                   "ticket client unavailable"
+                << std::endl;
+
+            return 3;
+        }
+
+        storage_handoff_start_context.issue_ticket =
+            [storage_handoff_ticket_client](
+                const std::string& home_node,
+                const std::string& fingerprint,
+                const std::string& browser_binding_hash
+            ) {
+                return storage_handoff_ticket_client->issue(
+                    home_node,
+                    fingerprint,
+                    browser_binding_hash
+                );
+            };
+
+        pqnas::cluster::
+            register_director_storage_handoff_start_routes(
+                srv,
+                storage_handoff_start_context
+            );
+
+        std::cerr
+            << "[cluster] Director storage handoff start route registered"
             << std::endl;
     }
 
