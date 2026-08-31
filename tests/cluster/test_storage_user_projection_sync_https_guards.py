@@ -2,10 +2,6 @@
 
 from pathlib import Path
 
-from production_translation_unit import (
-    read_main_translation_unit_text,
-)
-
 source = Path(
     "server/src/cluster/storage_user_projection_sync_https.cpp"
 ).read_text()
@@ -17,11 +13,6 @@ client = Path(
 main = Path(
     "server/src/main.cpp"
 ).read_text()
-
-# Security: negative production-wiring assertions must inspect the
-# implementation .inc files compiled into main.cpp as well as the
-# literal main.cpp source. This closes historical RT-011.
-production_tu = read_main_translation_unit_text()
 
 errors = []
 
@@ -117,9 +108,9 @@ require(
 # are separately wired and tested.
 
 
-# Production phase: hardened HTTPS projection sync is intentionally
-# Director-wired. The authenticated internal handoff ticket service is now
-# independently enabled, but browser-facing handoff remains closed.
+# Production phase: hardened HTTPS projection sync remains explicitly
+# Director-wired. Browser handoff is now a separate production boundary with
+# dedicated wiring guards, so this transport test does not own its enablement.
 require(
     "StorageUserProjectionSyncClient" in main,
     "Director must production-wire the projection sync client",
@@ -128,16 +119,6 @@ require(
 require(
     "make_https_storage_user_projection_sync_transport()" in main,
     "Director projection sync must use the hardened HTTPS transport",
-)
-
-require(
-    "register_storage_handoff_preauth_routes(" not in production_tu,
-    "projection sync must not implicitly enable Storage browser preauth",
-)
-
-require(
-    "register_storage_handoff_consume_routes(" not in production_tu,
-    "projection sync must not implicitly enable Storage browser consume",
 )
 
 if errors:

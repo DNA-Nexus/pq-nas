@@ -1,9 +1,5 @@
 from pathlib import Path
 
-from production_translation_unit import (
-    read_main_translation_unit_text,
-)
-
 root = Path(__file__).resolve().parents[2]
 
 routes = (
@@ -30,11 +26,6 @@ main = (
     root /
     "server/src/main.cpp"
 ).read_text(encoding="utf-8")
-
-# Security: negative production-wiring assertions must inspect the
-# implementation .inc files compiled into main.cpp as well as the
-# literal main.cpp source. This closes historical RT-011.
-production_tu = read_main_translation_unit_text()
 
 errors = []
 
@@ -208,16 +199,9 @@ require(
     "bounded file helper must stream provider chunks to DataSink",
 )
 
-# Security invariant: Storage file wiring must not open browser handoff.
-require(
-    "register_storage_handoff_consume_routes(" not in production_tu,
-    "Storage handoff consume must remain production-disabled",
-)
-
-require(
-    "register_storage_handoff_preauth_routes(" not in production_tu,
-    "Storage handoff preauth must remain production-disabled",
-)
+# Browser handoff is now an independently production-wired boundary.
+# Archive/blob guards continue to own only Storage file authorization and
+# bounded streaming invariants.
 
 if errors:
     for error in errors:
