@@ -151,12 +151,271 @@ good_request() {
 }
 
 
+httplib::Request
+good_begin_request() {
+    httplib::Request request;
+
+    request.headers.emplace(
+        "Origin",
+        "https://director.example.test"
+    );
+
+    return request;
+}
+
+
 json response_json(
     const httplib::Response& response
 ) {
     return json::parse(
         response.body
     );
+}
+
+
+
+void test_begin_returns_only_trusted_browser_origin() {
+    auto context = good_context();
+    auto request = good_begin_request();
+
+    int resolve_calls = 0;
+    int issue_calls = 0;
+
+    context.resolve_authoritative_target =
+        [&](
+            const std::string&
+        ) {
+            ++resolve_calls;
+
+            DirectorStorageHandoffTargetResult
+                result;
+
+            result.code =
+                DirectorStorageHandoffTargetCode::Ok;
+
+            result.target =
+                good_target();
+
+            return result;
+        };
+
+    context.issue_ticket =
+        [&](
+            const std::string&,
+            const std::string&,
+            const std::string&
+        ) {
+            ++issue_calls;
+
+            StorageHandoffTicketClientResult
+                result;
+
+            result.code =
+                StorageHandoffTicketClientCode::Ok;
+
+            return result;
+        };
+
+    httplib::Response response;
+
+    handle_director_storage_handoff_begin_request(
+        request,
+        response,
+        context
+    );
+
+    const json body =
+        response_json(response);
+
+    check(
+        response.status == 200 &&
+        body.is_object() &&
+        body.size() == 2 &&
+        body.value("ok", false) &&
+        body.value(
+            "storage_origin",
+            ""
+        ) ==
+            "https://storage.example.test",
+        "begin must return only the trusted Storage browser origin"
+    );
+
+    check(
+        resolve_calls == 1,
+        "begin must resolve current authoritative target exactly once"
+    );
+
+    check(
+        issue_calls == 0,
+        "begin must never mint a Storage handoff ticket"
+    );
+
+    check(
+        response.body.find(
+            "storage-internal.example.test"
+        ) == std::string::npos &&
+        response.body.find(
+            "node-01"
+        ) == std::string::npos &&
+        response.body.find(
+            kFingerprint
+        ) == std::string::npos &&
+        response.body.find(
+            "projection_revision"
+        ) == std::string::npos,
+        "begin response must not expose internal routing or user authority"
+    );
+}
+
+
+void test_begin_security_gates() {
+    {
+        auto context = good_context();
+        auto request = good_begin_request();
+
+        bool auth_called = false;
+
+        request.headers.emplace(
+            "Authorization",
+            "Bearer forbidden"
+        );
+
+        context.require_user_cookie =
+            [&](
+                const httplib::Request&,
+                httplib::Response&,
+                std::string*,
+                std::string*
+            ) {
+                auth_called = true;
+                return true;
+            };
+
+        httplib::Response response;
+
+        handle_director_storage_handoff_begin_request(
+            request,
+            response,
+            context
+        );
+
+        check(
+            response.status == 403 &&
+            !auth_called,
+            "begin must reject Authorization before cookie authentication"
+        );
+    }
+
+    {
+        auto context = good_context();
+        auto request = good_begin_request();
+
+        request.body =
+            R"({"node":"attacker-choice"})";
+
+        int resolve_calls = 0;
+
+        context.resolve_authoritative_target =
+            [&](
+                const std::string&
+            ) {
+                ++resolve_calls;
+
+                DirectorStorageHandoffTargetResult
+                    result;
+
+                result.code =
+                    DirectorStorageHandoffTargetCode::Ok;
+
+                result.target =
+                    good_target();
+
+                return result;
+            };
+
+        httplib::Response response;
+
+        handle_director_storage_handoff_begin_request(
+            request,
+            response,
+            context
+        );
+
+        check(
+            response.status == 400 &&
+            resolve_calls == 0,
+            "begin must reject every browser-supplied request payload"
+        );
+    }
+
+    {
+        auto context = good_context();
+        auto request = good_begin_request();
+
+        context.resolve_authoritative_target =
+            [](
+                const std::string&
+            ) {
+                DirectorStorageHandoffTargetResult
+                    result;
+
+                result.code =
+                    DirectorStorageHandoffTargetCode::
+                        UserNotAuthorized;
+
+                return result;
+            };
+
+        httplib::Response response;
+
+        handle_director_storage_handoff_begin_request(
+            request,
+            response,
+            context
+        );
+
+        check(
+            response.status == 403,
+            "begin must preserve user authorization failure"
+        );
+    }
+
+    {
+        auto context = good_context();
+        auto request = good_begin_request();
+
+        context.resolve_authoritative_target =
+            [](
+                const std::string&
+            ) {
+                DirectorStorageHandoffTargetResult
+                    result;
+
+                result.code =
+                    DirectorStorageHandoffTargetCode::Ok;
+
+                result.target =
+                    good_target();
+
+                result.target.browser_base_url =
+                    "https://storage.example.test/";
+
+                return result;
+            };
+
+        httplib::Response response;
+
+        handle_director_storage_handoff_begin_request(
+            request,
+            response,
+            context
+        );
+
+        check(
+            response.status == 503,
+            "begin must fail closed on noncanonical Storage browser authority"
+        );
+    }
 }
 
 
@@ -750,6 +1009,8 @@ void test_browser_destination_change_hides_ticket() {
 
 
 int main() {
+    test_begin_returns_only_trusted_browser_origin();
+    test_begin_security_gates();
     test_success_uses_authoritative_target();
     test_noncanonical_director_origin_fails_closed();
     test_origin_and_cookie_only_gate();

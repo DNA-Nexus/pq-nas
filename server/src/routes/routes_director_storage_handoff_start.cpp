@@ -403,6 +403,254 @@ make_default_director_storage_handoff_start_rate_limiter() {
 }
 
 
+
+void handle_director_storage_handoff_begin_request(
+    const httplib::Request& request,
+    httplib::Response& response,
+    const DirectorStorageHandoffStartRoutesContext& context
+) {
+    response.set_header(
+        "Cache-Control",
+        "no-store"
+    );
+
+    response.set_header(
+        "X-Content-Type-Options",
+        "nosniff"
+    );
+
+    std::string expected_origin;
+
+    if (!context_ok(
+            context,
+            &expected_origin)) {
+        reply_json_local(
+            response,
+            500,
+            json{
+                {"ok", false},
+                {"error", "server_error"}
+            }
+        );
+
+        return;
+    }
+
+    // Security: this browser capability route is cookie-only.
+    // Supplying Authorization must never switch authentication modes.
+    if (has_header_ci(
+            request,
+            "Authorization")) {
+        reply_json_local(
+            response,
+            403,
+            json{
+                {"ok", false},
+                {"error", "forbidden"}
+            }
+        );
+
+        return;
+    }
+
+    const std::string* origin =
+        exact_single_header(
+            request,
+            "Origin"
+        );
+
+    // Security: require exactly the configured Director browser authority.
+    // Never derive this trust boundary from Host or forwarded headers.
+    if (!origin ||
+        *origin != expected_origin) {
+        reply_json_local(
+            response,
+            403,
+            json{
+                {"ok", false},
+                {"error", "forbidden"}
+            }
+        );
+
+        return;
+    }
+
+    std::string actor_fingerprint;
+    std::string actor_role;
+
+    bool authenticated = false;
+
+    try {
+        authenticated =
+            context.require_user_cookie(
+                request,
+                response,
+                &actor_fingerprint,
+                &actor_role
+            );
+    } catch (...) {
+        reply_json_local(
+            response,
+            503,
+            json{
+                {"ok", false},
+                {"error", "handoff_unavailable"}
+            }
+        );
+
+        return;
+    }
+
+    if (!authenticated) {
+        // Authentication helper owns its precise 401/403 response.
+        return;
+    }
+
+    if (!pqnas::valid_storage_user_fingerprint_hex(
+            actor_fingerprint)) {
+        reply_json_local(
+            response,
+            503,
+            json{
+                {"ok", false},
+                {"error", "handoff_unavailable"}
+            }
+        );
+
+        return;
+    }
+
+    long retry_after_seconds = 0;
+    bool within_rate_limit = false;
+
+    try {
+        // Begin and start intentionally share one per-user limiter.
+        within_rate_limit =
+            context.consume_rate_limit_slot(
+                actor_fingerprint,
+                &retry_after_seconds
+            );
+    } catch (...) {
+        reply_json_local(
+            response,
+            503,
+            json{
+                {"ok", false},
+                {"error", "handoff_unavailable"}
+            }
+        );
+
+        return;
+    }
+
+    if (!within_rate_limit) {
+        response.set_header(
+            "Retry-After",
+            std::to_string(
+                std::max(
+                    1L,
+                    retry_after_seconds
+                )
+            )
+        );
+
+        reply_json_local(
+            response,
+            429,
+            json{
+                {"ok", false},
+                {"error", "rate_limited"}
+            }
+        );
+
+        return;
+    }
+
+    // Security: the browser supplies no placement or routing data here.
+    // There is intentionally no JSON parser on this endpoint.
+    if (!request.body.empty()) {
+        reply_json_local(
+            response,
+            400,
+            json{
+                {"ok", false},
+                {"error", "bad_request"}
+            }
+        );
+
+        return;
+    }
+
+    DirectorStorageHandoffTargetResult
+        target_result;
+
+    try {
+        // Security: every begin request re-reads current Director authority,
+        // confirmed Storage projection and Director-owned Node routing.
+        target_result =
+            context.resolve_authoritative_target(
+                actor_fingerprint
+            );
+    } catch (...) {
+        reply_json_local(
+            response,
+            503,
+            json{
+                {"ok", false},
+                {"error", "handoff_unavailable"}
+            }
+        );
+
+        return;
+    }
+
+    if (target_result.code ==
+        DirectorStorageHandoffTargetCode::
+            UserNotAuthorized) {
+        reply_json_local(
+            response,
+            403,
+            json{
+                {"ok", false},
+                {"error", "user_not_authorized"}
+            }
+        );
+
+        return;
+    }
+
+    if (target_result.code !=
+            DirectorStorageHandoffTargetCode::Ok ||
+        !valid_target(
+            target_result.target)) {
+        reply_json_local(
+            response,
+            503,
+            json{
+                {"ok", false},
+                {"error", "handoff_unavailable"}
+            }
+        );
+
+        return;
+    }
+
+    // Deliberately expose only the public browser authority.
+    // Never return Node ID, service URL, fingerprint or projection revision.
+    reply_json_local(
+        response,
+        200,
+        json{
+            {"ok", true},
+            {
+                "storage_origin",
+                target_result.target.browser_base_url
+            }
+        }
+    );
+}
+
+
 void handle_director_storage_handoff_start_request(
     const httplib::Request& request,
     httplib::Response& response,
@@ -865,6 +1113,20 @@ void register_director_storage_handoff_start_routes(
     httplib::Server& server,
     const DirectorStorageHandoffStartRoutesContext& context
 ) {
+    server.Post(
+        kDirectorStorageHandoffBeginPath,
+        [context](
+            const httplib::Request& request,
+            httplib::Response& response
+        ) {
+            handle_director_storage_handoff_begin_request(
+                request,
+                response,
+                context
+            );
+        }
+    );
+
     server.Post(
         kDirectorStorageHandoffStartPath,
         [context](

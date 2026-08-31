@@ -34,6 +34,25 @@ require(
     "Director handoff start route must be production-registered",
 )
 
+route = (
+    root /
+    "server/src/routes/routes_director_storage_handoff_start.cpp"
+).read_text(encoding="utf-8")
+
+route_header = (
+    root /
+    "server/src/routes/routes_director_storage_handoff_start.h"
+).read_text(encoding="utf-8")
+
+require(
+    '"/api/storage/handoff/begin"' in route_header and
+    "kDirectorStorageHandoffBeginPath" in route_header and
+    "handle_director_storage_handoff_begin_request(" in route and
+    "server.Post(" in route and
+    "kDirectorStorageHandoffBeginPath" in route,
+    "Director handoff module must register the authenticated begin endpoint",
+)
+
 director_block_pos = main.rfind(
     "if (cluster_config.is_director()) {",
     0,
