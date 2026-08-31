@@ -134,8 +134,10 @@ failures must return an error and should emit an audit event when security-relev
 #include "cluster/node_status.h"
 #include "cluster/storage_user_projection_store.h"
 #include "cluster/storage_user_session_policy.h"
+#include "cluster/storage_user_session_cookie.h"
 #include "cluster/storage_user_access_runtime.h"
 #include "cluster/storage_handoff_ticket_store.h"
+#include "cluster/storage_handoff_consume_service.h"
 #include "cluster/storage_handoff_ticket_client.h"
 #include "cluster/storage_handoff_ticket_https.h"
 #include "cluster/node_registry.h"
@@ -171,6 +173,8 @@ failures must return an error and should emit an audit event when security-relev
 #include "routes/routes_internal_node_credential_rotation.h"
 #include "routes/routes_internal_storage_user_projection.h"
 #include "routes/routes_internal_storage_handoff.h"
+#include "routes/routes_storage_handoff_preauth.h"
+#include "routes/routes_storage_handoff_consume.h"
 #include "routes/routes_director_storage_handoff_start.h"
 #include "routes/routes_admin_cluster_nodes.h"
 #include "routes/routes_admin_node_enrollments.h"
@@ -749,6 +753,14 @@ const std::string STATIC_APP_HTML            = static_path("app.html");
 const std::string STATIC_APP_JS              = static_path("app.js");
 const std::string STATIC_APP_FRAME_BACKGROUND_TASKS_JS =
     static_path("app_frame_background_tasks.js");
+
+const std::string STATIC_HANDOFF_DIRECTOR_JS =
+    static_path("handoff/director.js");
+const std::string STATIC_HANDOFF_STORAGE_BOOTSTRAP_JS =
+    static_path("handoff/storage_bootstrap.js");
+const std::string STATIC_HANDOFF_STORAGE_FINISH_JS =
+    static_path("handoff/storage_finish.js");
+
 const std::string STATIC_USERS_HTML          = static_path("admin_users.html");
 const std::string STATIC_ADMIN_STATS_HTML      = static_path("admin_stats.html");
 const std::string STATIC_ADMIN_STATS_JS        = static_path("admin_stats.js");
@@ -9481,6 +9493,13 @@ int main()
         pqnas::cluster::StorageHandoffTicketStore
     > storage_handoff_ticket_store;
 
+    // Storage handoff consume service keeps non-owning references to the
+    // ticket store, Node-local session policy and process cookie key.
+    // Keep it at server lifetime together with those dependencies.
+    std::unique_ptr<
+        pqnas::cluster::StorageHandoffConsumeService
+    > storage_handoff_consume_service;
+
     if (cluster_config.is_node()) {
         std::string credential_err;
 
@@ -11126,6 +11145,69 @@ std::cerr << "[cfg] workspace_external_invites_path=" << workspace_external_invi
         std::cerr
             << "[cluster] Storage handoff ticket store composed"
             << std::endl;
+
+        if (SESS_TTL <= 0) {
+            std::cerr
+                << "[cluster] FATAL: invalid Storage handoff "
+                   "session TTL"
+                << std::endl;
+
+            return 3;
+        }
+
+        long storage_handoff_session_ttl_seconds =
+            static_cast<long>(
+                SESS_TTL
+            );
+
+        if (storage_handoff_session_ttl_seconds >
+            pqnas::cluster::
+                kStorageUserSessionCookieMaxTtlSeconds) {
+            storage_handoff_session_ttl_seconds =
+                pqnas::cluster::
+                    kStorageUserSessionCookieMaxTtlSeconds;
+        }
+
+        pqnas::cluster::
+            StorageHandoffConsumeServiceConfig
+                storage_handoff_consume_service_config;
+
+        storage_handoff_consume_service_config.ticket_store =
+            storage_handoff_ticket_store.get();
+
+        storage_handoff_consume_service_config.session_policy =
+            &storage_user_access_runtime->
+                session_policy();
+
+        storage_handoff_consume_service_config.base_cookie_key =
+            COOKIE_KEY;
+
+        storage_handoff_consume_service_config.local_node_id =
+            cluster_config.node_id;
+
+        storage_handoff_consume_service_config.session_ttl_seconds =
+            storage_handoff_session_ttl_seconds;
+
+        storage_handoff_consume_service_config.clock =
+            []() -> long {
+                return pqnas::now_epoch();
+            };
+
+        storage_handoff_consume_service =
+            std::make_unique<
+                pqnas::cluster::
+                    StorageHandoffConsumeService
+            >(
+                std::move(
+                    storage_handoff_consume_service_config
+                )
+            );
+
+        std::cerr
+            << "[cluster] Storage handoff consume service composed "
+            << "session_ttl_s="
+            << storage_handoff_session_ttl_seconds
+            << std::endl;
     }
 
     {
@@ -11920,6 +12002,86 @@ v5.app_pair_build_qr_uri =
         std::cerr
             << "[cluster] internal Storage handoff ticket "
                "route registered"
+            << std::endl;
+    }
+
+    if (cluster_config.is_node()) {
+        // -------------------------------------------------------------
+        // Storage browser handoff endpoints.
+        // -------------------------------------------------------------
+        //
+        // Security:
+        // - ORIGIN is trusted server configuration, never Host/X-Forwarded-*
+        // - both route modules independently require canonical HTTPS origin
+        // - rate-limit callbacks remain unset so each registration installs
+        //   its bounded transport-peer limiter
+        // - consume delegates only to the Node-local consume service
+        pqnas::cluster::
+            StorageHandoffPreauthRoutesContext
+                storage_handoff_preauth_context;
+
+        storage_handoff_preauth_context.expected_origin =
+            ORIGIN;
+
+        // Security: browser return authority is trusted Node configuration.
+        // The bootstrap page never accepts a Director URL from its fragment,
+        // query string, Host header or other browser-controlled input.
+        storage_handoff_preauth_context.director_browser_origin =
+            cluster_config.director_url;
+
+        pqnas::cluster::
+            register_storage_handoff_preauth_routes(
+                srv,
+                storage_handoff_preauth_context
+            );
+
+        auto* const storage_handoff_consumer =
+            storage_handoff_consume_service.get();
+
+        if (!storage_handoff_consumer) {
+            std::cerr
+                << "[cluster] FATAL: Storage handoff consume "
+                   "service unavailable"
+                << std::endl;
+
+            return 3;
+        }
+
+        pqnas::cluster::
+            StorageHandoffConsumeRoutesContext
+                storage_handoff_consume_context;
+
+        storage_handoff_consume_context.expected_storage_origin =
+            ORIGIN;
+
+        storage_handoff_consume_context.consume =
+            [storage_handoff_consumer](
+                const std::string& ticket,
+                const std::string& browser_binding_secret,
+                pqnas::cluster::
+                    StorageHandoffConsumeServiceOutput* output
+            ) {
+                return storage_handoff_consumer->
+                    consume(
+                        ticket,
+                        browser_binding_secret,
+                        output
+                    );
+            };
+
+        storage_handoff_consume_context.now_epoch =
+            []() -> long {
+                return pqnas::now_epoch();
+            };
+
+        pqnas::cluster::
+            register_storage_handoff_consume_routes(
+                srv,
+                storage_handoff_consume_context
+            );
+
+        std::cerr
+            << "[cluster] Storage browser handoff routes registered"
             << std::endl;
     }
 
@@ -13762,6 +13924,9 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
         core_ui_shell_ctx.is_director =
             cluster_config.is_director();
 
+        core_ui_shell_ctx.is_storage_node =
+            cluster_config.is_node();
+
         core_ui_shell_ctx.static_system_js = STATIC_SYSTEM_JS;
         core_ui_shell_ctx.static_audit_html = STATIC_AUDIT_HTML;
         core_ui_shell_ctx.static_admin_html = STATIC_ADMIN_HTML;
@@ -13777,9 +13942,32 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
             STATIC_APP_FRAME_BACKGROUND_TASKS_JS;
         core_ui_shell_ctx.static_admin_js = STATIC_ADMIN_JS;
 
+        core_ui_shell_ctx.static_handoff_director_js =
+            STATIC_HANDOFF_DIRECTOR_JS;
+        core_ui_shell_ctx.static_handoff_storage_bootstrap_js =
+            STATIC_HANDOFF_STORAGE_BOOTSTRAP_JS;
+        core_ui_shell_ctx.static_handoff_storage_finish_js =
+            STATIC_HANDOFF_STORAGE_FINISH_JS;
+
         core_ui_shell_ctx.require_admin =
             [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
                 return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+
+        core_ui_shell_ctx.require_user =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) {
+                std::string role;
+
+                return require_user_cookie_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    &users,
+                    actor_fp,
+                    &role
+                );
             };
 
         core_ui_shell_ctx.is_admin =

@@ -2,20 +2,11 @@
 
 from pathlib import Path
 
-from production_translation_unit import (
-    read_main_translation_unit_text,
-)
-
 main = Path("server/src/main.cpp").read_text()
 cmake = Path("CMakeLists.txt").read_text()
 projection_route = Path(
     "server/src/routes/routes_internal_storage_user_projection.cpp"
 ).read_text()
-
-# Security: negative production-wiring assertions must inspect the
-# implementation .inc files compiled into main.cpp as well as the
-# literal main.cpp source. This closes historical RT-011.
-production_tu = read_main_translation_unit_text()
 
 errors = []
 
@@ -80,19 +71,9 @@ require(
     "RT-008 projection audit endpoint is registered in the production route module",
 )
 
-# Security architecture invariant:
-# the authenticated internal handoff ticket service may now use this
-# projection-backed authorization state, while browser-facing handoff remains
-# deliberately closed.
-require(
-    "register_storage_handoff_preauth_routes(" not in production_tu,
-    "Storage browser preauth must remain production-disabled",
-)
-
-require(
-    "register_storage_handoff_consume_routes(" not in production_tu,
-    "Storage browser consume must remain production-disabled",
-)
+# Browser-facing handoff now deliberately consumes this projection-backed
+# authority. Its production registration is guarded by the dedicated handoff
+# tests rather than this projection ownership test.
 
 # RT010: physical Node deletion must share the exact durable confirmed-state
 # store and transition boundary used by reconciliation.

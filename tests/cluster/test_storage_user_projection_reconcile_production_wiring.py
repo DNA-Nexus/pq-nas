@@ -3,10 +3,6 @@
 from pathlib import Path
 import re
 
-from production_translation_unit import (
-    read_main_translation_unit_text,
-)
-
 main = Path(
     "server/src/main.cpp"
 ).read_text()
@@ -14,11 +10,6 @@ main = Path(
 cmake = Path(
     "CMakeLists.txt"
 ).read_text()
-
-# Security: negative production-wiring assertions must inspect the
-# implementation .inc files compiled into main.cpp as well as the
-# literal main.cpp source. This closes historical RT-011.
-production_tu = read_main_translation_unit_text()
 
 errors = []
 
@@ -217,18 +208,9 @@ require(
     "projection reconciliation must stop before heartbeat shutdown",
 )
 
-# Security boundary: projection reconciliation must not open either
-# browser-facing handoff endpoint. The authenticated internal ticket service is
-# intentionally production-enabled by its own dedicated wiring guard.
-require(
-    "register_storage_handoff_preauth_routes(" not in production_tu,
-    "Storage browser preauth must remain production-disabled",
-)
-
-require(
-    "register_storage_handoff_consume_routes(" not in production_tu,
-    "Storage browser consume must remain production-disabled",
-)
+# Browser-facing handoff is independently production-wired and guarded.
+# Projection reconciliation tests continue to own projection convergence,
+# transition ordering and capability/liveness semantics only.
 
 pqnas_server_link_blocks = re.findall(
     r"target_link_libraries\(pqnas_server PRIVATE\n.*?\n\)",

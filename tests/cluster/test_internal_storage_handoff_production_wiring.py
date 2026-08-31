@@ -152,17 +152,9 @@ require(
     "production server must link internal Storage handoff routes",
 )
 
-# This PR opens service-to-service ticket issuance only.
-# Browser-facing handoff remains deliberately closed.
-require(
-    "register_storage_handoff_preauth_routes(" not in production_tu,
-    "Storage browser preauth must remain production-disabled",
-)
-
-require(
-    "register_storage_handoff_consume_routes(" not in production_tu,
-    "Storage browser consume must remain production-disabled",
-)
+# Browser-facing handoff is production-enabled in its own lifecycle.
+# Its preauth/consume security boundary is owned by the dedicated Storage
+# browser-handoff production wiring guards rather than this internal route test.
 
 if errors:
     for error in errors:

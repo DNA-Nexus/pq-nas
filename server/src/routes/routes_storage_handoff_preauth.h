@@ -47,6 +47,12 @@ struct StorageHandoffPreauthRoutesContext {
     // headers supplied by the request.
     std::string expected_origin;
 
+    // Canonical HTTPS Director authority to which the browser returns H.
+    //
+    // Security: this is trusted Node configuration. It must never be supplied
+    // by the browser, Host, Referer or forwarding headers.
+    std::string director_browser_origin;
+
     std::function<bool(
         const std::string& remote_address,
         long* retry_after_seconds

@@ -3654,6 +3654,13 @@ target_link_libraries(pqnas_storage_handoff_consume_routes PUBLIC
         pqnas_storage_user_session_cookie
 )
 
+# Storage production browser handoff composition. Runtime registration remains
+# explicitly gated by cluster_config.is_node() in main.cpp.
+target_link_libraries(pqnas_server PRIVATE
+        pqnas_storage_handoff_preauth_routes
+        pqnas_storage_handoff_consume_routes
+)
+
 
 # -----------------------------------------------------------------------------
 # Test: Storage browser handoff consume service

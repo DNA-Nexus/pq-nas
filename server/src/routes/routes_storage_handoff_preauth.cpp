@@ -294,11 +294,15 @@ void handle_storage_handoff_preauth_request(
     );
 
     std::string expected_origin;
+    std::string director_browser_origin;
 
     try {
         if (!canonical_expected_origin(
                 context.expected_origin,
                 &expected_origin) ||
+            !canonical_expected_origin(
+                context.director_browser_origin,
+                &director_browser_origin) ||
             !context.consume_rate_limit_slot) {
             reply_json_local(
                 response,
@@ -471,6 +475,10 @@ void handle_storage_handoff_preauth_request(
             {
                 "browser_binding_hash",
                 browser_binding_hash
+            },
+            {
+                "director_origin",
+                director_browser_origin
             }
         }
     );

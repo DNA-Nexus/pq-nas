@@ -16,6 +16,10 @@ struct Response;
 namespace pqnas::cluster {
 
 inline constexpr const char*
+    kDirectorStorageHandoffBeginPath =
+        "/api/storage/handoff/begin";
+
+inline constexpr const char*
     kDirectorStorageHandoffStartPath =
         "/api/storage/handoff/start";
 
@@ -108,6 +112,17 @@ make_default_director_storage_handoff_start_rate_limiter();
 
 
 // Exposed for deterministic tests without opening a listener.
+//
+// The begin endpoint returns only the trusted browser-facing Storage origin.
+// It does not mint a ticket and accepts no request payload.
+void handle_director_storage_handoff_begin_request(
+    const httplib::Request& request,
+    httplib::Response& response,
+    const DirectorStorageHandoffStartRoutesContext& context
+);
+
+
+// Ticket-minting continuation after Storage preauth.
 void handle_director_storage_handoff_start_request(
     const httplib::Request& request,
     httplib::Response& response,
