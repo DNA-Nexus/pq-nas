@@ -753,6 +753,14 @@ const std::string STATIC_APP_HTML            = static_path("app.html");
 const std::string STATIC_APP_JS              = static_path("app.js");
 const std::string STATIC_APP_FRAME_BACKGROUND_TASKS_JS =
     static_path("app_frame_background_tasks.js");
+
+const std::string STATIC_HANDOFF_DIRECTOR_JS =
+    static_path("handoff/director.js");
+const std::string STATIC_HANDOFF_STORAGE_BOOTSTRAP_JS =
+    static_path("handoff/storage_bootstrap.js");
+const std::string STATIC_HANDOFF_STORAGE_FINISH_JS =
+    static_path("handoff/storage_finish.js");
+
 const std::string STATIC_USERS_HTML          = static_path("admin_users.html");
 const std::string STATIC_ADMIN_STATS_HTML      = static_path("admin_stats.html");
 const std::string STATIC_ADMIN_STATS_JS        = static_path("admin_stats.js");
@@ -13916,6 +13924,9 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
         core_ui_shell_ctx.is_director =
             cluster_config.is_director();
 
+        core_ui_shell_ctx.is_storage_node =
+            cluster_config.is_node();
+
         core_ui_shell_ctx.static_system_js = STATIC_SYSTEM_JS;
         core_ui_shell_ctx.static_audit_html = STATIC_AUDIT_HTML;
         core_ui_shell_ctx.static_admin_html = STATIC_ADMIN_HTML;
@@ -13931,9 +13942,32 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
             STATIC_APP_FRAME_BACKGROUND_TASKS_JS;
         core_ui_shell_ctx.static_admin_js = STATIC_ADMIN_JS;
 
+        core_ui_shell_ctx.static_handoff_director_js =
+            STATIC_HANDOFF_DIRECTOR_JS;
+        core_ui_shell_ctx.static_handoff_storage_bootstrap_js =
+            STATIC_HANDOFF_STORAGE_BOOTSTRAP_JS;
+        core_ui_shell_ctx.static_handoff_storage_finish_js =
+            STATIC_HANDOFF_STORAGE_FINISH_JS;
+
         core_ui_shell_ctx.require_admin =
             [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
                 return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+
+        core_ui_shell_ctx.require_user =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) {
+                std::string role;
+
+                return require_user_cookie_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    &users,
+                    actor_fp,
+                    &role
+                );
             };
 
         core_ui_shell_ctx.is_admin =
