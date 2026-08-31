@@ -82,6 +82,12 @@ require(
 )
 
 require(
+    "director_browser_origin =" in context_block and
+    "cluster_config.director_url;" in context_block,
+    "Storage preauth must return only trusted configured Director authority",
+)
+
+require(
     "consume_rate_limit_slot =" not in context_block,
     "Storage preauth production wiring must use bounded route default limiter",
 )

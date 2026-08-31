@@ -12015,6 +12015,12 @@ v5.app_pair_build_qr_uri =
         storage_handoff_preauth_context.expected_origin =
             ORIGIN;
 
+        // Security: browser return authority is trusted Node configuration.
+        // The bootstrap page never accepts a Director URL from its fragment,
+        // query string, Host header or other browser-controlled input.
+        storage_handoff_preauth_context.director_browser_origin =
+            cluster_config.director_url;
+
         pqnas::cluster::
             register_storage_handoff_preauth_routes(
                 srv,

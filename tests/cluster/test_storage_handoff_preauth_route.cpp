@@ -109,6 +109,9 @@ int main() {
     const std::string expected_origin =
         "https://storage-01.example.test";
 
+    const std::string director_origin =
+        "https://director.example.test";
+
     int rate_limit_calls = 0;
     bool allow_request = true;
     bool throw_from_limiter = false;
@@ -118,6 +121,9 @@ int main() {
 
     context.expected_origin =
         expected_origin;
+
+    context.director_browser_origin =
+        director_origin;
 
     context.consume_rate_limit_slot =
         [&](const std::string& remote_address,
@@ -204,7 +210,7 @@ int main() {
 
         expect(
             body.is_object() &&
-            body.size() == 2 &&
+            body.size() == 3 &&
             body.value(
                 "ok",
                 false
@@ -214,8 +220,12 @@ int main() {
             ) &&
             body[
                 "browser_binding_hash"
-            ].is_string(),
-            "success schema contains only ok and binding hash"
+            ].is_string() &&
+            body.value(
+                "director_origin",
+                std::string{}
+            ) == director_origin,
+            "success schema contains H and trusted Director origin"
         );
 
         const std::string binding_hash =
@@ -589,6 +599,77 @@ int main() {
         expect(
             response.status == 500,
             "non-canonical configured origin fails closed"
+        );
+    }
+
+    {
+        auto bad_context =
+            context;
+
+        bad_context.director_browser_origin =
+            "http://director.example.test";
+
+        const int calls_before =
+            rate_limit_calls;
+
+        auto request =
+            make_request(
+                expected_origin
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_storage_handoff_preauth_request(
+                request,
+                response,
+                bad_context
+            );
+
+        expect(
+            response.status == 500,
+            "non-HTTPS Director browser origin fails closed"
+        );
+
+        expect(
+            rate_limit_calls ==
+                calls_before,
+            "invalid Director authority performs no request work"
+        );
+
+        expect(
+            response_header(
+                response,
+                "Set-Cookie"
+            ).empty(),
+            "invalid Director authority mints no browser secret"
+        );
+    }
+
+    {
+        auto bad_context =
+            context;
+
+        bad_context.director_browser_origin =
+            director_origin + "/";
+
+        auto request =
+            make_request(
+                expected_origin
+            );
+
+        httplib::Response response;
+
+        pqnas::cluster::
+            handle_storage_handoff_preauth_request(
+                request,
+                response,
+                bad_context
+            );
+
+        expect(
+            response.status == 500,
+            "noncanonical Director browser origin fails closed"
         );
     }
 
