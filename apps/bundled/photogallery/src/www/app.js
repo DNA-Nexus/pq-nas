@@ -312,6 +312,10 @@
         previewZoom: 1,
         activeTilePath: "",
         mapFocusRelPath: "",
+        mapIncludeSubfolders: false,
+        mapIncludeZero: false,
+        mapScan: { root: "", items: [], loaded: false, loading: false,
+            error: "", truncated: false, folders: 0, files: 0 },
         searchItems: [],
         searchBasePath: "",
         searchLoaded: false,
@@ -327,6 +331,167 @@
         }
     };
 
+
+    // Map scope is deliberately independent of the grid's recursive text search.
+    // Use the ordinary per-folder API: it joins current EXIF metadata and avoids
+    // relying on the fast recursive endpoint's cache-only result set.
+    const mapGeo = window.PQNAS_PHOTOGALLERY.geoScope;
+    const mapSubfoldersInput = el("mapIncludeSubfolders");
+    const mapZeroInput = el("mapIncludeZero");
+    const mapScopeMessage = el("mapScopeMessage");
+    let mapScopeGeneration = 0;
+    let galleryLoadGeneration = 0;
+    const mapScanner = mapGeo.createScanner((path, signal) =>
+        fetchJson(galleryListUrl(path), { signal })
+    );
+
+    function mapText(key, values = {}) {
+        let language = document.documentElement.lang;
+        try {
+            const selected = window.PQNAS_I18N?.getLanguage?.();
+            if (selected) language = selected;
+        } catch (_) { /* Standalone/test page: use the document language. */ }
+        return mapGeo.text(language, key, values);
+    }
+
+    function setMapScopeMessage(value) {
+        if (mapScopeMessage) mapScopeMessage.textContent = value;
+        // Update the existing loading/error panel too; never rebuild Leaflet
+        // or restart a folder scan just to refresh language/progress text.
+        const stateText = el("mapScopeStateText");
+        if (stateText) stateText.textContent = value;
+    }
+
+    function cancelMapScope(clear = false) {
+        mapScopeGeneration++;
+        mapScanner.cancel();
+        state.mapScan.loading = false;
+        if (clear) {
+            state.mapScan = { root: "", items: [], loaded: false, loading: false,
+                error: "", truncated: false, folders: 0, files: 0 };
+        }
+    }
+
+    function mapSourceItems() {
+        if (!state.mapIncludeSubfolders) return state.items;
+        const scan = state.mapScan;
+        return scan.loaded && scan.root === state.curPath ? scan.items : [];
+    }
+
+    function syncMapScopeControls() {
+        const options = el("mapScopeOptions");
+        if (options) options.setAttribute("aria-label", mapText("group"));
+        if (mapSubfoldersInput) {
+            mapSubfoldersInput.checked = state.mapIncludeSubfolders;
+            mapSubfoldersInput.title = mapText("subfoldersTip");
+        }
+        if (mapZeroInput) {
+            mapZeroInput.checked = state.mapIncludeZero;
+            mapZeroInput.title = mapText("zerosTip");
+        }
+        if (el("mapSubfoldersLabel")) el("mapSubfoldersLabel").textContent = mapText("subfolders");
+        if (el("mapZeroLabel")) el("mapZeroLabel").textContent = mapText("zeros");
+        if (!mapScopeMessage) return;
+        mapScopeMessage.title = mapText("indexNote");
+        const scan = state.mapScan;
+        if (state.mapIncludeSubfolders && scan.loading) {
+            setMapScopeMessage(mapText("loading", scan));
+            return;
+        }
+        if (state.mapIncludeSubfolders && scan.error) {
+            setMapScopeMessage(mapText("failed"));
+            return;
+        }
+        const parts = [mapText(state.mapIncludeSubfolders ? "recursive" : "current")];
+        const gps = mapGeo.counts(mapSourceItems());
+        if (gps.suspect_zero) parts.push(mapText(state.mapIncludeZero ? "shownZero" : "hiddenZero", { count: gps.suspect_zero }));
+        if (state.mapIncludeSubfolders && scan.truncated) parts.push(mapText("partial"));
+        setMapScopeMessage(parts.join(" · "));
+    }
+
+    async function refreshMapView(force = false) {
+        if (state.viewMode !== "map") return;
+        applyViewModeUi();
+        if (!state.mapIncludeSubfolders) {
+            cancelMapScope();
+            renderMap();
+            updateViewStatus();
+            setBadge("ok", mapText("ready"));
+            return;
+        }
+        const root = state.curPath;
+        if (!force && state.mapScan.root === root) {
+            if (state.mapScan.loading) {
+                syncMapScopeControls();
+                return; // The in-flight scan renders with the latest UI filters.
+            }
+            if (state.mapScan.loaded) {
+                renderMap();
+                updateViewStatus();
+                setBadge("ok", mapText("ready"));
+                return;
+            }
+        }
+        cancelMapScope(true);
+        const mine = mapScopeGeneration;
+        state.mapScan.root = root;
+        state.mapScan.loading = true;
+        renderMap();
+        updateViewStatus();
+        setBadge("warn", mapText("busy"));
+        const stillCurrent = () => mine === mapScopeGeneration &&
+            state.viewMode === "map" && state.mapIncludeSubfolders && state.curPath === root;
+        try {
+            const result = await mapScanner.scan(root, state.items, progress => {
+                if (!stillCurrent()) return;
+                state.mapScan.folders = progress.folders;
+                state.mapScan.files = progress.files;
+                syncMapScopeControls();
+                updateViewStatus();
+            });
+            if (!stillCurrent()) return;
+            state.mapScan = { ...result, loaded: true, loading: false, error: "", files: result.items.length };
+        } catch (error) {
+            if (!stillCurrent() || error.name === "AbortError") return;
+            state.mapScan.error = String(error && error.message || error);
+            state.mapScan.loaded = false;
+            state.mapScan.items = [];
+        } finally {
+            if (stillCurrent()) {
+                state.mapScan.loading = false;
+                renderMap();
+                updateViewStatus();
+                setBadge(state.mapScan.error ? "err" : "ok", mapText(state.mapScan.error ? "error" : "ready"));
+            }
+        }
+    }
+
+    mapSubfoldersInput?.addEventListener("change", () => {
+        state.mapIncludeSubfolders = mapSubfoldersInput.checked;
+        state.mapFocusRelPath = "";
+        void refreshVisibleView(false);
+    });
+    mapZeroInput?.addEventListener("change", () => {
+        state.mapIncludeZero = mapZeroInput.checked;
+        void refreshVisibleView(false);
+    });
+    function refreshMapLabels() {
+        syncMapScopeControls();
+        if (state.viewMode === "map") {
+            updateViewStatus();
+            const scan = state.mapScan;
+            const busy = state.mapIncludeSubfolders && scan.loading;
+            const failed = state.mapIncludeSubfolders && !!scan.error;
+            setBadge(failed ? "err" : busy ? "warn" : "ok",
+                mapText(failed ? "error" : busy ? "busy" : "ready"));
+        }
+    }
+    window.addEventListener("pqnas-language-changed", refreshMapLabels);
+    new MutationObserver(refreshMapLabels).observe(document.documentElement, {
+        attributes: true, attributeFilter: ["lang"]
+    });
+    window.addEventListener("pagehide", () => cancelMapScope());
+    syncMapScopeControls();
 
     function injectTopModeButtonCss() {
         if (document.getElementById("pgTopModeButtonCss")) return;
@@ -3355,6 +3520,8 @@ html[data-theme="orange"] .pgTopModeBtnActive{
     }
 
     function isSearchMode() {
+        // Map scope is chosen explicitly, not implicitly by text/EXIF filters.
+        if (state.viewMode === "map") return false;
         const hasText = !!String(state.filter || "").trim();
         const rf = Number(state.ratingFilter);
         const hasRating = Number.isFinite(rf) && rf >= 0;
@@ -3493,15 +3660,17 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
         const items = filteredItems();
         if (state.viewMode === "map") {
-            const gpsCount = mapItems().length;
-            const textTxt =
-                state.filter ? ` • filter: ${state.filter}` : "";
-            const rf = Number(state.ratingFilter);
-            const ratingTxt =
-                rf < 0 ? "" :
-                    (rf === 0 ? " • unrated only" : ` • ${rf}★ only`);
-
-            setStatus(`Map: ${gpsCount} GPS photo${gpsCount === 1 ? "" : "s"} under /${state.curPath || ""}${ratingTxt}${textTxt}`);
+            syncMapScopeControls();
+            if (state.mapIncludeSubfolders && state.mapScan.loading) {
+                setStatus(mapText("loading", state.mapScan));
+            } else if (state.mapIncludeSubfolders && state.mapScan.error) {
+                setStatus(mapText("failed"));
+            } else {
+                setStatus(mapText("mapCount", {
+                    count: mapItems().length,
+                    scope: mapText(state.mapIncludeSubfolders ? "recursive" : "current")
+                }));
+            }
             return;
         }
         if (isSearchMode()) {
@@ -3517,6 +3686,10 @@ html[data-theme="orange"] .pgTopModeBtnActive{
     }
 
     async function refreshVisibleView(forceSearch = false) {
+        if (state.viewMode === "map") {
+            await refreshMapView(forceSearch);
+            return;
+        }
         try {
             if (isSearchMode()) {
                 const needSearch =
@@ -3585,7 +3758,7 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
         add(it && it.capture_time_text);
 
-        if (it && it.has_gps) {
+        if (hasUsableGps(it)) {
             add("gps");
             add("has gps");
             add("geotag");
@@ -3615,13 +3788,17 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         return bits.join(" • ");
     }
 
-    function filteredItems() {
+    function filteredItems(sourceItems = null) {
         const q = String(state.filter || "").trim().toLowerCase();
         const rating = Number(state.ratingFilter);
 
-        const baseItems = isSearchMode()
-            ? sortSearchItems(state.searchItems)
-            : sortItems(state.items);
+        const baseItems = sourceItems !== null
+            ? sortSearchItems(sourceItems)
+            : state.viewMode === "map"
+                ? sortSearchItems(mapSourceItems())
+                : isSearchMode()
+                    ? sortSearchItems(state.searchItems)
+                    : sortItems(state.items);
 
         return baseItems.filter((it) => {
             if (Number.isFinite(rating) && rating >= 0) {
@@ -4849,42 +5026,22 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         return wrap;
     }
     function hasUsableGps(item) {
-        if (!item || item.type !== "file" || !item.has_gps) return false;
-
-        const rawLat = item.gps_latitude;
-        const rawLon = item.gps_longitude;
-
-        if (
-            rawLat == null ||
-            rawLon == null ||
-            rawLat === "" ||
-            rawLon === ""
-        ) {
-            return false;
-        }
-
-        const lat = Number(rawLat);
-        const lon = Number(rawLon);
-
-        return (
-            Number.isFinite(lat) &&
-            Number.isFinite(lon) &&
-            lat >= -90 &&
-            lat <= 90 &&
-            lon >= -180 &&
-            lon <= 180
-        );
+        return mapGeo.hasUsableGps(item, state.mapIncludeZero);
     }
 
     function showItemOnMap(item) {
         if (!hasUsableGps(item)) return;
 
         state.mapFocusRelPath = currentRelPathFor(item);
+        // Explicitly locating a recursive search hit must include its folder.
+        if (parentPath(state.mapFocusRelPath) !== normalizeRelPath(state.curPath)) {
+            state.mapIncludeSubfolders = true;
+        }
         setViewMode("map");
     }
 
     function mapItems() {
-        return filteredItems().filter(hasUsableGps);
+        return filteredItems(mapSourceItems()).filter(hasUsableGps);
     }
 
     function applyViewModeUi() {
@@ -4910,50 +5067,36 @@ html[data-theme="orange"] .pgTopModeBtnActive{
     }
 
     function setViewMode(mode) {
-        if (mode === "map") {
-            state.viewMode = "map";
-        } else if (mode === "albums") {
-            state.viewMode = "albums";
-        } else {
-            state.viewMode = "grid";
+        const next = mode === "map" ? "map" : mode === "albums" ? "albums" : "grid";
+        if (next !== state.viewMode) {
+            cancelMapScope();
+            // A pending grid search must not paint stale results over the map.
+            if (state.searchLoading) invalidateSearchCache();
         }
-
-        if (state.viewMode !== "map") {
+        state.viewMode = next;
+        if (next !== "map") {
             state.mapFocusRelPath = "";
             window.PQNAS_PHOTOGALLERY?.map?.destroyMap?.();
         }
-
-        renderGrid();
-        updateViewStatus();
-
-        if (state.viewMode === "map") {
-            window.setTimeout(() => {
-                try {
-                    window.PQNAS_PHOTOGALLERY?.map?.runtime?.map?.invalidateSize?.();
-                } catch (_) {}
-            }, 0);
-        }
+        void refreshVisibleView(false);
     }
 
     function renderMap() {
         if (!mapCanvas) return;
-
-        if (isSearchMode() && state.searchLoading && !state.searchLoaded) {
+        syncMapScopeControls();
+        const scan = state.mapScan;
+        if (state.mapIncludeSubfolders && (scan.loading || scan.error)) {
+            window.PQNAS_PHOTOGALLERY?.map?.destroyMap?.();
             mapCanvas.replaceChildren();
-
-            const loading = document.createElement("div");
-            loading.className = "emptyState";
-            loading.innerHTML = `
-            <div class="h">Searching subfolders…</div>
-            <div class="p">Scanning the current folder and all deeper folders for photos with GPS coordinates.</div>
-        `;
-            mapCanvas.appendChild(loading);
+            const message = document.createElement("div");
+            message.className = "emptyState";
+            message.id = "mapScopeStateText";
+            message.textContent = scan.error ? mapText("failed") : mapText("loading", scan);
+            mapCanvas.appendChild(message);
             refreshFooterStats();
             return;
         }
-
         const items = mapItems();
-
         window.PQNAS_PHOTOGALLERY?.map?.render(mapCanvas, items, {
             currentRelPathFor,
             fmtTime,
@@ -4962,9 +5105,7 @@ html[data-theme="orange"] .pgTopModeBtnActive{
             galleryThumbUrl,
             focusRelPath: state.mapFocusRelPath,
             onFocusApplied(relPath) {
-                if (state.mapFocusRelPath === relPath) {
-                    state.mapFocusRelPath = "";
-                }
+                if (state.mapFocusRelPath === relPath) state.mapFocusRelPath = "";
             }
         });
     }
@@ -5237,12 +5378,16 @@ html[data-theme="orange"] .pgTopModeBtnActive{
     }
 
     async function load(forceSearch = false) {
+        const loadPath = state.curPath;
+        const loadGeneration = ++galleryLoadGeneration;
+        cancelMapScope(true);
         closeContextMenu();
         setBadge("warn", "loading…");
         setStatus("Loading gallery…");
 
         try {
-            const j = await fetchGalleryList(state.curPath, { force: forceSearch });
+            const j = await fetchGalleryList(loadPath, { force: forceSearch });
+            if (loadGeneration !== galleryLoadGeneration || state.curPath !== loadPath) return;
             state.items = filterInternalPqnasGalleryItems(Array.isArray(j.items) ? j.items : []);
             if (state.treeStats.basePath !== state.curPath) {
                 resetTreeStats();
@@ -5264,6 +5409,7 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
             await refreshVisibleView(forceSearch);
         } catch (e) {
+            if (loadGeneration !== galleryLoadGeneration || state.curPath !== loadPath) return;
             const msg = String(e && e.message ? e.message : e);
             if (msg === "__stale_search__") return;
 
@@ -5728,6 +5874,7 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
     installPreviewResizeObserver();
 
+    window.PQNAS_PHOTOGALLERY.hasUsableGps = hasUsableGps;
     window.PQNAS_PHOTOGALLERY.getFilteredImageItems = () => filteredImageItems().slice();
     window.PQNAS_PHOTOGALLERY.currentRelPathFor = currentRelPathFor;
     window.PQNAS_PHOTOGALLERY.openPreviewFor = openPreviewFor;

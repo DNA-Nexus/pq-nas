@@ -1479,6 +1479,7 @@
 <link rel="stylesheet" href="./albums_picker.css?v=7">
 <link rel="stylesheet" href="./albums_view.css?v=12">
 <link rel="stylesheet" href="./gallery_map.css?v=4">
+<link rel="stylesheet" href="./gallery_map_scope.css?v=1.1.6">
     <link rel="stylesheet" href="/static/onboarding.css?v=guided-tours-clean-v1">
 </head>
 <body>
@@ -1543,6 +1544,11 @@
         </div>
 
         <div class="gridWrap hidden" id="mapWrap">
+            <div id="mapScopeOptions" class="pgMapScopeOptions" role="group" aria-label="Map search options">
+                <label><input id="mapIncludeSubfolders" type="checkbox"><span id="mapSubfoldersLabel">Include subfolders</span></label>
+                <label><input id="mapIncludeZero" type="checkbox"><span id="mapZeroLabel">Show suspicious (0,0) locations</span></label>
+                <div id="mapScopeMessage" class="pgMapScopeMessage" role="status" aria-live="polite"></div>
+            </div>
             <div id="mapCanvas" class="mapCanvas"></div>
         </div>
 
@@ -1910,8 +1916,9 @@
 <script src="./gallery_embedded_meta.js"></script>
 <script src="./bursts.js?v=20260726-pg-raw-jpeg-export-1"></script>
 <script src="/static/pqnas_folder_picker.js?v=3"></script>
-<script src="./app.js?v=20260726-pg-export-status-i18n-1"></script>
-<script src="./gallery_exif_search.js?v=2"></script>
+<script src="./gallery_geo_scope.js?v=1.1.6"></script>
+<script src="./app.js?v=1.1.6"></script>
+<script src="./gallery_exif_search.js?v=1.1.6"></script>
 <script src="./albums_picker.js?v=20260519-pg-native-dialogs-2"></script>
 <script src="./gallery_upload.js?v=1"></script>
 <script src="./gallery_shares.js?v=20260519-pg-native-dialogs-2"></script>
