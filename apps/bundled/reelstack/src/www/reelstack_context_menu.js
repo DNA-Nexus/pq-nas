@@ -18,6 +18,9 @@
   let reelStackUploadBackgroundTaskHeld = false;
 
   function reelT(key, params, fallback) {
+    // Known menu labels travel with the app, not the server release.
+    const bundled = window.PQNAS_REELSTACK_CONTEXT_I18N;
+    if (bundled && bundled.hasKey(key)) return bundled.t(key, params, fallback);
     try {
       const i18n = window.PQNAS_I18N;
 
@@ -1577,6 +1580,41 @@
     await startUploadFiles(files);
   }
 
+  // Rebuild only an already-open menu when the shell language changes.
+  // Its path, anchor, and keyboard focus survive; no action is invoked.
+  let menuAnchor = { x: 8, y: 8 };
+
+  function refreshOpenMenuLanguage() {
+    if (!menu || menu.hidden) return;
+    const oldButtons = Array.from(menu.querySelectorAll('button[role="menuitem"]'));
+    const focusIndex = oldButtons.indexOf(document.activeElement);
+    const path = menu.dataset.rsPath || "";
+    if (path) renderMenu(path);
+    else renderAppMenu();
+    placeMenu(menuAnchor.x, menuAnchor.y);
+    if (focusIndex >= 0) {
+      const button = menu.querySelectorAll('button[role="menuitem"]')[focusIndex];
+      if (button) button.focus({ preventScroll: true });
+    }
+  }
+
+  function observeMenuLanguage() {
+    window.addEventListener("pqnas-language-changed", refreshOpenMenuLanguage);
+    if (typeof MutationObserver === "function" && document.documentElement) {
+      new MutationObserver(refreshOpenMenuLanguage).observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["lang"]
+      });
+    }
+    // Handles an asynchronously loaded initial server dictionary as well.
+    try {
+      const i18n = window.PQNAS_I18N;
+      if (i18n && typeof i18n.ready === "function") {
+        Promise.resolve(i18n.ready()).then(refreshOpenMenuLanguage).catch(() => {});
+      }
+    } catch (_) {}
+  }
+
   function ensureMenu() {
     if (menu) return menu;
 
@@ -1594,6 +1632,7 @@
   }
 
   function placeMenu(x, y) {
+    menuAnchor = { x, y };
     const m = ensureMenu();
     m.hidden = false;
 
@@ -1691,7 +1730,7 @@
 
     m.appendChild(makeButton(
       reelT("reelstack.play", null, "Play"),
-      "Enter",
+      reelT("reelstack.context.key_enter", null, "Enter"),
       false,
       async (p) => {
       const v = videoForPath(p);
@@ -1704,7 +1743,7 @@
         null,
         "Edit metadata"
       ),
-      "Space",
+      reelT("reelstack.context.key_space", null, "Space"),
       false,
       async (p) => {
       const v = videoForPath(p);
@@ -1929,6 +1968,7 @@
     installed = true;
 
     ensureMenu();
+    observeMenuLanguage();
 
     document.addEventListener("contextmenu", onContextMenu, true);
     document.addEventListener("click", (ev) => {
