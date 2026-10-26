@@ -10,7 +10,7 @@
     "format": "tar.gz"
   },
   "compatibility": {
-    "min_current_version": "1.2.0",
+    "min_current_version": "1.2.7",
     "max_current_version_exclusive": "__PQNAS_VERSION__",
     "requires_prior": []
   },
@@ -33,8 +33,8 @@
     ]
   },
   "notes": [
-    "This manifest is package metadata for Update Center.",
-    "Live config is not overwritten by default.",
-    "Future structural updates can tighten compatibility.min_current_version to force installing an intermediate release first."
+    "This is the DNA-Nexus 1.2.8 standalone Apps callback-lifetime hotfix; update from installed server 1.2.7.",
+    "The Update Center replaces the core binary and static UI only; app ZIP versions are managed separately through Admin Apps.",
+    "Live configuration, OPAQUE identity material, Nodus services and user files are not overwritten by the Update Center."
   ]
 }
