@@ -1,0 +1,8 @@
+/* App-local map controls; no server-wide theme changes. */
+#mapWrap:not(.hidden) { display: flex; flex-direction: column; }
+#mapWrap #mapCanvas { flex: 1 1 auto; min-height: 380px; height: auto; }
+.pgMapScopeOptions { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; padding: 10px 12px; border-bottom: 1px solid rgba(var(--fg-rgb), .2); }
+.pgMapScopeOptions label { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+.pgMapScopeOptions input { margin: 0; width: 16px; height: 16px; }
+.pgMapScopeOptions input:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.pgMapScopeMessage { flex: 1 1 100%; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }

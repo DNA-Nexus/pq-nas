@@ -1,7 +1,7 @@
 {
   "id": "reelstack",
   "name": "Reel Stack",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "entry": "www/index.html",
   "api_base": "/api/v4/files",
   "permissions": [],
