@@ -1383,7 +1383,9 @@ srv.Put("/api/v4/files/put",
         return any ? n : 0;
     };
 
-    auto compare_app_versions = [&](const std::string& a, const std::string& b) -> int {
+    // The callbacks below outlive this legacy role-gated registration block.
+    // Keep the complete comparison chain self-contained (no local references).
+    auto compare_app_versions = [app_version_component](const std::string& a, const std::string& b) -> int {
         std::size_t ia = 0;
         std::size_t ib = 0;
 
@@ -1411,25 +1413,28 @@ srv.Put("/api/v4/files/put",
         return "";
     };
 
-    auto app_server_version_ok = [&](const std::string& minServerVersion) -> bool {
+    auto app_server_version_ok = [compare_app_versions, server_version = PQNAS_SERVER_VERSION](const std::string& minServerVersion) -> bool {
         if (minServerVersion.empty()) return true;
-        return compare_app_versions(PQNAS_SERVER_VERSION, minServerVersion) >= 0;
+        return compare_app_versions(server_version, minServerVersion) >= 0;
     };
 
-    auto app_compatibility_message = [&](const std::string& minServerVersion) -> std::string {
+    auto app_compatibility_message = [server_version = PQNAS_SERVER_VERSION](const std::string& minServerVersion) -> std::string {
         if (minServerVersion.empty()) return "";
         return std::string("Requires DNA-Nexus Server ") +
                minServerVersion +
                " or newer. Current server is " +
-               PQNAS_SERVER_VERSION +
+               server_version +
                ".";
     };
 
-    auto apply_app_compatibility_fields = [&](json& item, const json& mani) {
+    auto apply_app_compatibility_fields = [app_manifest_min_server_version,
+                                           app_server_version_ok,
+                                           app_compatibility_message,
+                                           server_version = PQNAS_SERVER_VERSION](json& item, const json& mani) {
         const std::string minServerVersion = app_manifest_min_server_version(mani);
         const bool ok = app_server_version_ok(minServerVersion);
 
-        item["server_version"] = PQNAS_SERVER_VERSION;
+        item["server_version"] = server_version;
         item["min_server_version"] = minServerVersion;
         item["compatibility_ok"] = ok;
         item["compatibility_state"] = ok ? "ok" : "server_too_old";
@@ -1514,7 +1519,7 @@ srv.Put("/api/v4/files/put",
             };
 
         apps_ctx.apply_app_compatibility_fields =
-            [&](json& item, const json& manifest) {
+            [apply_app_compatibility_fields](json& item, const json& manifest) {
                 apply_app_compatibility_fields(item, manifest);
             };
 
@@ -1524,17 +1529,17 @@ srv.Put("/api/v4/files/put",
             };
 
         apps_ctx.app_manifest_min_server_version =
-            [&](const json& mani) {
+            [app_manifest_min_server_version](const json& mani) {
                 return app_manifest_min_server_version(mani);
             };
 
         apps_ctx.app_server_version_ok =
-            [&](const std::string& min_server_version) {
+            [app_server_version_ok](const std::string& min_server_version) {
                 return app_server_version_ok(min_server_version);
             };
 
         apps_ctx.app_compatibility_message =
-            [&](const std::string& min_server_version) {
+            [app_compatibility_message](const std::string& min_server_version) {
                 return app_compatibility_message(min_server_version);
             };
 
