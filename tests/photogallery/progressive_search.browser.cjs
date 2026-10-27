@@ -101,7 +101,11 @@ async function harness(t, options = {}) {
         headless: true,
         ...(process.env.CHROME_EXECUTABLE_PATH ? { executablePath: process.env.CHROME_EXECUTABLE_PATH } : {})
     });
-    const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+    const page = await browser.newPage({
+        viewport: { width: 1200, height: 900 },
+        // The fixture owns a loopback listener with an OS-assigned port.
+        baseURL: `http://127.0.0.1:${server.address().port}/`
+    });
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
         // Keep this suite offline; exercise the production map scope but replace
@@ -115,7 +119,7 @@ async function harness(t, options = {}) {
             }
         };
     });
-    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    await page.goto('/');
     await page.waitForFunction(() => document.querySelector('#badge')?.textContent === 'ready');
     return { page, streams, pendingLists, legacyCalls: () => legacyCalls };
 }
