@@ -744,7 +744,8 @@ list_immediate_children()
 Build a synthetic directory listing from file rows.
 
 Because directories are usually implicit rather than explicit rows, this method
-scans all rows for one fp and collapses them into immediate children of dir_rel.
+reads descendant rows and collapses them into immediate children of dir_rel.
+The composite primary key scopes the scan before any physical-path checks.
 
 Rules:
 - exact descendant without further slash => file child
@@ -763,22 +764,36 @@ std::vector<LogicalListItem> FileLocationIndex::list_immediate_children(const st
         return out;
     }
 
-    static const char* kSql =
+    static const char* kRootSql =
         "SELECT logical_rel_path, size_bytes, mtime_epoch, physical_path "
         "FROM file_locations "
         "WHERE fp = ?1 "
         "ORDER BY logical_rel_path ASC";
+    static const char* kSubtreeSql =
+        "SELECT logical_rel_path, size_bytes, mtime_epoch, physical_path "
+        "FROM file_locations "
+        "WHERE fp = ?1 AND logical_rel_path >= ?2 AND logical_rel_path < ?3 "
+        "ORDER BY logical_rel_path ASC";
+
+    const std::string prefix = dir_rel.empty() ? "" : (dir_rel + "/");
+    // '/' is immediately before '0' in SQLite's default BINARY collation.
+    // This range includes only literal descendants, including '%' and '_'.
+    const std::string upper = dir_rel + "0";
+    const char* sql = dir_rel.empty() ? kRootSql : kSubtreeSql;
 
     sqlite3_stmt* stmt = nullptr;
-    const int rc_prep = sqlite3_prepare_v2(db_, kSql, -1, &stmt, nullptr);
+    const int rc_prep = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc_prep != SQLITE_OK) {
         if (err) *err = sqlite3_errmsg(db_);
         return out;
     }
 
     sqlite3_bind_text(stmt, 1, fp.c_str(), -1, SQLITE_TRANSIENT);
+    if (!dir_rel.empty()) {
+        sqlite3_bind_text(stmt, 2, prefix.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 3, upper.c_str(), -1, SQLITE_TRANSIENT);
+    }
 
-    const std::string prefix = dir_rel.empty() ? "" : (dir_rel + "/");
     std::map<std::string, LogicalListItem> by_name;
 
     while (true) {
@@ -795,6 +810,16 @@ std::vector<LogicalListItem> FileLocationIndex::list_immediate_children(const st
         const std::string rel = rel_c ? rel_c : "";
         if (rel.empty()) continue;
 
+        if (!prefix.empty() && rel.rfind(prefix, 0) != 0) continue;
+        const std::string rest = prefix.empty() ? rel : rel.substr(prefix.size());
+        if (rest.empty()) continue;
+
+        const auto slash = rest.find('/');
+        const std::string first_name = (slash == std::string::npos) ? rest : rest.substr(0, slash);
+
+        // Backend hard-filter for reserved namespace, before touching disk.
+        if (first_name == ".pqnas") continue;
+
         const char* phys_c = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
         const std::string physical_path = phys_c ? phys_c : "";
         if (!physical_path.empty()) {
@@ -803,21 +828,6 @@ std::vector<LogicalListItem> FileLocationIndex::list_immediate_children(const st
             if (phys_ec || !std::filesystem::exists(phys_st)) {
                 continue;
             }
-        }
-
-        if (!prefix.empty()) {
-            if (rel.rfind(prefix, 0) != 0) continue;
-        }
-
-        const std::string rest = prefix.empty() ? rel : rel.substr(prefix.size());
-        if (rest.empty()) continue;
-
-        const auto slash = rest.find('/');
-        const std::string first_name = (slash == std::string::npos) ? rest : rest.substr(0, slash);
-
-        // Backend hard-filter for reserved namespace.
-        if (first_name == ".pqnas") {
-            continue;
         }
 
         if (slash == std::string::npos) {
@@ -1177,6 +1187,8 @@ bool FileLocationIndex::rename_subtree(const std::string& fp,
 list_subtree_records()
 ----------------------
 Return all file rows exactly at logical_prefix or beneath logical_prefix/.
+An empty prefix returns the entire fingerprint namespace. Prefix matching is
+literal and case-sensitive, using the composite primary key's BINARY ordering.
 
 This is the core metadata primitive for:
 - directory move
@@ -1194,24 +1206,38 @@ std::vector<FileLocationRecord> FileLocationIndex::list_subtree_records(const st
         return out;
     }
 
-    static const char* kSql =
+    static const char* kRootSql =
+        "SELECT fp, logical_rel_path, current_pool, physical_path, tier_state, "
+        "size_bytes, mtime_epoch, created_epoch, updated_epoch, version "
+        "FROM file_locations WHERE fp = ?1 ORDER BY logical_rel_path ASC";
+    static const char* kSubtreeSql =
         "SELECT fp, logical_rel_path, current_pool, physical_path, tier_state, "
         "size_bytes, mtime_epoch, created_epoch, updated_epoch, version "
         "FROM file_locations "
-        "WHERE fp = ?1 AND (logical_rel_path = ?2 OR logical_rel_path LIKE ?3) "
+        "WHERE fp = ?1 AND logical_rel_path = ?2 "
+        "UNION ALL "
+        "SELECT fp, logical_rel_path, current_pool, physical_path, tier_state, "
+        "size_bytes, mtime_epoch, created_epoch, updated_epoch, version "
+        "FROM file_locations "
+        "WHERE fp = ?1 AND logical_rel_path >= ?3 AND logical_rel_path < ?4 "
         "ORDER BY logical_rel_path ASC";
 
     sqlite3_stmt* stmt = nullptr;
-    const int rc_prep = sqlite3_prepare_v2(db_, kSql, -1, &stmt, nullptr);
+    const char* sql = logical_prefix.empty() ? kRootSql : kSubtreeSql;
+    const int rc_prep = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc_prep != SQLITE_OK) {
         if (err) *err = sqlite3_errmsg(db_);
         return out;
     }
 
-    const std::string like_pat = logical_prefix + "/%";
     sqlite3_bind_text(stmt, 1, fp.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, logical_prefix.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 3, like_pat.c_str(), -1, SQLITE_TRANSIENT);
+    if (!logical_prefix.empty()) {
+        const std::string lower = logical_prefix + "/";
+        const std::string upper = logical_prefix + "0";
+        sqlite3_bind_text(stmt, 2, logical_prefix.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 3, lower.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 4, upper.c_str(), -1, SQLITE_TRANSIENT);
+    }
 
     while (true) {
         const int rc = sqlite3_step(stmt);

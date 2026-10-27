@@ -131,10 +131,11 @@ test("document language is retained as a fallback when the shared API is absent 
     h.window.PQNAS_I18N = {getLanguage() {throw Error("not ready");}};
     assert.equal(h.api.mapText("subfolders"), geo.text("it", "subfolders"));
 });
-test("1.1.6 app assets are versioned and server minimum stays at 1.2.8", () => {
+test("1.1.7 changed assets are versioned and server minimum stays at 1.2.8", () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(www, "../manifest.json"), "utf8"));
-    assert.equal(manifest.version, "1.1.6"); assert.equal(manifest.min_server_version, "1.2.8");
+    assert.equal(manifest.version, "1.1.7"); assert.equal(manifest.min_server_version, "1.2.8");
     const html = fs.readFileSync(path.join(www, "index.html"), "utf8");
-    for (const asset of ["app.js", "gallery_geo_scope.js", "gallery_map_scope.css", "gallery_exif_search.js"]) assert.ok(html.includes(`${asset}?v=1.1.6`));
+    for (const asset of ["app.js", "gallery_search_stream.js"]) assert.ok(html.includes(`${asset}?v=1.1.7`));
+    for (const asset of ["gallery_geo_scope.js", "gallery_map_scope.css", "gallery_exif_search.js"]) assert.ok(html.includes(`${asset}?v=1.1.6`));
     assert.ok(!html.includes("?v=1.1.5"));
 });
