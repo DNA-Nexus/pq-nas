@@ -1,4 +1,5 @@
 #include "users_registry.h"
+#include "storage_projection_revision_policy.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <filesystem>
@@ -7,6 +8,10 @@
 #include <cstdint>
 #include <ctime>
 #include <iostream>
+#include <atomic>
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 using json = nlohmann::json;
@@ -64,8 +69,10 @@ Persistence model
     then renames tmp -> target for atomic replace.
 
 Durability notes:
-  - save() uses flush(), but does not fsync() file or parent directory.
-    If you need power-loss durability, consider fsync(tmp_fd) + fsync(dir_fd).
+  - save() fsyncs the temporary file before atomic rename and fsyncs the
+    parent directory before reporting a durable commit.
+  - if rename succeeds but directory fsync fails, the visible new snapshot is
+    retained in memory and marked durability-uncertain for exact re-persistence.
 
 Security / correctness notes
 ----------------------------
@@ -83,6 +90,86 @@ Potential issues to be aware of
     This is likely a copy/paste mistake; it can confuse readers and may mask bugs.
 ================================================================================
 */
+
+
+/*
+valid_user_home_node_id()
+  - Empty means local/standalone placement.
+  - Non-empty values use the same narrow shape as stable cluster node IDs.
+  - Paths, URLs, whitespace and traversal-like values are rejected.
+*/
+bool valid_user_home_node_id(
+    const std::string& value
+) {
+  if (value.empty()) return true;
+  if (value.size() > 64) return false;
+
+  for (std::size_t index = 0;
+       index < value.size();
+       ++index) {
+    const unsigned char ch =
+        static_cast<unsigned char>(value[index]);
+
+    const bool alphanumeric =
+        (ch >= 'A' && ch <= 'Z') ||
+        (ch >= 'a' && ch <= 'z') ||
+        (ch >= '0' && ch <= '9');
+
+    if (index == 0) {
+      if (!alphanumeric) return false;
+      continue;
+    }
+
+    if (!alphanumeric &&
+        ch != '-' &&
+        ch != '_' &&
+        ch != '.') {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/*
+valid_user_placement_policy_id()
+  - Empty means no policy override.
+  - Non-empty values use the stable control-plane identifier shape.
+  - Paths, URLs, whitespace and traversal-like values are rejected.
+*/
+bool valid_user_placement_policy_id(
+    const std::string& value
+) {
+  if (value.empty()) return true;
+  if (value.size() > 64) return false;
+
+  for (std::size_t index = 0;
+       index < value.size();
+       ++index) {
+    const unsigned char ch =
+        static_cast<unsigned char>(value[index]);
+
+    const bool alphanumeric =
+        (ch >= 'A' && ch <= 'Z') ||
+        (ch >= 'a' && ch <= 'z') ||
+        (ch >= '0' && ch <= '9');
+
+    if (index == 0) {
+      if (!alphanumeric) return false;
+      continue;
+    }
+
+    if (!alphanumeric &&
+        ch != '-' &&
+        ch != '_' &&
+        ch != '.') {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 
 
 //------------------------------------------------------------------------------
@@ -194,7 +281,10 @@ NOTE:
 */
 bool UsersRegistry::load(const std::string& path) {
   std::lock_guard<std::mutex> lk(mu_);
-  by_fp_.clear();
+
+  // Security: parse a replacement snapshot off to the side. A failed reload
+  // must not erase the authoritative in-memory registry.
+  std::unordered_map<std::string, UserRec> parsed;
 
   std::ifstream f(path);
   if (!f.good()) return false;
@@ -261,8 +351,85 @@ bool UsersRegistry::load(const std::string& path) {
     u.storage_set_at = it.value("storage_set_at", "");
     u.storage_set_by = it.value("storage_set_by", "");
 
-    by_fp_[u.fingerprint] = u;
+    // Missing home_node is the backward-compatible standalone representation.
+    // Security: malformed non-empty placement metadata fails registry loading
+    // rather than silently becoming a local user on a Director.
+    if (it.contains("home_node")) {
+      if (!it["home_node"].is_string()) return false;
+
+      u.home_node =
+          it["home_node"].get<std::string>();
+
+      if (!valid_user_home_node_id(u.home_node)) {
+        return false;
+      }
+    } else {
+      u.home_node = "";
+    }
+
+    // Missing projection revision is the backward-compatible representation
+    // for registries written before Director -> Storage projection versioning.
+    //
+    // Security: explicit malformed or negative revisions fail closed rather
+    // than silently resetting a Director-owned monotonic authorization version.
+    if (it.contains("storage_projection_revision")) {
+      const auto& revision_json =
+          it["storage_projection_revision"];
+
+      if (revision_json.is_number_unsigned()) {
+        try {
+          u.storage_projection_revision =
+              revision_json.get<std::uint64_t>();
+        } catch (...) {
+          return false;
+        }
+      } else if (revision_json.is_number_integer()) {
+        try {
+          const std::int64_t signed_revision =
+              revision_json.get<std::int64_t>();
+
+          if (signed_revision < 0) {
+            return false;
+          }
+
+          u.storage_projection_revision =
+              static_cast<std::uint64_t>(
+                  signed_revision
+              );
+        } catch (...) {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    } else {
+      u.storage_projection_revision = 0;
+    }
+
+    // Missing policy ID preserves backward compatibility. Malformed explicit
+    // values fail closed instead of silently dropping an intended override.
+    if (it.contains("placement_policy_id")) {
+      if (!it["placement_policy_id"].is_string()) return false;
+
+      u.placement_policy_id =
+          it["placement_policy_id"].get<std::string>();
+
+      if (!valid_user_placement_policy_id(
+              u.placement_policy_id)) {
+        return false;
+      }
+    } else {
+      u.placement_policy_id = "";
+    }
+
+    parsed[u.fingerprint] = u;
   }
+
+  by_fp_.swap(parsed);
+  durability_path_ = path;
+
+  // Security: reading users.json does not prove a previously visible rename
+  // crash-durable. Only the persistence path may clear that uncertainty.
 
   return true;
 }
@@ -284,6 +451,47 @@ Caveats:
     That is likely unintentional. Nlohmann JSON will keep the last duplicate key,
     but it’s confusing and should be removed.
 */
+namespace {
+
+std::atomic<std::uint64_t>
+    g_users_registry_temp_counter{0};
+
+
+bool users_registry_write_all(
+    int descriptor,
+    const std::string& contents
+) {
+  std::size_t offset = 0;
+
+  while (offset < contents.size()) {
+    const ssize_t written =
+        ::write(
+            descriptor,
+            contents.data() + offset,
+            contents.size() - offset
+        );
+
+    if (written < 0 &&
+        errno == EINTR) {
+      continue;
+    }
+
+    if (written <= 0) {
+      return false;
+    }
+
+    offset +=
+        static_cast<std::size_t>(
+            written
+        );
+  }
+
+  return true;
+}
+
+} // namespace
+
+
 static std::size_t users_registry_existing_user_count_for_guard(const std::filesystem::path& p) {
   std::ifstream f(p);
   if (!f.good()) return 0;
@@ -301,8 +509,78 @@ static std::size_t users_registry_existing_user_count_for_guard(const std::files
   return 0;
 }
 
-bool UsersRegistry::save(const std::string& path) const {
+bool UsersRegistry::save(
+    const std::string& path
+) const {
   std::lock_guard<std::mutex> lk(mu_);
+
+  bool committed = false;
+
+  return save_locked(
+      path,
+      &committed
+  );
+}
+
+
+bool UsersRegistry::ensure_durable(
+    std::string* error
+) const {
+  if (error) {
+    error->clear();
+  }
+
+  std::lock_guard<std::mutex> lk(mu_);
+
+  return ensure_durable_locked(
+      error
+  );
+}
+
+
+bool UsersRegistry::ensure_durable_locked(
+    std::string* error
+) const {
+  if (!durability_uncertain_) {
+    return true;
+  }
+
+  if (durability_path_.empty()) {
+    if (error) {
+      *error =
+          "users registry durability path unavailable";
+    }
+
+    return false;
+  }
+
+  bool committed = false;
+
+  if (!save_locked(
+          durability_path_,
+          &committed)) {
+    if (error) {
+      *error =
+          committed
+              ? "users registry durability remains uncertain"
+              : "users registry durability retry failed";
+    }
+
+    return false;
+  }
+
+  return true;
+}
+
+bool UsersRegistry::save_locked(
+    const std::string& path,
+    bool* committed
+) const {
+  if (!committed) {
+    return false;
+  }
+
+  *committed = false;
 
   /*
    * Safety guard:
@@ -342,6 +620,15 @@ bool UsersRegistry::save(const std::string& path) const {
   for (const auto& k : keys) {
     const auto& u = by_fp_.at(k);
 
+    // Security: never serialize path-, URL- or traversal-like placement data.
+    // Invalid in-memory state must fail closed instead of being normalized into
+    // an unintended local placement.
+    if (!valid_user_home_node_id(u.home_node) ||
+        !valid_user_placement_policy_id(
+            u.placement_policy_id)) {
+      return false;
+    }
+
     json app_prefs = json::object();
     try {
       if (!u.app_prefs_json.empty()) {
@@ -379,6 +666,12 @@ bool UsersRegistry::save(const std::string& path) const {
         {"label", u.vault_master_recovery_label}
       }},
 
+      // Cluster placement metadata. The policy is intent; home_node is
+      // the currently realized placement.
+      {"home_node", u.home_node},
+      {"storage_projection_revision", u.storage_projection_revision},
+      {"placement_policy_id", u.placement_policy_id},
+
       // New: storage metadata
       {"storage_state", norm_storage_state(u.storage_state)},
       {"quota_bytes", u.quota_bytes},
@@ -389,40 +682,174 @@ bool UsersRegistry::save(const std::string& path) const {
     });
   }
 
-  std::filesystem::path p(path);
+  const std::filesystem::path p(path);
+
+  std::filesystem::path parent =
+      p.parent_path();
+
+  if (parent.empty()) {
+    parent = ".";
+  }
+
   std::error_code ec;
 
-  // Ensure parent dir exists
-  std::filesystem::create_directories(p.parent_path(), ec);
-  if (ec) return false;
+  std::filesystem::create_directories(
+      parent,
+      ec
+  );
 
-  // Unique temp file in the same directory (atomic rename guarantee)
-  std::filesystem::path tmp = p;
-  tmp += ".tmp.";
-  tmp += std::to_string(::getpid());
-  tmp += ".";
-  tmp += std::to_string(static_cast<long long>(std::time(nullptr)));
+  if (ec) {
+    return false;
+  }
 
-  // Write temp
-  {
-    std::ofstream out(tmp.string(), std::ios::trunc);
-    if (!out.good()) return false;
-    out << j.dump(2) << "\n";
-    out.flush();
-    if (!out.good()) {
-      std::filesystem::remove(tmp, ec);
+  const std::string target_filename =
+      p.filename().string();
+
+  if (target_filename.empty() ||
+      target_filename == "." ||
+      target_filename == "..") {
+    return false;
+  }
+
+  const int directory_descriptor =
+      ::open(
+          parent.c_str(),
+          O_RDONLY |
+          O_DIRECTORY |
+          O_CLOEXEC
+      );
+
+  if (directory_descriptor < 0) {
+    return false;
+  }
+
+  const auto close_directory = [&]() {
+    (void)::close(
+        directory_descriptor
+    );
+  };
+
+  std::string temporary_filename;
+  int temporary_descriptor = -1;
+
+  for (int attempt = 0;
+       attempt < 16;
+       ++attempt) {
+    const std::uint64_t counter =
+        g_users_registry_temp_counter.fetch_add(
+            1
+        );
+
+    temporary_filename =
+        "." +
+        target_filename +
+        ".tmp." +
+        std::to_string(
+            static_cast<long long>(
+                ::getpid()
+            )
+        ) +
+        "." +
+        std::to_string(counter);
+
+    temporary_descriptor =
+        ::openat(
+            directory_descriptor,
+            temporary_filename.c_str(),
+            O_WRONLY |
+            O_CREAT |
+            O_EXCL |
+            O_CLOEXEC |
+            O_NOFOLLOW,
+            0600
+        );
+
+    if (temporary_descriptor >= 0) {
+      break;
+    }
+
+    if (errno != EEXIST) {
+      close_directory();
       return false;
     }
   }
 
-  // Atomic replace: rename tmp -> target
-  ec.clear();
-  std::filesystem::rename(tmp, p, ec);
-  if (ec) {
-    // Cleanup tmp on failure
-    std::filesystem::remove(tmp, ec);
+  if (temporary_descriptor < 0) {
+    close_directory();
     return false;
   }
+
+  const auto remove_temporary = [&]() {
+    if (!temporary_filename.empty()) {
+      (void)::unlinkat(
+          directory_descriptor,
+          temporary_filename.c_str(),
+          0
+      );
+    }
+  };
+
+  const std::string contents =
+      j.dump(2) + "\n";
+
+  // Security: data must reach stable storage before the atomic name switch.
+  if (::fchmod(
+          temporary_descriptor,
+          0600) != 0 ||
+      !users_registry_write_all(
+          temporary_descriptor,
+          contents) ||
+      ::fsync(
+          temporary_descriptor) != 0) {
+    (void)::close(
+        temporary_descriptor
+    );
+
+    remove_temporary();
+    close_directory();
+
+    return false;
+  }
+
+  if (::close(
+          temporary_descriptor) != 0) {
+    remove_temporary();
+    close_directory();
+
+    return false;
+  }
+
+  temporary_descriptor = -1;
+
+  // Atomic commit. Until this succeeds, callers may safely roll memory back.
+  if (::renameat(
+          directory_descriptor,
+          temporary_filename.c_str(),
+          directory_descriptor,
+          target_filename.c_str()) != 0) {
+    remove_temporary();
+    close_directory();
+
+    return false;
+  }
+
+  // Security/correctness: after rename the new inode is already logically
+  // visible. A later directory-fsync failure is uncertainty, not rollback.
+  *committed = true;
+
+  durability_path_ = path;
+  durability_uncertain_ = true;
+
+  if (::fsync(
+          directory_descriptor) != 0) {
+    close_directory();
+
+    return false;
+  }
+
+  durability_uncertain_ = false;
+
+  close_directory();
 
   return true;
 }
@@ -514,9 +941,125 @@ bool UsersRegistry::ensure_present_disabled_user(const std::string& fp_hex, cons
   u.storage_set_at = "";
   u.storage_set_by = "";
 
+  // Existing standalone behavior remains unchanged.
+  u.home_node = "";
+  u.placement_policy_id = "";
+
   by_fp_[fp_hex] = u;
   return true; // created
 }
+
+namespace {
+
+// Compare only fields that are projected to a Storage Node.
+//
+// Security: this deliberately excludes role, profile data, Vault metadata,
+// placement-policy intent and storage audit metadata. Those fields must not
+// churn the authorization projection revision.
+//
+// Disabled and revoked are intentionally equivalent here: Storage receives
+// only enabled=true/false.
+bool storage_metadata_fields_equal(
+    const UserRec& left,
+    const UserRec& right
+) {
+  return
+      left.storage_state == right.storage_state &&
+      left.quota_bytes == right.quota_bytes &&
+      left.root_rel == right.root_rel &&
+      left.storage_pool_id == right.storage_pool_id &&
+      left.storage_set_at == right.storage_set_at &&
+      left.storage_set_by == right.storage_set_by;
+}
+
+bool storage_projection_semantics_equal(
+    const UserRec& left,
+    const UserRec& right
+) {
+  const bool left_enabled =
+      left.status == "enabled";
+
+  const bool right_enabled =
+      right.status == "enabled";
+
+  if (left_enabled != right_enabled) {
+    return false;
+  }
+
+  const bool left_allocated =
+      left.storage_state == "allocated";
+
+  const bool right_allocated =
+      right.storage_state == "allocated";
+
+  if (left_allocated != right_allocated) {
+    return false;
+  }
+
+  if (left.home_node != right.home_node) {
+    return false;
+  }
+
+  if (!left_allocated) {
+    // StorageUserProjection canonicalizes unallocated users to no quota/root/
+    // pool metadata, so stale local storage metadata is not projection state.
+    return true;
+  }
+
+  return
+      left.quota_bytes == right.quota_bytes &&
+      left.root_rel == right.root_rel &&
+      left.storage_pool_id == right.storage_pool_id;
+}
+
+bool next_storage_projection_revision(
+    std::uint64_t current,
+    std::uint64_t* next
+) {
+  if (!next ||
+      current ==
+          std::numeric_limits<std::uint64_t>::max()) {
+    return false;
+  }
+
+  *next = current + 1;
+
+  // Revision zero is reserved for legacy/unversioned state.
+  if (*next == 0) {
+    return false;
+  }
+
+  return true;
+}
+
+StorageProjectionCommitInfo
+make_storage_projection_commit_info(
+    const UserRec* previous,
+    const UserRec& current
+) {
+  StorageProjectionCommitInfo info;
+
+  info.fingerprint =
+      current.fingerprint;
+
+  if (previous) {
+    info.previous_revision =
+        previous->storage_projection_revision;
+
+    info.previous_home_node =
+        previous->home_node;
+  }
+
+  info.projection_revision =
+      current.storage_projection_revision;
+
+  info.home_node =
+      current.home_node;
+
+  return info;
+}
+
+} // namespace
 
 /*
 upsert()
@@ -525,20 +1068,788 @@ upsert()
   - Caller must provide fingerprint.
 */
 bool UsersRegistry::upsert(const UserRec& in) {
+  // Security: generic profile updates must not bypass placement validation.
+  if (!valid_user_home_node_id(in.home_node) ||
+      !valid_user_placement_policy_id(
+          in.placement_policy_id)) {
+    return false;
+  }
+
   std::lock_guard<std::mutex> lk(mu_);
-  if (in.fingerprint.empty()) return false;
+
+  if (in.fingerprint.empty()) {
+    return false;
+  }
 
   UserRec u = in;
 
   // Normalize (schema firewall)
   u.role = norm_role(u.role);
   u.status = norm_status(u.status);
-  u.storage_state = norm_storage_state(u.storage_state);
-  if (u.app_prefs_json.empty()) u.app_prefs_json = "{}";
+  u.storage_state =
+      norm_storage_state(u.storage_state);
 
-  by_fp_[u.fingerprint] = u;
+  if (u.app_prefs_json.empty()) {
+    u.app_prefs_json = "{}";
+  }
+
+  const auto existing =
+      by_fp_.find(u.fingerprint);
+
+  if (existing != by_fp_.end()) {
+    // Security: generic upsert must never write a stale authorization snapshot
+    // back at the registry's current revision. Placement/status/storage changes
+    // must use the locked write-through persisted mutation APIs.
+    if (!storage_projection_semantics_equal(
+            existing->second,
+            u)) {
+      return false;
+    }
+
+    // Security: projection revisions are registry-owned. A generic caller
+    // cannot forge, rewind or advance the Director's control-plane version.
+    u.storage_projection_revision =
+        existing->second.storage_projection_revision;
+  } else {
+    // Legacy/generic insertion remains unversioned until a write-through
+    // projection mutation establishes the first authoritative revision.
+    u.storage_projection_revision = 0;
+  }
+
+  by_fp_[u.fingerprint] =
+      std::move(u);
+
   return true;
 }
+
+void UsersRegistry::set_storage_projection_commit_notifier(
+    UsersRegistry::StorageProjectionCommitNotifier notifier
+) {
+  std::lock_guard<std::mutex> lk(mu_);
+  storage_projection_commit_notifier_ =
+      notifier;
+}
+
+UsersRegistry::StorageProjectionCommitNotifier
+UsersRegistry::storage_projection_commit_notifier_copy_locked() const noexcept {
+  try {
+    return storage_projection_commit_notifier_;
+  } catch (...) {
+    // Security/correctness: failure to prepare a best-effort wake must never
+    // change the result of an already-durable users.json commit.
+    return {};
+  }
+}
+
+
+bool UsersRegistry::upsert_persisted(
+    const UserRec& in,
+    const std::string& path,
+    bool* projection_changed,
+    std::string* error
+) {
+  if (projection_changed) {
+    *projection_changed = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (path.empty()) {
+    if (error) {
+      *error = "users registry path is empty";
+    }
+
+    return false;
+  }
+
+  if (in.fingerprint.empty()) {
+    if (error) {
+      *error = "fingerprint is empty";
+    }
+
+    return false;
+  }
+
+  if (!valid_user_home_node_id(in.home_node) ||
+      !valid_user_placement_policy_id(
+          in.placement_policy_id)) {
+    if (error) {
+      *error = "invalid user placement metadata";
+    }
+
+    return false;
+  }
+
+  UserRec candidate = in;
+  bool projection_differs = false;
+
+  candidate.role =
+      norm_role(candidate.role);
+
+  candidate.status =
+      norm_status(candidate.status);
+
+  candidate.storage_state =
+      norm_storage_state(
+          candidate.storage_state
+      );
+
+  if (candidate.app_prefs_json.empty()) {
+    candidate.app_prefs_json = "{}";
+  }
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  const auto existing =
+      by_fp_.find(candidate.fingerprint);
+
+  const bool inserting_new =
+      existing == by_fp_.end();
+
+  UserRec previous;
+
+  if (!inserting_new) {
+    previous =
+        existing->second;
+
+    projection_differs =
+        !storage_projection_semantics_equal(
+            previous,
+            candidate
+        );
+
+    candidate.storage_projection_revision =
+        previous.storage_projection_revision;
+
+    if (projection_differs) {
+      std::uint64_t next_revision = 0;
+
+      if (!next_storage_projection_revision(
+              previous.storage_projection_revision,
+              &next_revision)) {
+        if (error) {
+          *error =
+              "storage projection revision exhausted";
+        }
+
+        return false;
+      }
+
+      candidate.storage_projection_revision =
+          next_revision;
+
+      if (projection_changed) {
+        *projection_changed = true;
+      }
+    }
+  } else {
+    projection_differs = true;
+
+    // Creation is the first authoritative persisted projection snapshot.
+    // Starting at 1 also means a newly created + immediately placed user can
+    // be synchronized without inventing a revision outside UsersRegistry.
+    candidate.storage_projection_revision = 1;
+
+    if (projection_changed) {
+      *projection_changed = true;
+    }
+  }
+
+  by_fp_[candidate.fingerprint] =
+      candidate;
+
+  // Security: projection data and its revision use the same users.json
+  // replacement. Pre-rename failure rolls both back; post-rename durability
+  // uncertainty keeps the visible committed state in memory.
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    if (inserting_new) {
+      by_fp_.erase(
+          candidate.fingerprint
+      );
+    } else {
+      by_fp_[candidate.fingerprint] =
+          std::move(previous);
+    }
+
+    if (projection_changed) {
+      *projection_changed = false;
+    }
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  const auto projection_notifier =
+      projection_differs
+          ? storage_projection_commit_notifier_copy_locked()
+          : StorageProjectionCommitNotifier{};
+
+  const StorageProjectionCommitInfo projection_commit_info =
+      projection_differs
+          ? make_storage_projection_commit_info(
+                inserting_new
+                    ? nullptr
+                    : &previous,
+                candidate
+            )
+          : StorageProjectionCommitInfo{};
+
+  // Security: never invoke external callbacks while holding the registry
+  // mutation lock. The durable commit above is authoritative even if wake fails.
+  lk.unlock();
+
+  if (projection_notifier) {
+    try {
+      projection_notifier(projection_commit_info);
+    } catch (...) {
+      // Best-effort latency optimization. Periodic reconciliation remains
+      // the safety net and the successful durable commit stays successful.
+    }
+  }
+
+  return true;
+}
+
+
+bool UsersRegistry::set_profile_persisted(
+    const std::string& fp_hex,
+    const UserProfileUpdate& update,
+    const std::string& path,
+    bool* changed,
+    UserRec* updated,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (updated) {
+    *updated = UserRec{};
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) {
+      *error = "fingerprint is empty";
+    }
+
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) {
+      *error = "users registry path is empty";
+    }
+
+    return false;
+  }
+
+  const std::string normalized_role =
+      norm_role(update.role);
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before another
+  // persisted user mutation is allowed to proceed.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  auto iterator =
+      by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) {
+      *error = "user not found";
+    }
+
+    return false;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  // Security: start from the CURRENT registry-owned record. Never write a
+  // request-local UserRec snapshot back into users.json, because that snapshot
+  // may contain placement/projection state older than a concurrent mutation.
+  UserRec candidate =
+      previous;
+
+  candidate.name =
+      update.name;
+
+  candidate.notes =
+      update.notes;
+
+  candidate.email =
+      update.email;
+
+  candidate.address =
+      update.address;
+
+  candidate.group =
+      update.group;
+
+  candidate.avatar_url =
+      update.avatar_url;
+
+  if (update.update_role) {
+    candidate.role =
+        normalized_role;
+  }
+
+  // Defense in depth: profile mutation must never alter Storage authorization
+  // or Director-owned placement/version state, even after future maintenance.
+  if (!storage_projection_semantics_equal(
+          previous,
+          candidate) ||
+      !storage_metadata_fields_equal(
+          previous,
+          candidate) ||
+      candidate.status !=
+          previous.status ||
+      candidate.home_node !=
+          previous.home_node ||
+      candidate.placement_policy_id !=
+          previous.placement_policy_id ||
+      candidate.storage_projection_revision !=
+          previous.storage_projection_revision) {
+    if (error) {
+      *error =
+          "profile mutation changed protected user state";
+    }
+
+    return false;
+  }
+
+  const bool profile_changed =
+      candidate.name != previous.name ||
+      candidate.notes != previous.notes ||
+      candidate.email != previous.email ||
+      candidate.address != previous.address ||
+      candidate.group != previous.group ||
+      candidate.avatar_url != previous.avatar_url ||
+      candidate.role != previous.role;
+
+  if (!profile_changed) {
+    if (updated) {
+      *updated = previous;
+    }
+
+    return true;
+  }
+
+  iterator->second =
+      candidate;
+
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      // Security/correctness: rename already made candidate authoritative.
+      // Never restore stale process memory after a directory-fsync failure.
+      if (updated) {
+        *updated = candidate;
+      }
+
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    iterator->second =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  if (updated) {
+    *updated = candidate;
+  }
+
+  return true;
+}
+
+
+bool UsersRegistry::set_non_auth_metadata_persisted(
+    const std::string& fp_hex,
+    const UserNonAuthMetadataUpdate& update,
+    const std::string& path,
+    bool* changed,
+    UserRec* updated,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (updated) {
+    *updated = UserRec{};
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) {
+      *error = "fingerprint is empty";
+    }
+
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) {
+      *error = "users registry path is empty";
+    }
+
+    return false;
+  }
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  // Security: heal any rename-visible durability uncertainty before another
+  // persisted mutation is allowed to commit.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  auto iterator =
+      by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) {
+      *error = "user not found";
+    }
+
+    return false;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  // Security: always start from CURRENT state. Request-local UserRec snapshots
+  // are never written back through this API.
+  UserRec candidate =
+      previous;
+
+  if (update.name.has_value()) {
+    candidate.name =
+        *update.name;
+  }
+
+  if (update.email.has_value()) {
+    candidate.email =
+        *update.email;
+  }
+
+  if (update.avatar_url.has_value()) {
+    candidate.avatar_url =
+        *update.avatar_url;
+  }
+
+  if (update.app_prefs_json.has_value()) {
+    candidate.app_prefs_json =
+        *update.app_prefs_json;
+  }
+
+  if (update.vault_master_recovery_status.has_value()) {
+    candidate.vault_master_recovery_status =
+        *update.vault_master_recovery_status;
+  }
+
+  if (update.vault_master_recovery_public_key_b64.has_value()) {
+    candidate.vault_master_recovery_public_key_b64 =
+        *update.vault_master_recovery_public_key_b64;
+  }
+
+  if (update.vault_master_recovery_public_key_sha256.has_value()) {
+    candidate.vault_master_recovery_public_key_sha256 =
+        *update.vault_master_recovery_public_key_sha256;
+  }
+
+  if (update.vault_master_recovery_created_at.has_value()) {
+    candidate.vault_master_recovery_created_at =
+        *update.vault_master_recovery_created_at;
+  }
+
+  if (update.vault_master_recovery_label.has_value()) {
+    candidate.vault_master_recovery_label =
+        *update.vault_master_recovery_label;
+  }
+
+  // Defense in depth: maintenance of this API must never grow into an
+  // authorization mutation without an explicit persisted projection path.
+  if (!storage_projection_semantics_equal(
+          previous,
+          candidate) ||
+      !storage_metadata_fields_equal(
+          previous,
+          candidate) ||
+      candidate.role !=
+          previous.role ||
+      candidate.status !=
+          previous.status ||
+      candidate.home_node !=
+          previous.home_node ||
+      candidate.placement_policy_id !=
+          previous.placement_policy_id ||
+      candidate.storage_projection_revision !=
+          previous.storage_projection_revision) {
+    if (error) {
+      *error =
+          "non-auth metadata mutation changed protected user state";
+    }
+
+    return false;
+  }
+
+  const bool metadata_changed =
+      candidate.name != previous.name ||
+      candidate.email != previous.email ||
+      candidate.avatar_url != previous.avatar_url ||
+      candidate.app_prefs_json != previous.app_prefs_json ||
+      candidate.vault_master_recovery_status !=
+          previous.vault_master_recovery_status ||
+      candidate.vault_master_recovery_public_key_b64 !=
+          previous.vault_master_recovery_public_key_b64 ||
+      candidate.vault_master_recovery_public_key_sha256 !=
+          previous.vault_master_recovery_public_key_sha256 ||
+      candidate.vault_master_recovery_created_at !=
+          previous.vault_master_recovery_created_at ||
+      candidate.vault_master_recovery_label !=
+          previous.vault_master_recovery_label;
+
+  if (!metadata_changed) {
+    if (updated) {
+      *updated = previous;
+    }
+
+    return true;
+  }
+
+  iterator->second =
+      candidate;
+
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      // Security: rename already made candidate authoritative; never restore
+      // stale process memory after a parent-directory fsync failure.
+      if (updated) {
+        *updated = candidate;
+      }
+
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    iterator->second =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  if (updated) {
+    *updated = candidate;
+  }
+
+  return true;
+}
+
+
+
+bool UsersRegistry::
+raise_storage_projection_revision_floor_persisted_if_unplaced(
+    const std::string& fp_hex,
+    std::uint64_t expected_revision,
+    std::uint64_t minimum_revision,
+    bool* changed,
+    bool* expectation_matched,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (expectation_matched) {
+    *expectation_matched = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty() ||
+      minimum_revision == 0) {
+    if (error) {
+      *error =
+          "invalid storage projection revision floor";
+    }
+
+    return false;
+  }
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  // Security: heal any rename-visible users.json commit before changing the
+  // authoritative revision floor again.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  auto iterator =
+      by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end() ||
+      !iterator->second.home_node.empty() ||
+      iterator->second.storage_projection_revision !=
+          expected_revision) {
+    return true;
+  }
+
+  if (expectation_matched) {
+    *expectation_matched = true;
+  }
+
+  // FINAL-001: this primitive persists Director-authoritative revision state.
+  // Refuse an exhausted or remotely-forced unbounded repair floor even if a
+  // higher layer accidentally omits its own trust-boundary check.
+  if (!storage_projection_revision_floor_is_automatic_repair_safe(
+          expected_revision,
+          minimum_revision)) {
+    if (error) {
+      *error =
+          "storage projection revision floor exceeds automatic repair bound";
+    }
+
+    return false;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  if (previous.storage_projection_revision >=
+      minimum_revision) {
+    return true;
+  }
+
+  if (durability_path_.empty()) {
+    if (error) {
+      *error =
+          "users registry durability path unavailable";
+    }
+
+    return false;
+  }
+
+  UserRec candidate =
+      previous;
+
+  candidate.storage_projection_revision =
+      minimum_revision;
+
+  iterator->second =
+      candidate;
+
+  const std::string persistence_path =
+      durability_path_;
+
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          persistence_path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      // Security: rename already made the higher revision authoritative.
+      // Never roll memory back below a Node revision floor.
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    iterator->second =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  return true;
+}
+
 
 /*
 set_status(), set_role()
@@ -550,6 +1861,537 @@ bool UsersRegistry::set_status(const std::string& fp_hex, const std::string& sta
   auto it = by_fp_.find(fp_hex);
   if (it == by_fp_.end()) return false;
   it->second.status = norm_status(status);
+  return true;
+}
+
+
+bool UsersRegistry::set_status_persisted(
+    const std::string& fp_hex,
+    const std::string& status,
+    const std::string& path,
+    bool* changed,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) {
+      *error = "fingerprint is empty";
+    }
+
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) {
+      *error = "users registry path is empty";
+    }
+
+    return false;
+  }
+
+  const std::string normalized_status =
+      norm_status(status);
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  auto iterator =
+      by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) {
+      *error = "user not found";
+    }
+
+    return false;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  if (previous.status ==
+      normalized_status) {
+    return true;
+  }
+
+  UserRec candidate =
+      previous;
+
+  candidate.status =
+      normalized_status;
+
+  const bool projection_differs =
+      !storage_projection_semantics_equal(
+          previous,
+          candidate
+      );
+
+  if (projection_differs) {
+    std::uint64_t next_revision = 0;
+
+    if (!next_storage_projection_revision(
+            previous.storage_projection_revision,
+            &next_revision)) {
+      if (error) {
+        *error =
+            "storage projection revision exhausted";
+      }
+
+      return false;
+    }
+
+    candidate.storage_projection_revision =
+        next_revision;
+  }
+
+  iterator->second =
+      candidate;
+
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    iterator->second =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  const auto projection_notifier =
+      projection_differs
+          ? storage_projection_commit_notifier_copy_locked()
+          : StorageProjectionCommitNotifier{};
+
+  const StorageProjectionCommitInfo projection_commit_info =
+      projection_differs
+          ? make_storage_projection_commit_info(
+                &previous,
+                candidate
+            )
+          : StorageProjectionCommitInfo{};
+
+  lk.unlock();
+
+  if (projection_notifier) {
+    try {
+      projection_notifier(projection_commit_info);
+    } catch (...) {
+      // Best-effort wake only; durable registry state remains authoritative.
+    }
+  }
+
+  return true;
+}
+
+bool UsersRegistry::set_storage_metadata_persisted(
+    const std::string& fp_hex,
+    const UserStorageMetadataUpdate& update,
+    const std::string& path,
+    bool* changed,
+    bool* projection_changed,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (projection_changed) {
+    *projection_changed = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) {
+      *error = "fingerprint is empty";
+    }
+
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) {
+      *error = "users registry path is empty";
+    }
+
+    return false;
+  }
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  auto iterator =
+      by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) {
+      *error = "user not found";
+    }
+
+    return false;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  UserRec candidate =
+      previous;
+
+  candidate.storage_state =
+      norm_storage_state(
+          update.storage_state
+      );
+
+  candidate.quota_bytes =
+      update.quota_bytes;
+
+  candidate.root_rel =
+      update.root_rel;
+
+  candidate.storage_pool_id =
+      update.storage_pool_id;
+
+  candidate.storage_set_at =
+      update.storage_set_at;
+
+  candidate.storage_set_by =
+      update.storage_set_by;
+
+  if (storage_metadata_fields_equal(
+          previous,
+          candidate)) {
+    return true;
+  }
+
+  const bool projection_differs =
+      !storage_projection_semantics_equal(
+          previous,
+          candidate
+      );
+
+  if (projection_differs) {
+    std::uint64_t next_revision = 0;
+
+    if (!next_storage_projection_revision(
+            previous.storage_projection_revision,
+            &next_revision)) {
+      if (error) {
+        *error =
+            "storage projection revision exhausted";
+      }
+
+      return false;
+    }
+
+    candidate.storage_projection_revision =
+        next_revision;
+  }
+
+  iterator->second =
+      candidate;
+
+  // Security: storage metadata and the revision describing its Node-visible
+  // projection are committed by the same users.json replacement.
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    iterator->second =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  if (projection_changed) {
+    *projection_changed =
+        projection_differs;
+  }
+
+  const auto projection_notifier =
+      projection_differs
+          ? storage_projection_commit_notifier_copy_locked()
+          : StorageProjectionCommitNotifier{};
+
+  const StorageProjectionCommitInfo projection_commit_info =
+      projection_differs
+          ? make_storage_projection_commit_info(
+                &previous,
+                candidate
+            )
+          : StorageProjectionCommitInfo{};
+
+  // Security: callback runs only after the durable commit and outside mu_.
+  lk.unlock();
+
+  if (projection_notifier) {
+    try {
+      projection_notifier(projection_commit_info);
+    } catch (...) {
+      // Best-effort wake only; periodic reconciliation remains authoritative.
+    }
+  }
+
+  return true;
+}
+
+bool UsersRegistry::switch_storage_mapping_persisted_if_pool_current(
+    const std::string& fp_hex,
+    const std::string& expected_storage_pool_id,
+    const std::string& new_storage_pool_id,
+    const std::string& new_root_rel,
+    const std::string& storage_set_at,
+    const std::string& storage_set_by,
+    const std::string& path,
+    bool* expectation_matched,
+    bool* changed,
+    bool* projection_changed,
+    std::string* error
+) {
+  if (expectation_matched) {
+    *expectation_matched = false;
+  }
+
+  if (changed) {
+    *changed = false;
+  }
+
+  if (projection_changed) {
+    *projection_changed = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) {
+      *error = "fingerprint is empty";
+    }
+
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) {
+      *error = "users registry path is empty";
+    }
+
+    return false;
+  }
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  auto iterator =
+      by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) {
+      *error = "user not found";
+    }
+
+    return false;
+  }
+
+  // Security: compare while holding the same lock used for the mapping
+  // mutation and persistence. A migration planned against an older pool
+  // cannot overwrite a newer pool selection.
+  if (iterator->second.storage_pool_id !=
+      expected_storage_pool_id) {
+    return true;
+  }
+
+  if (expectation_matched) {
+    *expectation_matched = true;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  UserRec candidate =
+      previous;
+
+  // Security: migration owns only mapping/audit fields. In particular, keep
+  // current quota and allocation state from the locked record instead of
+  // copying them from a potentially stale worker snapshot.
+  candidate.storage_pool_id =
+      new_storage_pool_id;
+
+  candidate.root_rel =
+      new_root_rel;
+
+  candidate.storage_set_at =
+      storage_set_at;
+
+  candidate.storage_set_by =
+      storage_set_by;
+
+  if (storage_metadata_fields_equal(
+          previous,
+          candidate)) {
+    return true;
+  }
+
+  const bool projection_differs =
+      !storage_projection_semantics_equal(
+          previous,
+          candidate
+      );
+
+  if (projection_differs) {
+    std::uint64_t next_revision = 0;
+
+    if (!next_storage_projection_revision(
+            previous.storage_projection_revision,
+            &next_revision)) {
+      if (error) {
+        *error =
+            "storage projection revision exhausted";
+      }
+
+      return false;
+    }
+
+    candidate.storage_projection_revision =
+        next_revision;
+  }
+
+  iterator->second =
+      candidate;
+
+  // Security: CAS comparison, mapping, projection revision, persistence and
+  // rollback are one locked transaction from the registry's point of view.
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    iterator->second =
+        previous;
+
+    if (changed) {
+      *changed = false;
+    }
+
+    if (projection_changed) {
+      *projection_changed = false;
+    }
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  if (projection_changed) {
+    *projection_changed =
+        projection_differs;
+  }
+
+  const auto projection_notifier =
+      projection_differs
+          ? storage_projection_commit_notifier_copy_locked()
+          : StorageProjectionCommitNotifier{};
+
+  const StorageProjectionCommitInfo projection_commit_info =
+      projection_differs
+          ? make_storage_projection_commit_info(
+                &previous,
+                candidate
+            )
+          : StorageProjectionCommitInfo{};
+
+  // Security: stale CAS/no-op paths never reach this notification point.
+  lk.unlock();
+
+  if (projection_notifier) {
+    try {
+      projection_notifier(projection_commit_info);
+    } catch (...) {
+      // Best-effort wake only; durable mapping remains authoritative.
+    }
+  }
+
   return true;
 }
 
@@ -577,6 +2419,580 @@ bool UsersRegistry::set_name_notes(const std::string& fp_hex, const std::string&
 }
 
 /*
+set_home_node()
+  - Updates cluster placement metadata in memory.
+  - The caller remains responsible for persistence and NodeRegistry policy.
+*/
+bool UsersRegistry::set_home_node(
+    const std::string& fp_hex,
+    const std::string& home_node
+) {
+  if (!valid_user_home_node_id(home_node)) {
+    return false;
+  }
+
+  std::lock_guard<std::mutex> lk(mu_);
+
+  auto iterator = by_fp_.find(fp_hex);
+  if (iterator == by_fp_.end()) {
+    return false;
+  }
+
+  iterator->second.home_node = home_node;
+  return true;
+}
+
+bool UsersRegistry::set_home_node_persisted(
+    const std::string& fp_hex,
+    const std::string& home_node,
+    const std::string& path,
+    bool* changed,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) *error = "fingerprint is empty";
+    return false;
+  }
+
+  if (home_node.empty() ||
+      !valid_user_home_node_id(home_node)) {
+    if (error) *error = "invalid home node ID";
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) *error = "users registry path is empty";
+    return false;
+  }
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  auto iterator = by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) *error = "user not found";
+    return false;
+  }
+
+  if (iterator->second.home_node == home_node) {
+    return true;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  std::uint64_t next_revision = 0;
+
+  if (!next_storage_projection_revision(
+          previous.storage_projection_revision,
+          &next_revision)) {
+    if (error) {
+      *error =
+          "storage projection revision exhausted";
+    }
+
+    return false;
+  }
+
+  iterator->second.home_node =
+      home_node;
+
+  iterator->second.storage_projection_revision =
+      next_revision;
+
+  // Security: placement and its projection revision are persisted together.
+  // Pre-rename failure restores both values under the same mutation lock;
+  // post-rename durability uncertainty keeps the visible committed values.
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    iterator->second =
+        previous;
+
+    if (error) {
+      *error = "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  const auto projection_notifier =
+      storage_projection_commit_notifier_copy_locked();
+
+  const StorageProjectionCommitInfo projection_commit_info =
+      make_storage_projection_commit_info(
+          &previous,
+          iterator->second
+      );
+
+  // Security: placement is durable before reconciliation is signalled.
+  lk.unlock();
+
+  if (projection_notifier) {
+    try {
+      projection_notifier(projection_commit_info);
+    } catch (...) {
+      // Best-effort wake only; durable placement remains authoritative.
+    }
+  }
+
+  return true;
+}
+
+
+bool UsersRegistry::set_home_node_persisted_if_current(
+    const std::string& fp_hex,
+    const std::string& expected_home_node,
+    const std::string& expected_placement_policy_id,
+    const std::string& new_home_node,
+    const std::string& path,
+    bool* changed,
+    bool* expectation_matched,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (expectation_matched) {
+    *expectation_matched = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) *error = "fingerprint is empty";
+    return false;
+  }
+
+  // Empty expected home_node is valid and represents legacy/local placement.
+  if (!valid_user_home_node_id(
+          expected_home_node)) {
+    if (error) *error = "invalid expected home node ID";
+    return false;
+  }
+
+  // Empty expected policy ID is valid and represents no policy override.
+  if (!valid_user_placement_policy_id(
+          expected_placement_policy_id)) {
+    if (error) {
+      *error =
+          "invalid expected placement policy ID";
+    }
+
+    return false;
+  }
+
+  if (new_home_node.empty() ||
+      !valid_user_home_node_id(
+          new_home_node)) {
+    if (error) *error = "invalid home node ID";
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) *error = "users registry path is empty";
+    return false;
+  }
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  auto iterator = by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) *error = "user not found";
+    return false;
+  }
+
+  // TOCTOU protection: compare both preview-relevant user fields while
+  // holding the same registry lock used for mutation and persistence.
+  if (iterator->second.home_node !=
+          expected_home_node ||
+      iterator->second.placement_policy_id !=
+          expected_placement_policy_id) {
+    return true;
+  }
+
+  if (expectation_matched) {
+    *expectation_matched = true;
+  }
+
+  if (iterator->second.home_node ==
+      new_home_node) {
+    return true;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  std::uint64_t next_revision = 0;
+
+  if (!next_storage_projection_revision(
+          previous.storage_projection_revision,
+          &next_revision)) {
+    if (error) {
+      *error =
+          "storage projection revision exhausted";
+    }
+
+    return false;
+  }
+
+  iterator->second.home_node =
+      new_home_node;
+
+  iterator->second.storage_projection_revision =
+      next_revision;
+
+  // Security: compare, placement, revision, persistence and rollback stay
+  // under one registry lock so stale workers cannot split authorization state.
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    iterator->second =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  const auto projection_notifier =
+      storage_projection_commit_notifier_copy_locked();
+
+  const StorageProjectionCommitInfo projection_commit_info =
+      make_storage_projection_commit_info(
+          &previous,
+          iterator->second
+      );
+
+  // Security: CAS state and revision are durable before reconciliation wakes.
+  lk.unlock();
+
+  if (projection_notifier) {
+    try {
+      projection_notifier(projection_commit_info);
+    } catch (...) {
+      // Best-effort wake only; durable placement remains authoritative.
+    }
+  }
+
+  return true;
+}
+
+bool UsersRegistry::clear_home_node_persisted_if_current(
+    const std::string& fp_hex,
+    const std::string& expected_home_node,
+    const std::string& expected_placement_policy_id,
+    const std::string& path,
+    bool* changed,
+    bool* expectation_matched,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (expectation_matched) {
+    *expectation_matched = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) *error = "fingerprint is empty";
+    return false;
+  }
+
+  // Security: this primitive represents placed -> unplaced only. An empty
+  // expected node must never become a generic "clear whatever is there".
+  if (expected_home_node.empty() ||
+      !valid_user_home_node_id(
+          expected_home_node)) {
+    if (error) {
+      *error = "invalid expected home node ID";
+    }
+
+    return false;
+  }
+
+  // Empty policy ID is valid and means no policy override. The policy is only
+  // compared here; explicit unplacement preserves placement intent.
+  if (!valid_user_placement_policy_id(
+          expected_placement_policy_id)) {
+    if (error) {
+      *error =
+          "invalid expected placement policy ID";
+    }
+
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) *error = "users registry path is empty";
+    return false;
+  }
+
+  std::unique_lock<std::mutex> lk(mu_);
+
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  auto iterator = by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) *error = "user not found";
+    return false;
+  }
+
+  // TOCTOU protection: both realized placement and placement intent must still
+  // match the caller's snapshot while holding the registry mutation lock.
+  if (iterator->second.home_node !=
+          expected_home_node ||
+      iterator->second.placement_policy_id !=
+          expected_placement_policy_id) {
+    return true;
+  }
+
+  if (expectation_matched) {
+    *expectation_matched = true;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  std::uint64_t next_revision = 0;
+
+  if (!next_storage_projection_revision(
+          previous.storage_projection_revision,
+          &next_revision)) {
+    if (error) {
+      *error =
+          "storage projection revision exhausted";
+    }
+
+    return false;
+  }
+
+  iterator->second.home_node.clear();
+  iterator->second.storage_projection_revision =
+      next_revision;
+
+  // Security: the unplacement decision and its newer revoke revision are one
+  // users.json commit. Pre-rename failure restores the prior record; a visible
+  // post-rename commit is retained until its durability can be healed.
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    iterator->second =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  const auto projection_notifier =
+      storage_projection_commit_notifier_copy_locked();
+
+  const StorageProjectionCommitInfo projection_commit_info =
+      make_storage_projection_commit_info(
+          &previous,
+          iterator->second
+      );
+
+  // Security: reconciliation is woken only after users.json durably records
+  // the newer unplaced revision. The notifier runs outside the registry lock.
+  lk.unlock();
+
+  if (projection_notifier) {
+    try {
+      projection_notifier(projection_commit_info);
+    } catch (...) {
+      // Best-effort wake only; durable unplacement remains authoritative.
+    }
+  }
+
+  return true;
+}
+
+
+bool UsersRegistry::set_placement_policy_id_persisted(
+    const std::string& fp_hex,
+    const std::string& placement_policy_id,
+    const std::string& path,
+    bool* changed,
+    std::string* error
+) {
+  if (changed) {
+    *changed = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) *error = "fingerprint is empty";
+    return false;
+  }
+
+  // Empty is valid and explicitly clears the user's policy override.
+  if (!valid_user_placement_policy_id(
+          placement_policy_id)) {
+    if (error) *error = "invalid placement policy ID";
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) *error = "users registry path is empty";
+    return false;
+  }
+
+  std::lock_guard<std::mutex> lk(mu_);
+
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  auto iterator = by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) *error = "user not found";
+    return false;
+  }
+
+  if (iterator->second.placement_policy_id ==
+      placement_policy_id) {
+    return true;
+  }
+
+  const std::string previous_policy_id =
+      iterator->second.placement_policy_id;
+
+  iterator->second.placement_policy_id =
+      placement_policy_id;
+
+  // Security: persist while holding the registry mutation lock.
+  // Pre-rename failure restores the previous policy reference; post-rename
+  // durability uncertainty retains the visible committed policy reference.
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    iterator->second.placement_policy_id =
+        previous_policy_id;
+
+    if (error) {
+      *error = "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (changed) {
+    *changed = true;
+  }
+
+  return true;
+}
+
+
+/*
 touch_last_seen()
   - Updates last_seen timestamp for activity tracking / UI.
   - Caller should pass an ISO8601 string consistent with the rest of PQ-NAS.
@@ -599,6 +3015,112 @@ bool UsersRegistry::erase(const std::string& fp_hex) {
   return by_fp_.erase(fp_hex) > 0;
 }
 
+
+bool UsersRegistry::erase_persisted_if_unplaced(
+    const std::string& fp_hex,
+    const std::string& path,
+    bool* erased,
+    bool* placement_blocked,
+    std::string* error
+) {
+  if (erased) {
+    *erased = false;
+  }
+
+  if (placement_blocked) {
+    *placement_blocked = false;
+  }
+
+  if (error) {
+    error->clear();
+  }
+
+  if (fp_hex.empty()) {
+    if (error) {
+      *error = "fingerprint is empty";
+    }
+
+    return false;
+  }
+
+  if (path.empty()) {
+    if (error) {
+      *error = "users registry path is empty";
+    }
+
+    return false;
+  }
+
+  std::lock_guard<std::mutex> lk(mu_);
+
+  // Security: a previous rename may already be visible while its directory
+  // entry is not yet known durable. Heal that exact snapshot before treating
+  // this persisted operation, including an idempotent retry, as successful.
+  if (!ensure_durable_locked(error)) {
+    return false;
+  }
+
+  auto iterator =
+      by_fp_.find(fp_hex);
+
+  if (iterator == by_fp_.end()) {
+    if (error) {
+      *error = "user not found";
+    }
+
+    return false;
+  }
+
+  // Security: deleting a placed Director user before its Storage Node has
+  // received a newer revoke/tombstone could leave stale authorization active.
+  if (!iterator->second.home_node.empty()) {
+    if (placement_blocked) {
+      *placement_blocked = true;
+    }
+
+    return true;
+  }
+
+  const UserRec previous =
+      iterator->second;
+
+  by_fp_.erase(iterator);
+
+  // Security/correctness: memory and users.json form one logical mutation.
+  // Restore the record only if replacement did not commit. A post-rename
+  // durability failure retains the visible deletion in memory.
+  bool registry_commit_visible = false;
+
+  if (!save_locked(
+          path,
+          &registry_commit_visible)) {
+    if (registry_commit_visible) {
+      if (error) {
+        *error =
+            "users registry commit durability uncertain";
+      }
+
+      return false;
+    }
+
+    by_fp_[previous.fingerprint] =
+        previous;
+
+    if (error) {
+      *error =
+          "users registry persistence failed";
+    }
+
+    return false;
+  }
+
+  if (erased) {
+    *erased = true;
+  }
+
+  return true;
+}
+
 /*
 snapshot()
   - Returns a full copy of the internal map.
@@ -607,6 +3129,54 @@ snapshot()
 std::unordered_map<std::string, UserRec> UsersRegistry::snapshot() const {
   std::lock_guard<std::mutex> lk(mu_);
   return by_fp_;
+}
+
+std::unordered_map<
+    std::string,
+    std::size_t
+> UsersRegistry::home_node_assignment_counts() const {
+  std::lock_guard<std::mutex> lk(mu_);
+
+  std::unordered_map<
+      std::string,
+      std::size_t
+  > counts;
+
+  for (const auto& entry : by_fp_) {
+    const std::string& home_node =
+        entry.second.home_node;
+
+    if (!home_node.empty()) {
+      ++counts[home_node];
+    }
+  }
+
+  return counts;
+}
+
+std::unordered_map<
+    std::string,
+    std::size_t
+> UsersRegistry::placement_policy_assignment_counts() const {
+  std::lock_guard<std::mutex> lk(mu_);
+
+  std::unordered_map<
+      std::string,
+      std::size_t
+  > counts;
+
+  for (const auto& entry : by_fp_) {
+    const std::string& policy_id =
+        entry.second.placement_policy_id;
+
+    // Security: expose only aggregate references to explicit policy IDs.
+    // Empty values mean no override and must not create a pseudo-policy.
+    if (!policy_id.empty()) {
+      ++counts[policy_id];
+    }
+  }
+
+  return counts;
 }
 
 } // namespace pqnas

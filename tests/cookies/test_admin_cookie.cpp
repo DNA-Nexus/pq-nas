@@ -25,6 +25,7 @@
 #include "allowlist.h"
 #include "authz.h"
 #include "session_cookie.h"
+#include "strict_session_cookie.h"
 
 static std::string b64std_enc(const unsigned char* data, size_t len) {
     // Standard base64 with padding (Variant ORIGINAL), matches server decoding.
@@ -109,23 +110,462 @@ int main() {
         return 5;
     }
 
-    // Fake request containing the session cookie
-    httplib::Request req;
-    httplib::Response res;
+    auto require_allowed = [&](const std::string& header, const char* label) -> bool {
+        httplib::Request request;
+        httplib::Response response;
+        request.remote_addr = "127.0.0.1";
+        request.headers.emplace("Cookie", header);
 
-    req.remote_addr = "127.0.0.1";
-    req.headers.emplace("Cookie", std::string("pqnas_session=") + cookieVal);
+        if (!require_admin_cookie(request, response, cookie_key, policy_path, &allowlist)) {
+            std::cerr << "FAIL: " << label << " status=" << response.status << " body=" << response.body << "\n";
+            return false;
+        }
+        return true;
+    };
 
-    // Call the real guard with allowlist pointer (so it doesn't re-load policy unexpectedly)
-    const bool ok = require_admin_cookie(req, res, cookie_key, policy_path, &allowlist);
+    auto require_rejected = [&](const httplib::Request& request, const char* label) -> bool {
+        httplib::Response response;
+        if (require_admin_cookie(request, response, cookie_key, policy_path, &allowlist)) {
+            std::cerr << "FAIL: " << label << " unexpectedly authenticated\n";
+            return false;
+        }
+        if (response.status != 401) {
+            std::cerr << "FAIL: " << label << " status=" << response.status << " expected=401\n";
+            return false;
+        }
+        return true;
+    };
 
-    if (!ok) {
-        std::cerr << "FAIL: require_admin_cookie returned false\n";
-        std::cerr << "HTTP status=" << res.status << "\n";
-        std::cerr << "Body:\n" << res.body << "\n";
-        return 6;
+    auto require_workspace_cookie_result =
+        [&](
+            const httplib::Request& request,
+            pqnas::StrictSessionCookieResult expected,
+            const std::string& expected_value,
+            const char* label
+        ) -> bool {
+            std::string parsed = "stale";
+
+            const auto result =
+                pqnas::extract_strict_session_cookie(
+                    request,
+                    "pqnas_workspace_session",
+                    &parsed
+                );
+
+            if (result != expected) {
+                std::cerr
+                    << "FAIL: "
+                    << label
+                    << " unexpected parser result\n";
+                return false;
+            }
+
+            if (expected ==
+                    pqnas::StrictSessionCookieResult::Ok &&
+                parsed != expected_value) {
+                std::cerr
+                    << "FAIL: "
+                    << label
+                    << " parsed wrong cookie value\n";
+                return false;
+            }
+
+            if (expected !=
+                    pqnas::StrictSessionCookieResult::Ok &&
+                !parsed.empty()) {
+                std::cerr
+                    << "FAIL: "
+                    << label
+                    << " left stale parser output\n";
+                return false;
+            }
+
+            return true;
+        };
+
+    auto require_share_recipient_cookie_result =
+        [&](
+            const httplib::Request& request,
+            pqnas::StrictSessionCookieResult expected,
+            const std::string& expected_value,
+            const char* label
+        ) -> bool {
+            std::string parsed = "stale";
+
+            const auto result =
+                pqnas::extract_strict_session_cookie(
+                    request,
+                    "pqnas_share_recipient",
+                    &parsed,
+                    pqnas::canonical_pqnas_share_recipient_cookie_value
+                );
+
+            if (result != expected) {
+                std::cerr
+                    << "FAIL: "
+                    << label
+                    << " unexpected share-recipient parser result\n";
+                return false;
+            }
+
+            if (expected ==
+                    pqnas::StrictSessionCookieResult::Ok &&
+                parsed != expected_value) {
+                std::cerr
+                    << "FAIL: "
+                    << label
+                    << " parsed wrong share-recipient value\n";
+                return false;
+            }
+
+            if (expected !=
+                    pqnas::StrictSessionCookieResult::Ok &&
+                !parsed.empty()) {
+                std::cerr
+                    << "FAIL: "
+                    << label
+                    << " left stale share-recipient parser output\n";
+                return false;
+            }
+
+            return true;
+        };
+
+    // NEW-003: pqnas_workspace_session must use the same strict credential
+    // selection rules as pqnas_session.
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_workspace_session=") +
+                cookieVal
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::Ok,
+                cookieVal,
+                "canonical workspace session cookie"
+            )) {
+            return 20;
+        }
     }
 
-    std::cout << "OK: admin cookie/policy regression test passed\n";
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string(
+                "theme=dark; pqnas_workspace_session="
+            ) +
+                cookieVal
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::Ok,
+                cookieVal,
+                "workspace session with unrelated cookie"
+            )) {
+            return 21;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_session=") +
+                cookieVal +
+                "; pqnas_workspace_session=" +
+                cookieVal
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::Ok,
+                cookieVal,
+                "workspace and normal sessions coexist"
+            )) {
+            return 22;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_workspace_session=") +
+                cookieVal
+        );
+        request.headers.emplace(
+            "Cookie",
+            std::string("theme=dark")
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "duplicate Cookie headers for workspace session"
+            )) {
+            return 23;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_workspace_session=") +
+                cookieVal +
+                "; pqnas_workspace_session=" +
+                cookieVal
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "duplicate workspace session names"
+            )) {
+            return 24;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_session=") +
+                cookieVal
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    MissingSessionCookie,
+                "",
+                "missing workspace session cookie"
+            )) {
+            return 25;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string(
+                "broken; pqnas_workspace_session="
+            ) +
+                cookieVal
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "malformed workspace Cookie segment"
+            )) {
+            return 26;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string(
+                "pqnas_workspace_session= "
+            ) +
+                cookieVal
+        );
+
+        if (!require_workspace_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "noncanonical workspace session value"
+            )) {
+            return 27;
+        }
+    }
+
+    // FINAL-004: share-recipient cookies use the same strict header/name
+    // selection rules, with their own canonical bare-base64url value format.
+    const std::string shareSessionId(32, 'A');
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_share_recipient=") +
+                shareSessionId
+        );
+
+        if (!require_share_recipient_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::Ok,
+                shareSessionId,
+                "canonical share-recipient cookie"
+            )) {
+            return 28;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("theme=dark; pqnas_share_recipient=") +
+                shareSessionId
+        );
+
+        if (!require_share_recipient_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::Ok,
+                shareSessionId,
+                "share-recipient with unrelated cookie"
+            )) {
+            return 29;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_share_recipient=") +
+                shareSessionId
+        );
+        request.headers.emplace(
+            "Cookie",
+            "theme=dark"
+        );
+
+        if (!require_share_recipient_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "duplicate Cookie headers for share recipient"
+            )) {
+            return 30;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_share_recipient=") +
+                shareSessionId +
+                "; pqnas_share_recipient=" +
+                shareSessionId
+        );
+
+        if (!require_share_recipient_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "duplicate share-recipient cookie names"
+            )) {
+            return 31;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("broken; pqnas_share_recipient=") +
+                shareSessionId
+        );
+
+        if (!require_share_recipient_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "malformed share-recipient Cookie segment"
+            )) {
+            return 32;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_share_recipient=") +
+                cookieVal
+        );
+
+        if (!require_share_recipient_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "dotted user-session value rejected for share recipient"
+            )) {
+            return 33;
+        }
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace(
+            "Cookie",
+            std::string("pqnas_share_recipient=") +
+                std::string(31, 'A')
+        );
+
+        if (!require_share_recipient_cookie_result(
+                request,
+                pqnas::StrictSessionCookieResult::
+                    InvalidCookieHeader,
+                "",
+                "wrong-length share-recipient value"
+            )) {
+            return 34;
+        }
+    }
+
+    if (!require_allowed(std::string("pqnas_session=") + cookieVal, "canonical session cookie")) return 6;
+    if (!require_allowed(std::string("theme=dark; pqnas_session=") + cookieVal, "session cookie with unrelated cookie")) return 7;
+    if (!require_allowed(std::string("notpqnas_session=ignored; pqnas_session=") + cookieVal, "exact session cookie name matching")) return 8;
+
+    {
+        httplib::Request request;
+        request.headers.emplace("Cookie", std::string("pqnas_session=") + cookieVal);
+        request.headers.emplace("Cookie", std::string("pqnas_session=") + cookieVal);
+        if (!require_rejected(request, "duplicate Cookie headers")) return 9;
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace("Cookie", std::string("pqnas_session=") + cookieVal + "; pqnas_session=" + cookieVal);
+        if (!require_rejected(request, "duplicate pqnas_session names")) return 10;
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace("Cookie", std::string("broken; pqnas_session=") + cookieVal);
+        if (!require_rejected(request, "malformed Cookie segment")) return 11;
+    }
+
+    {
+        httplib::Request request;
+        request.headers.emplace("Cookie", std::string("pqnas_session= ") + cookieVal);
+        if (!require_rejected(request, "noncanonical session cookie characters")) return 12;
+    }
+
+    std::cout << "OK: strict admin cookie/policy regression tests passed\n";
     return 0;
 }

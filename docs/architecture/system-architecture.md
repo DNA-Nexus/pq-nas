@@ -23,6 +23,7 @@ DNA-Nexus Server
 ├─ Core HTTP backend
 ├─ Authentication and session flow
 ├─ User and admin management
+├─ Cluster control plane / Director-Storage runtime
 ├─ File storage and storage pools
 ├─ Workspace collaboration
 ├─ Sharing and public access flows
@@ -52,6 +53,36 @@ Important responsibilities:
 
 The server should remain small and direct. Avoid turning the core server into a large framework or plugin runtime unless there is a clear product reason.
 
+## Deployment Roles
+
+The same `pqnas_server` codebase supports three security roles:
+
+```text
+Standalone
+Director
+Storage Node
+```
+
+The shared binary does not imply shared authority.
+
+- **Standalone** owns local authentication, users and storage for a
+  self-contained installation.
+- **Director** is the cluster control-plane authority for identity, placement,
+  Node enrollment/health and Storage user projection reconciliation.
+- **Storage Node** is the data plane for users assigned to that Node and uses
+  Director-supplied projections plus Storage-scoped request authentication.
+
+Role-specific route registration and dependency composition are security
+boundaries. Legacy standalone user/authentication code may exist in the same
+binary, but Node role must not silently use it as cluster user authority.
+
+Detailed cluster rules are defined in:
+
+```text
+docs/architecture/director-storage-architecture.md
+docs/architecture/cluster-network-management-architecture.md
+```
+
 ## Authentication and Identity
 
 DNA-Nexus Server uses an identity-first authentication model.
@@ -72,6 +103,34 @@ The browser is not the root of trust.
 ```
 
 The browser should be treated as a UI surface. The identity proof should come from the trusted device / DNA identity model.
+
+### Session Trust Domains
+
+Cookie names and claim shapes are not sufficient isolation between session
+families. Purpose-specific session families use cryptographically distinct
+derived signing keys rather than reusing the normal browser-session key
+directly.
+
+Current architecture includes:
+
+```text
+normal pqnas_session
+    -> base Director / Standalone browser-session key family
+
+pqnas_workspace_session
+    -> HMAC-derived "pqnas-workspace-session-v1" key
+
+Storage user session
+    -> HMAC-derived "pqnas-storage-session-v2" key
+       + canonical local Storage Node ID
+```
+
+The required invariant is bidirectional: a cookie valid for one session family
+must fail cryptographic verification in another family. Storage sessions must
+also fail cryptographic verification on a different Storage Node.
+
+Do not add fallback behavior that converts claim parsing or a matching
+fingerprint into cross-domain session authority.
 
 ## Storage Model
 
@@ -264,6 +323,9 @@ Avoid unnecessary complexity such as:
 ## Things We Must Not Break
 
 - Browser must not become the root of trust.
+- Standalone, Director, and Storage Node role authorities must remain explicit.
+- Session families with different trust purposes must remain cryptographically
+  separated.
 - File paths must stay server-normalized and authorized.
 - External users must not get more access than their link or role allows.
 - Drop Zone must remain one-way.

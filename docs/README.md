@@ -17,6 +17,8 @@ Product documents describe what is being built, why it exists, who it is for, an
 Architecture documents describe how the main system parts fit together.
 
 - `architecture/system-architecture.md` — High-level DNA-Nexus Server system architecture.
+- `architecture/director-storage-architecture.md` — Director / Storage Node roles, trust boundaries, projections, sessions, placement, and standalone compatibility.
+- `architecture/cluster-network-management-architecture.md` — Standard public, cluster/control, and management/support network model; direct Storage TLS identity; Storage admin/recovery access; and remote support requirements.
 
 ### Technical documents
 
@@ -54,9 +56,13 @@ Planned documents:
 
 ADR means Architecture Decision Record. These are short documents that capture important technical or product decisions.
 
+Existing documents:
+
+- `adr/0001-documentation-structure.md` — Documentation structure and rules.
+- `adr/0005-cluster-network-and-remote-management.md` — Three-plane cluster networking, direct Storage TLS identity, Storage administrative access, and customer-isolated remote support.
+
 Planned documents:
 
-- `adr/0001-documentation-structure.md`
 - `adr/0002-app-manifest-surfaces.md`
 - `adr/0003-drop-zone-one-way-upload.md`
 - `adr/0004-circle-stack-media-origin-fetch.md`

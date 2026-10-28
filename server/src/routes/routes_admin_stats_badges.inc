@@ -1490,18 +1490,38 @@ LIMIT 2000;
         }
     });
 
+    // FINAL-002: these workspace routes still use local users.json /
+    // workspaces.json authority and legacy user-root resolution. Storage Nodes
+    // must expose only explicitly migrated projection-backed user data-plane
+    // routes.
+    // Reliability: httplib retains these route callbacks until server
+    // shutdown. Keep their dependency bundles in the enclosing main scope so
+    // handlers never retain references to objects destroyed after registration.
     pqnas::WorkspaceFileRouteDeps ws_file_deps;
+    pqnas::WorkspaceExternalInviteRouteDeps ws_external_invite_deps;
+    pqnas::WorkspaceExternalSessionRouteDeps ws_external_session_deps;
+
+    if (!cluster_config.is_node()) {
     ws_file_deps.users = &users;
     ws_file_deps.workspaces = &workspaces;
     ws_file_deps.users_path = users_path;
+    ws_file_deps.erase_user_persisted_cluster_safe =
+        cluster_safe_user_delete;
     ws_file_deps.workspaces_path = workspaces_path;
+    // Security: COOKIE_KEY is base material only. Workspace cookies use a
+    // domain-separated MAC key inside workspace_session_cookie_verify().
     ws_file_deps.cookie_key = COOKIE_KEY;
     ws_file_deps.session_cookie_verify =
         [&](const unsigned char* cookie_key,
             const std::string& cookie_value,
             std::string& out_fingerprint_b64,
             long& out_exp) -> bool {
-            return session_cookie_verify(cookie_key, cookie_value, out_fingerprint_b64, out_exp);
+            return workspace_session_cookie_verify(
+                cookie_key,
+                cookie_value,
+                out_fingerprint_b64,
+                out_exp
+            );
         };
     ws_file_deps.b64_std_decode =
         [&](const std::string& b64,
@@ -1547,11 +1567,12 @@ LIMIT 2000;
     pqnas::register_workspace_file_routes(srv, ws_file_deps);
     pqnas::register_workspace_link_routes(srv, ws_file_deps);
 
-pqnas::WorkspaceExternalInviteRouteDeps ws_external_invite_deps;
 ws_external_invite_deps.users = &users;
 ws_external_invite_deps.workspaces = &workspaces;
 ws_external_invite_deps.external_invites = &workspace_external_invites;
 ws_external_invite_deps.users_path = users_path;
+ws_external_invite_deps.erase_user_persisted_cluster_safe =
+    cluster_safe_user_delete;
 ws_external_invite_deps.workspaces_path = workspaces_path;
 ws_external_invite_deps.external_invites_path = workspace_external_invites_path;
 ws_external_invite_deps.cookie_key = COOKIE_KEY;
@@ -1610,20 +1631,29 @@ ws_external_invite_deps.qr_svg_from_text =
 
 pqnas::register_workspace_external_invite_routes(srv, ws_external_invite_deps);
 
-pqnas::WorkspaceExternalSessionRouteDeps ws_external_session_deps;
 ws_external_session_deps.workspaces = &workspaces;
 ws_external_session_deps.external_sessions = &workspace_external_sessions;
 ws_external_session_deps.workspaces_path = workspaces_path;
 ws_external_session_deps.origin = &ORIGIN;
 ws_external_session_deps.app = &APP_NAME;
+// Security: COOKIE_KEY is base material only. Workspace cookies use a
+// domain-separated MAC key inside workspace_session_cookie_mint().
 ws_external_session_deps.cookie_key = COOKIE_KEY;
+ws_external_session_deps.interactive_user_login_allowed =
+    !cluster_config.is_node();
 ws_external_session_deps.session_cookie_mint =
     [&](const unsigned char* cookie_key,
         const std::string& fp_b64,
         long iat,
         long exp,
         std::string& out_cookie_val) -> bool {
-        return session_cookie_mint(cookie_key, fp_b64, iat, exp, out_cookie_val);
+        return workspace_session_cookie_mint(
+            cookie_key,
+            fp_b64,
+            iat,
+            exp,
+            out_cookie_val
+        );
     };
 ws_external_session_deps.b64_std =
     [&](const unsigned char* data, size_t len) {
@@ -1671,6 +1701,7 @@ ws_external_session_deps.qr_svg_from_text =
     };
 
 pqnas::register_workspace_external_session_routes(srv, ws_external_session_deps);
+    } // !cluster_config.is_node(): legacy workspace routes
 
 
 	    // ---- Admin users overview routes ----

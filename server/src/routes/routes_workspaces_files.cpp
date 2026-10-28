@@ -40,6 +40,7 @@
 #include "workspace_messages.h"
 #include "password_credentials.h"
 #include "opaque_credentials.h"
+#include "strict_session_cookie.h"
 
 namespace pqnas {
     static std::string hex_encode_lower_local(const unsigned char* data, std::size_t len) {
@@ -319,6 +320,48 @@ namespace pqnas {
         return false;
     }
 
+    static bool ws_files_erase_user_persisted_local(
+        const WorkspaceFileRouteDeps& deps,
+        const std::string& fingerprint,
+        bool* erased,
+        bool* placement_blocked,
+        bool* cluster_revoke_pending,
+        std::string* error
+    ) {
+        if (erased) *erased = false;
+        if (placement_blocked) *placement_blocked = false;
+        if (cluster_revoke_pending) *cluster_revoke_pending = false;
+        if (error) error->clear();
+
+        if (!deps.users || deps.users_path.empty()) {
+            if (error) {
+                *error = "users registry unavailable";
+            }
+
+            return false;
+        }
+
+        if (deps.erase_user_persisted_cluster_safe) {
+            return deps.erase_user_persisted_cluster_safe(
+                fingerprint,
+                erased,
+                placement_blocked,
+                cluster_revoke_pending,
+                error
+            );
+        }
+
+        // Standalone compatibility.
+        return deps.users->erase_persisted_if_unplaced(
+            fingerprint,
+            deps.users_path,
+            erased,
+            placement_blocked,
+            error
+        );
+    }
+
+
     static bool ws_files_delete_orphan_external_user_local(
         const WorkspaceFileRouteDeps& deps,
         httplib::Response& res,
@@ -327,101 +370,213 @@ namespace pqnas {
     ) {
         if (deleted) *deleted = false;
 
-        const std::string fp = ws_files_external_trim_copy_local(fingerprint);
+        const std::string fp =
+            ws_files_external_trim_copy_local(
+                fingerprint
+            );
+
         if (fp.empty()) return true;
 
-        // If the identity still belongs to another active external workspace,
-        // keep the backing account.
-        if (ws_files_has_enabled_external_membership_local(deps.workspaces, fp)) {
+        if (ws_files_has_enabled_external_membership_local(
+                deps.workspaces,
+                fp)) {
             return true;
         }
 
-        if (!deps.users || deps.users_path.empty()) return true;
+        if (!deps.users || deps.users_path.empty()) {
+            return true;
+        }
 
         if (!deps.users->load(deps.users_path)) {
             deps.reply_json(res, 500, json{
                 {"ok", false},
                 {"error", "users_reload_failed"},
-                {"message", "failed to reload users before external cleanup"}
+                {
+                    "message",
+                    "failed to reload users before external cleanup"
+                }
             }.dump());
+
             return false;
         }
 
-        auto uopt = deps.users->get(fp);
-        if (!uopt.has_value()) return true;
+        auto uopt =
+            deps.users->get(
+                fp
+            );
+
+        if (!uopt.has_value()) {
+            return true;
+        }
 
         UserRec u = *uopt;
 
-        // Safety guard: never delete a normal DNA-Nexus user from workspace cleanup.
-        if (!ws_files_user_is_external_workspace_only_local(u)) return true;
+        // Security: never turn normal users into orphan-cleanup targets.
+        if (!ws_files_user_is_external_workspace_only_local(u)) {
+            return true;
+        }
 
         const std::string login =
-            pqnas::PasswordCredentials::normalize_login(u.email);
+            pqnas::PasswordCredentials::normalize_login(
+                u.email
+            );
 
-        if (!ws_files_mark_opaque_enrollments_used_for_fp_local(deps, fp, res)) {
+        bool erased = false;
+        bool placement_blocked = false;
+        bool cluster_revoke_pending = false;
+        std::string delete_error;
+
+        // Security: cluster authorization must permit and commit physical
+        // deletion before any login credential is destroyed.
+        const bool delete_ok =
+            ws_files_erase_user_persisted_local(
+                deps,
+                fp,
+                &erased,
+                &placement_blocked,
+                &cluster_revoke_pending,
+                &delete_error
+            );
+
+        if (!delete_ok) {
+            delete_error.clear();
+
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "external_user_delete_failed"},
+                {
+                    "message",
+                    "failed to delete orphan external workspace user"
+                }
+            }.dump());
+
+            return false;
+        }
+
+        if (placement_blocked) {
+            deps.reply_json(res, 409, json{
+                {"ok", false},
+                {"error", "cluster_revoke_required"},
+                {
+                    "message",
+                    "placed external user must be revoked from Storage before deletion"
+                }
+            }.dump());
+
+            return false;
+        }
+
+        if (cluster_revoke_pending) {
+            deps.reply_json(res, 409, json{
+                {"ok", false},
+                {"error", "cluster_revoke_pending"},
+                {
+                    "message",
+                    "Storage revoke reconciliation is still pending"
+                }
+            }.dump());
+
+            return false;
+        }
+
+        if (!erased) {
+            deps.reply_json(res, 500, json{
+                {"ok", false},
+                {"error", "external_user_delete_failed"},
+                {
+                    "message",
+                    "external workspace user was not deleted"
+                }
+            }.dump());
+
+            return false;
+        }
+
+        if (!ws_files_mark_opaque_enrollments_used_for_fp_local(
+                deps,
+                fp,
+                res)) {
             return false;
         }
 
         if (!login.empty()) {
-            const std::string pass_path = ws_files_password_credentials_path_local(deps);
+            const std::string pass_path =
+                ws_files_password_credentials_path_local(
+                    deps
+                );
+
             pqnas::PasswordCredentials pass_creds;
 
             if (!pass_creds.load(pass_path)) {
                 deps.reply_json(res, 500, json{
                     {"ok", false},
                     {"error", "password_credentials_load_failed"},
-                    {"message", "failed to load password credentials during external cleanup"}
+                    {
+                        "message",
+                        "failed to load password credentials during external cleanup"
+                    }
                 }.dump());
+
                 return false;
             }
 
             if (pass_creds.get(login).has_value()) {
-                if (!pass_creds.erase(login) || !pass_creds.save(pass_path)) {
+                if (!pass_creds.erase(login) ||
+                    !pass_creds.save(pass_path)) {
                     deps.reply_json(res, 500, json{
                         {"ok", false},
                         {"error", "password_credentials_cleanup_failed"},
-                        {"message", "failed to remove password credential during external cleanup"}
+                        {
+                            "message",
+                            "failed to remove password credential during external cleanup"
+                        }
                     }.dump());
+
                     return false;
                 }
             }
         }
 
         if (!login.empty()) {
-            const std::string opaque_path = ws_files_opaque_credentials_path_local(deps);
+            const std::string opaque_path =
+                ws_files_opaque_credentials_path_local(
+                    deps
+                );
+
             pqnas::OpaqueCredentials opaque_creds;
 
             if (!opaque_creds.load(opaque_path)) {
                 deps.reply_json(res, 500, json{
                     {"ok", false},
                     {"error", "opaque_credentials_load_failed"},
-                    {"message", "failed to load OPAQUE credentials during external cleanup"}
+                    {
+                        "message",
+                        "failed to load OPAQUE credentials during external cleanup"
+                    }
                 }.dump());
+
                 return false;
             }
 
             if (opaque_creds.get(login).has_value()) {
-                if (!opaque_creds.erase(login) || !opaque_creds.save(opaque_path)) {
+                if (!opaque_creds.erase(login) ||
+                    !opaque_creds.save(opaque_path)) {
                     deps.reply_json(res, 500, json{
                         {"ok", false},
                         {"error", "opaque_credentials_cleanup_failed"},
-                        {"message", "failed to remove OPAQUE credential during external cleanup"}
+                        {
+                            "message",
+                            "failed to remove OPAQUE credential during external cleanup"
+                        }
                     }.dump());
+
                     return false;
                 }
             }
         }
 
-        if (!deps.users->erase(fp) || !deps.users->save(deps.users_path)) {
-            deps.reply_json(res, 500, json{
-                {"ok", false},
-                {"error", "external_user_delete_failed"},
-                {"message", "failed to delete orphan external workspace user"}
-            }.dump());
-            return false;
-        }
-
         if (deleted) *deleted = true;
+
         return true;
     }
 
@@ -1364,28 +1519,6 @@ std::optional<WorkspaceMemberRec> enabled_member_for_actor(const WorkspaceRec& w
     return std::nullopt;
 }
 
-std::string cookie_value_local(const httplib::Request& req, const std::string& name) {
-    const std::string header = ws_header_value(req, "Cookie");
-    if (header.empty() || name.empty()) return "";
-
-    std::size_t pos = 0;
-    while (pos < header.size()) {
-        std::size_t semi = header.find(';', pos);
-        std::string part = header.substr(pos, semi == std::string::npos ? std::string::npos : semi - pos);
-        part = trim_copy_safe(part);
-
-        const std::string prefix = name + "=";
-        if (part.rfind(prefix, 0) == 0) {
-            return part.substr(prefix.size());
-        }
-
-        if (semi == std::string::npos) break;
-        pos = semi + 1;
-    }
-
-    return "";
-}
-
 bool parse_workspace_external_claim_local(const std::string& claim,
                                           std::string* out_workspace_id,
                                           std::string* out_fp,
@@ -1431,8 +1564,17 @@ bool try_workspace_external_cookie_actor_local(const WorkspaceFileRouteDeps& dep
         return false;
     }
 
-    const std::string cookie_val = cookie_value_local(req, "pqnas_workspace_session");
-    if (cookie_val.empty()) return false;
+    std::string cookie_val;
+
+    // Security: credential selection must reject duplicate Cookie headers and
+    // duplicate pqnas_workspace_session names instead of choosing first/last.
+    if (extract_strict_session_cookie(
+            req,
+            "pqnas_workspace_session",
+            &cookie_val
+        ) != StrictSessionCookieResult::Ok) {
+        return false;
+    }
 
     std::string claim_b64;
     long exp = 0;

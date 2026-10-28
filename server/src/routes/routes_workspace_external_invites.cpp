@@ -1323,113 +1323,375 @@ bool workspace_external_mark_opaque_enrollments_used_for_fp_local(
     return true;
 }
 
+bool workspace_external_erase_user_persisted_local(
+    const WorkspaceExternalInviteRouteDeps& deps,
+    const std::string& fingerprint,
+    bool* erased,
+    bool* placement_blocked,
+    bool* cluster_revoke_pending,
+    std::string* error
+) {
+    if (erased) *erased = false;
+    if (placement_blocked) *placement_blocked = false;
+    if (cluster_revoke_pending) *cluster_revoke_pending = false;
+    if (error) error->clear();
+
+    if (!deps.users || deps.users_path.empty()) {
+        if (error) {
+            *error = "users registry unavailable";
+        }
+
+        return false;
+    }
+
+    if (deps.erase_user_persisted_cluster_safe) {
+        return deps.erase_user_persisted_cluster_safe(
+            fingerprint,
+            erased,
+            placement_blocked,
+            cluster_revoke_pending,
+            error
+        );
+    }
+
+    // Standalone compatibility: no Director sync-state exists, but deletion
+    // still has to be one persisted UsersRegistry mutation.
+    return deps.users->erase_persisted_if_unplaced(
+        fingerprint,
+        deps.users_path,
+        erased,
+        placement_blocked,
+        error
+    );
+}
+
+
+bool workspace_external_rollback_user_record_local(
+    const WorkspaceExternalInviteRouteDeps& deps,
+    const std::string& fingerprint
+) {
+    bool erased = false;
+    bool placement_blocked = false;
+    bool cluster_revoke_pending = false;
+    std::string error;
+
+    // Security: rollback is still physical authorization-state deletion.
+    // Use the same persisted / Director-safe path as normal cleanup.
+    const bool ok =
+        workspace_external_erase_user_persisted_local(
+            deps,
+            fingerprint,
+            &erased,
+            &placement_blocked,
+            &cluster_revoke_pending,
+            &error
+        );
+
+    error.clear();
+
+    return
+        ok &&
+        erased &&
+        !placement_blocked &&
+        !cluster_revoke_pending;
+}
+
+
+bool workspace_external_rollback_password_credential_local(
+    const std::string& creds_path,
+    const std::string& login_raw,
+    const std::string& fingerprint,
+    std::string* error
+) {
+    if (error) error->clear();
+
+    const std::string login =
+        pqnas::PasswordCredentials::normalize_login(
+            login_raw
+        );
+
+    if (creds_path.empty() ||
+        login.empty() ||
+        fingerprint.empty()) {
+        if (error) {
+            *error = "invalid_credential_rollback_input";
+        }
+        return false;
+    }
+
+    // Security: never reuse the stale request-local credential snapshot for
+    // rollback. Reload after every conflicting write so a concurrent writer
+    // cannot be overwritten or a deleted credential resurrected.
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        pqnas::PasswordCredentials rollback_creds;
+
+        if (!rollback_creds.load(creds_path)) {
+            if (error) {
+                *error =
+                    "credential_rollback_load_failed";
+            }
+            return false;
+        }
+
+        const auto existing =
+            rollback_creds.get(login);
+
+        if (!existing.has_value()) {
+            return true;
+        }
+
+        // Security: login reuse must never let an old failed request delete a
+        // newer credential that belongs to another fingerprint.
+        if (existing->fingerprint != fingerprint) {
+            if (error) {
+                *error =
+                    "credential_rollback_fingerprint_mismatch";
+            }
+            return false;
+        }
+
+        if (!rollback_creds.erase(login)) {
+            if (error) {
+                *error =
+                    "credential_rollback_erase_failed";
+            }
+            return false;
+        }
+
+        if (rollback_creds.save(creds_path)) {
+            return true;
+        }
+
+        // save() may have rejected a stale generation. Retry from a fresh
+        // snapshot instead of committing the obsolete in-memory state.
+    }
+
+    if (error) {
+        *error =
+            "credential_rollback_save_conflict";
+    }
+
+    return false;
+}
+
+
 bool workspace_external_delete_orphan_user_local(
     const WorkspaceExternalInviteRouteDeps& deps,
     httplib::Response& res,
     const std::string& fingerprint
 ) {
-    const std::string fp = trim_copy_safe(fingerprint);
+    const std::string fp =
+        trim_copy_safe(
+            fingerprint
+        );
+
     if (fp.empty()) return true;
 
-    // Not orphaned: the same external account still belongs to another
-    // enabled external workspace membership.
-    if (workspace_external_has_enabled_external_membership_local(deps.workspaces, fp)) {
+    if (workspace_external_has_enabled_external_membership_local(
+            deps.workspaces,
+            fp)) {
         return true;
     }
 
-    if (!deps.users || deps.users_path.empty()) return true;
+    if (!deps.users || deps.users_path.empty()) {
+        return true;
+    }
 
     if (!deps.users->load(deps.users_path)) {
         deps.reply_json(res, 500, json{
             {"ok", false},
             {"error", "users_reload_failed"},
-            {"message", "failed to reload users before external cleanup"}
+            {
+                "message",
+                "failed to reload users before external cleanup"
+            }
         }.dump());
+
         return false;
     }
 
-    auto uopt = deps.users->get(fp);
-    if (!uopt.has_value()) return true;
+    auto uopt =
+        deps.users->get(
+            fp
+        );
+
+    if (!uopt.has_value()) {
+        return true;
+    }
 
     UserRec u = *uopt;
 
-    // Safety guard: never delete a normal user from this workspace cleanup path.
-    if (!user_is_external_workspace_only_local(u)) return true;
+    // Security: this cleanup path may only remove an isolated external
+    // workspace account, never a normal DNA-Nexus user.
+    if (!user_is_external_workspace_only_local(u)) {
+        return true;
+    }
 
     const std::string login =
-        pqnas::PasswordCredentials::normalize_login(u.email);
+        pqnas::PasswordCredentials::normalize_login(
+            u.email
+        );
 
-    // Invalidate pending OPAQUE setup tokens before deleting the user record.
-    if (!workspace_external_mark_opaque_enrollments_used_for_fp_local(deps, fp, res)) {
+    bool erased = false;
+    bool placement_blocked = false;
+    bool cluster_revoke_pending = false;
+    std::string delete_error;
+
+    // Security: commit the authoritative physical delete before destroying
+    // credentials. A placed user or durable confirmed Storage authorization
+    // must leave the complete login identity intact until revoke completes.
+    const bool delete_ok =
+        workspace_external_erase_user_persisted_local(
+            deps,
+            fp,
+            &erased,
+            &placement_blocked,
+            &cluster_revoke_pending,
+            &delete_error
+        );
+
+    if (!delete_ok) {
+        delete_error.clear();
+
+        deps.reply_json(res, 500, json{
+            {"ok", false},
+            {"error", "external_user_delete_failed"},
+            {
+                "message",
+                "failed to delete orphan external workspace user"
+            }
+        }.dump());
+
         return false;
     }
 
-    // Best-effort classic password credential cleanup for password-mode
-    // external invite accounts.
+    if (placement_blocked) {
+        deps.reply_json(res, 409, json{
+            {"ok", false},
+            {"error", "cluster_revoke_required"},
+            {
+                "message",
+                "placed external user must be revoked from Storage before deletion"
+            }
+        }.dump());
+
+        return false;
+    }
+
+    if (cluster_revoke_pending) {
+        deps.reply_json(res, 409, json{
+            {"ok", false},
+            {"error", "cluster_revoke_pending"},
+            {
+                "message",
+                "Storage revoke reconciliation is still pending"
+            }
+        }.dump());
+
+        return false;
+    }
+
+    if (!erased) {
+        deps.reply_json(res, 500, json{
+            {"ok", false},
+            {"error", "external_user_delete_failed"},
+            {
+                "message",
+                "external workspace user was not deleted"
+            }
+        }.dump());
+
+        return false;
+    }
+
+    // The authoritative user record is now gone. Authentication artifacts can
+    // be cleaned without creating a surviving but credential-less user.
+    if (!workspace_external_mark_opaque_enrollments_used_for_fp_local(
+            deps,
+            fp,
+            res)) {
+        return false;
+    }
+
     if (!login.empty()) {
         const std::string pass_path =
-            workspace_external_password_credentials_path_local(deps);
+            workspace_external_password_credentials_path_local(
+                deps
+            );
 
         pqnas::PasswordCredentials pass_creds;
+
         if (!pass_creds.load(pass_path)) {
             deps.reply_json(res, 500, json{
                 {"ok", false},
                 {"error", "password_credentials_load_failed"},
-                {"message", "failed to load password credentials during external cleanup"}
+                {
+                    "message",
+                    "failed to load password credentials during external cleanup"
+                }
             }.dump());
+
             return false;
         }
 
         if (pass_creds.get(login).has_value()) {
-            if (!pass_creds.erase(login) || !pass_creds.save(pass_path)) {
+            if (!pass_creds.erase(login) ||
+                !pass_creds.save(pass_path)) {
                 deps.reply_json(res, 500, json{
                     {"ok", false},
                     {"error", "password_credentials_cleanup_failed"},
-                    {"message", "failed to remove password credential during external cleanup"}
+                    {
+                        "message",
+                        "failed to remove password credential during external cleanup"
+                    }
                 }.dump());
+
                 return false;
             }
         }
     }
 
-    // Best-effort OPAQUE credential cleanup for OPAQUE-mode external accounts.
     if (!login.empty()) {
         const std::string opaque_path =
-            workspace_external_opaque_credentials_path_local(deps);
+            workspace_external_opaque_credentials_path_local(
+                deps
+            );
 
         pqnas::OpaqueCredentials opaque_creds;
+
         if (!opaque_creds.load(opaque_path)) {
             deps.reply_json(res, 500, json{
                 {"ok", false},
                 {"error", "opaque_credentials_load_failed"},
-                {"message", "failed to load OPAQUE credentials during external cleanup"}
+                {
+                    "message",
+                    "failed to load OPAQUE credentials during external cleanup"
+                }
             }.dump());
+
             return false;
         }
 
         if (opaque_creds.get(login).has_value()) {
-            if (!opaque_creds.erase(login) || !opaque_creds.save(opaque_path)) {
+            if (!opaque_creds.erase(login) ||
+                !opaque_creds.save(opaque_path)) {
                 deps.reply_json(res, 500, json{
                     {"ok", false},
                     {"error", "opaque_credentials_cleanup_failed"},
-                    {"message", "failed to remove OPAQUE credential during external cleanup"}
+                    {
+                        "message",
+                        "failed to remove OPAQUE credential during external cleanup"
+                    }
                 }.dump());
+
                 return false;
             }
         }
     }
 
-    if (!deps.users->erase(fp) || !deps.users->save(deps.users_path)) {
-        deps.reply_json(res, 500, json{
-            {"ok", false},
-            {"error", "external_user_delete_failed"},
-            {"message", "failed to delete orphan external workspace user"}
-        }.dump());
-        return false;
-    }
-
     return true;
 }
+
 
 } // namespace
 
@@ -2187,12 +2449,24 @@ void register_workspace_external_invite_routes(
                     deps.workspaces->save(deps.workspaces_path);
                 }
                 if (deps.users) {
-                    deps.users->erase(fp_hex);
-                    deps.users->save(deps.users_path);
+                    (void)workspace_external_rollback_user_record_local(deps, fp_hex);
                 }
             };
 
-            if (!deps.users->upsert(u)) {
+            // Security: external-user creation is one durable registry
+            // commit. A failed post-rename commit is cleaned through the same
+            // persisted user rollback used by later transaction failures.
+            if (!deps.users->upsert_persisted(
+                    u,
+                    deps.users_path,
+                    nullptr,
+                    nullptr
+                )) {
+                (void)workspace_external_rollback_user_record_local(
+                    deps,
+                    fp_hex
+                );
+
                 deps.reply_json(res, 500, json{
                     {"ok", false},
                     {"error", "user_create_failed"},
@@ -2202,7 +2476,7 @@ void register_workspace_external_invite_routes(
             }
 
             if (!deps.workspaces->add_or_update_member(workspace_id, member)) {
-                deps.users->erase(fp_hex);
+                (void)workspace_external_rollback_user_record_local(deps, fp_hex);
                 deps.reply_json(res, 500, json{
                     {"ok", false},
                     {"error", "member_update_failed"},
@@ -2211,20 +2485,8 @@ void register_workspace_external_invite_routes(
                 return;
             }
 
-            if (!deps.users->save(deps.users_path)) {
-                deps.workspaces->remove_member(workspace_id, fp_hex);
-                deps.users->erase(fp_hex);
-                deps.reply_json(res, 500, json{
-                    {"ok", false},
-                    {"error", "users_save_failed"},
-                    {"message", "failed to save external user"}
-                }.dump());
-                return;
-            }
-
             if (!save_workspaces_or_500(deps, res)) {
-                deps.users->erase(fp_hex);
-                deps.users->save(deps.users_path);
+                (void)workspace_external_rollback_user_record_local(deps, fp_hex);
                 return;
             }
 
@@ -2472,7 +2734,19 @@ void register_workspace_external_invite_routes(
             member.responded_by = actor_fp;
             pqnas::normalize_workspace_member_v1(&member);
 
-            if (!deps.users->upsert(u)) {
+            // Security: external-user creation is persisted atomically
+            // before dependent credential/workspace state is committed.
+            if (!deps.users->upsert_persisted(
+                    u,
+                    deps.users_path,
+                    nullptr,
+                    nullptr
+                )) {
+                (void)workspace_external_rollback_user_record_local(
+                    deps,
+                    fp_hex
+                );
+
                 clear_string_best_effort_local(temp_password);
                 deps.reply_json(res, 500, json{
                     {"ok", false},
@@ -2483,7 +2757,7 @@ void register_workspace_external_invite_routes(
             }
 
             if (!creds.upsert(cred)) {
-                deps.users->erase(fp_hex);
+                (void)workspace_external_rollback_user_record_local(deps, fp_hex);
                 clear_string_best_effort_local(temp_password);
                 deps.reply_json(res, 500, json{
                     {"ok", false},
@@ -2494,8 +2768,16 @@ void register_workspace_external_invite_routes(
             }
 
             if (!deps.workspaces->add_or_update_member(workspace_id, member)) {
-                deps.users->erase(fp_hex);
-                creds.erase(login);
+                const bool user_rolled_back =
+                    workspace_external_rollback_user_record_local(
+                        deps,
+                        fp_hex
+                    );
+
+                if (user_rolled_back) {
+                    creds.erase(login);
+                }
+
                 clear_string_best_effort_local(temp_password);
                 deps.reply_json(res, 500, json{
                     {"ok", false},
@@ -2505,23 +2787,9 @@ void register_workspace_external_invite_routes(
                 return;
             }
 
-            if (!deps.users->save(deps.users_path)) {
-                deps.workspaces->remove_member(workspace_id, fp_hex);
-                deps.users->erase(fp_hex);
-                creds.erase(login);
-                clear_string_best_effort_local(temp_password);
-                deps.reply_json(res, 500, json{
-                    {"ok", false},
-                    {"error", "users_save_failed"},
-                    {"message", "failed to save external user"}
-                }.dump());
-                return;
-            }
-
             if (!creds.save(creds_path)) {
                 deps.workspaces->remove_member(workspace_id, fp_hex);
-                deps.users->erase(fp_hex);
-                deps.users->save(deps.users_path);
+                (void)workspace_external_rollback_user_record_local(deps, fp_hex);
                 clear_string_best_effort_local(temp_password);
                 deps.reply_json(res, 500, json{
                     {"ok", false},
@@ -2533,10 +2801,42 @@ void register_workspace_external_invite_routes(
 
             if (!save_workspaces_or_500(deps, res)) {
                 deps.workspaces->remove_member(workspace_id, fp_hex);
-                deps.users->erase(fp_hex);
-                deps.users->save(deps.users_path);
-                creds.erase(login);
-                creds.save(creds_path);
+
+                const bool user_rolled_back =
+                    workspace_external_rollback_user_record_local(
+                        deps,
+                        fp_hex
+                    );
+
+                if (user_rolled_back) {
+                    std::string credential_rollback_error;
+
+                    if (!workspace_external_rollback_password_credential_local(
+                            creds_path,
+                            login,
+                            fp_hex,
+                            &credential_rollback_error
+                        )) {
+                        // Security: expose incomplete auth rollback instead of
+                        // silently leaving a reusable orphan credential behind.
+                        deps.reply_json(res, 500, json{
+                            {"ok", false},
+                            {
+                                "error",
+                                "credential_rollback_pending"
+                            },
+                            {
+                                "message",
+                                "workspace save failed and credential rollback is incomplete"
+                            },
+                            {
+                                "detail",
+                                credential_rollback_error
+                            }
+                        }.dump());
+                    }
+                }
+
                 clear_string_best_effort_local(temp_password);
                 return;
             }

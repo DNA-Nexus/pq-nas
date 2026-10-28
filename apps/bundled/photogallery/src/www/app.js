@@ -189,6 +189,11 @@
     let selectedRelPaths = new Set();
     let selectionAnchorRelPath = "";
     let searchSeq = 0;
+    let activeSearch = null;
+    let searchRenderTimer = 0;
+    let searchRenderDirty = false;
+    let serverSearchStreamSupported = null;
+    const searchGridNodes = new Map();
     let filterTimer = 0;
     const externalSearchFilters = [];
 
@@ -274,7 +279,7 @@
             }
         }
 
-        const j = await fetchJson(galleryListUrl(path));
+        const j = await fetchJson(galleryListUrl(path), { signal: opts.signal });
 
         const items = cloneGalleryItems(filterInternalPqnasGalleryItems(Array.isArray(j.items) ? j.items : []));
 
@@ -312,10 +317,17 @@
         previewZoom: 1,
         activeTilePath: "",
         mapFocusRelPath: "",
+        mapIncludeSubfolders: false,
+        mapIncludeZero: false,
+        mapScan: { root: "", items: [], loaded: false, loading: false,
+            error: "", truncated: false, folders: 0, files: 0 },
         searchItems: [],
         searchBasePath: "",
         searchLoaded: false,
         searchLoading: false,
+        searchError: "",
+        searchTruncated: false,
+        searchStats: { dirs: 0, files: 0, file_bytes: 0 },
         treeStats: {
             basePath: "",
             loaded: false,
@@ -327,6 +339,167 @@
         }
     };
 
+
+    // Map scope is deliberately independent of the grid's recursive text search.
+    // Use the ordinary per-folder API: it joins current EXIF metadata and avoids
+    // relying on the fast recursive endpoint's cache-only result set.
+    const mapGeo = window.PQNAS_PHOTOGALLERY.geoScope;
+    const mapSubfoldersInput = el("mapIncludeSubfolders");
+    const mapZeroInput = el("mapIncludeZero");
+    const mapScopeMessage = el("mapScopeMessage");
+    let mapScopeGeneration = 0;
+    let galleryLoadGeneration = 0;
+    const mapScanner = mapGeo.createScanner((path, signal) =>
+        fetchJson(galleryListUrl(path), { signal })
+    );
+
+    function mapText(key, values = {}) {
+        let language = document.documentElement.lang;
+        try {
+            const selected = window.PQNAS_I18N?.getLanguage?.();
+            if (selected) language = selected;
+        } catch (_) { /* Standalone/test page: use the document language. */ }
+        return mapGeo.text(language, key, values);
+    }
+
+    function setMapScopeMessage(value) {
+        if (mapScopeMessage) mapScopeMessage.textContent = value;
+        // Update the existing loading/error panel too; never rebuild Leaflet
+        // or restart a folder scan just to refresh language/progress text.
+        const stateText = el("mapScopeStateText");
+        if (stateText) stateText.textContent = value;
+    }
+
+    function cancelMapScope(clear = false) {
+        mapScopeGeneration++;
+        mapScanner.cancel();
+        state.mapScan.loading = false;
+        if (clear) {
+            state.mapScan = { root: "", items: [], loaded: false, loading: false,
+                error: "", truncated: false, folders: 0, files: 0 };
+        }
+    }
+
+    function mapSourceItems() {
+        if (!state.mapIncludeSubfolders) return state.items;
+        const scan = state.mapScan;
+        return scan.loaded && scan.root === state.curPath ? scan.items : [];
+    }
+
+    function syncMapScopeControls() {
+        const options = el("mapScopeOptions");
+        if (options) options.setAttribute("aria-label", mapText("group"));
+        if (mapSubfoldersInput) {
+            mapSubfoldersInput.checked = state.mapIncludeSubfolders;
+            mapSubfoldersInput.title = mapText("subfoldersTip");
+        }
+        if (mapZeroInput) {
+            mapZeroInput.checked = state.mapIncludeZero;
+            mapZeroInput.title = mapText("zerosTip");
+        }
+        if (el("mapSubfoldersLabel")) el("mapSubfoldersLabel").textContent = mapText("subfolders");
+        if (el("mapZeroLabel")) el("mapZeroLabel").textContent = mapText("zeros");
+        if (!mapScopeMessage) return;
+        mapScopeMessage.title = mapText("indexNote");
+        const scan = state.mapScan;
+        if (state.mapIncludeSubfolders && scan.loading) {
+            setMapScopeMessage(mapText("loading", scan));
+            return;
+        }
+        if (state.mapIncludeSubfolders && scan.error) {
+            setMapScopeMessage(mapText("failed"));
+            return;
+        }
+        const parts = [mapText(state.mapIncludeSubfolders ? "recursive" : "current")];
+        const gps = mapGeo.counts(mapSourceItems());
+        if (gps.suspect_zero) parts.push(mapText(state.mapIncludeZero ? "shownZero" : "hiddenZero", { count: gps.suspect_zero }));
+        if (state.mapIncludeSubfolders && scan.truncated) parts.push(mapText("partial"));
+        setMapScopeMessage(parts.join(" · "));
+    }
+
+    async function refreshMapView(force = false) {
+        if (state.viewMode !== "map") return;
+        applyViewModeUi();
+        if (!state.mapIncludeSubfolders) {
+            cancelMapScope();
+            renderMap();
+            updateViewStatus();
+            setBadge("ok", mapText("ready"));
+            return;
+        }
+        const root = state.curPath;
+        if (!force && state.mapScan.root === root) {
+            if (state.mapScan.loading) {
+                syncMapScopeControls();
+                return; // The in-flight scan renders with the latest UI filters.
+            }
+            if (state.mapScan.loaded) {
+                renderMap();
+                updateViewStatus();
+                setBadge("ok", mapText("ready"));
+                return;
+            }
+        }
+        cancelMapScope(true);
+        const mine = mapScopeGeneration;
+        state.mapScan.root = root;
+        state.mapScan.loading = true;
+        renderMap();
+        updateViewStatus();
+        setBadge("warn", mapText("busy"));
+        const stillCurrent = () => mine === mapScopeGeneration &&
+            state.viewMode === "map" && state.mapIncludeSubfolders && state.curPath === root;
+        try {
+            const result = await mapScanner.scan(root, state.items, progress => {
+                if (!stillCurrent()) return;
+                state.mapScan.folders = progress.folders;
+                state.mapScan.files = progress.files;
+                syncMapScopeControls();
+                updateViewStatus();
+            });
+            if (!stillCurrent()) return;
+            state.mapScan = { ...result, loaded: true, loading: false, error: "", files: result.items.length };
+        } catch (error) {
+            if (!stillCurrent() || error.name === "AbortError") return;
+            state.mapScan.error = String(error && error.message || error);
+            state.mapScan.loaded = false;
+            state.mapScan.items = [];
+        } finally {
+            if (stillCurrent()) {
+                state.mapScan.loading = false;
+                renderMap();
+                updateViewStatus();
+                setBadge(state.mapScan.error ? "err" : "ok", mapText(state.mapScan.error ? "error" : "ready"));
+            }
+        }
+    }
+
+    mapSubfoldersInput?.addEventListener("change", () => {
+        state.mapIncludeSubfolders = mapSubfoldersInput.checked;
+        state.mapFocusRelPath = "";
+        void refreshVisibleView(false);
+    });
+    mapZeroInput?.addEventListener("change", () => {
+        state.mapIncludeZero = mapZeroInput.checked;
+        void refreshVisibleView(false);
+    });
+    function refreshMapLabels() {
+        syncMapScopeControls();
+        if (state.viewMode === "map") {
+            updateViewStatus();
+            const scan = state.mapScan;
+            const busy = state.mapIncludeSubfolders && scan.loading;
+            const failed = state.mapIncludeSubfolders && !!scan.error;
+            setBadge(failed ? "err" : busy ? "warn" : "ok",
+                mapText(failed ? "error" : busy ? "busy" : "ready"));
+        }
+    }
+    window.addEventListener("pqnas-language-changed", refreshMapLabels);
+    new MutationObserver(refreshMapLabels).observe(document.documentElement, {
+        attributes: true, attributeFilter: ["lang"]
+    });
+    window.addEventListener("pagehide", () => cancelMapScope());
+    syncMapScopeControls();
 
     function injectTopModeButtonCss() {
         if (document.getElementById("pgTopModeButtonCss")) return;
@@ -607,6 +780,10 @@ html[data-theme="orange"] .pgTopModeBtnActive{
             normalized: norm
         });
 
+        if (norm !== prev) {
+            galleryLoadGeneration++;
+            invalidateSearchCache();
+        }
         state.curPath = norm;
         return state.curPath;
     }
@@ -878,21 +1055,25 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         }
     }
 
-    async function fetchServerRecursiveSearchItems(rootPath, force = false) {
+    async function fetchServerRecursiveSearchItems(rootPath, force = false, signal) {
         if (serverRecursiveSearchSupported === false) {
             return null;
         }
 
         try {
-            const j = await fetchJson(galleryRecursiveSearchUrl(rootPath, force));
+            const j = await fetchJson(galleryRecursiveSearchUrl(rootPath, force), { signal });
             const raw = filterInternalPqnasGalleryItems(Array.isArray(j.items) ? j.items : []);
 
             serverRecursiveSearchSupported = true;
 
-            return raw
-                .filter((it) => it && (!it.type || it.type === "file"))
-                .map((it) => normalizeServerSearchItem(it, rootPath));
+            return {
+                items: raw.filter((it) => it && (!it.type || it.type === "file"))
+                    .map((it) => normalizeServerSearchItem(it, rootPath)),
+                truncated: j.truncated === true,
+                stats: j.stats || {}
+            };
         } catch (e) {
+            if (signal?.aborted || e?.name === "AbortError") throw e;
             if (isEndpointUnsupportedError(e)) {
                 serverRecursiveSearchSupported = false;
                 return null;
@@ -3355,6 +3536,8 @@ html[data-theme="orange"] .pgTopModeBtnActive{
     }
 
     function isSearchMode() {
+        // Map scope is chosen explicitly, not implicitly by text/EXIF filters.
+        if (state.viewMode === "map") return false;
         const hasText = !!String(state.filter || "").trim();
         const rf = Number(state.ratingFilter);
         const hasRating = Number.isFinite(rf) && rf >= 0;
@@ -3363,10 +3546,35 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
     function invalidateSearchCache() {
         searchSeq++;
+        if (activeSearch) activeSearch.controller.abort();
+        activeSearch = null;
+        window.clearTimeout(searchRenderTimer);
+        searchRenderTimer = 0;
+        searchRenderDirty = false;
         state.searchItems = [];
         state.searchBasePath = "";
         state.searchLoaded = false;
         state.searchLoading = false;
+        state.searchError = "";
+        state.searchTruncated = false;
+        state.searchStats = { dirs: 0, files: 0, file_bytes: 0 };
+    }
+
+    function publishSearchProgress(seq, changed = false) {
+        searchRenderDirty = searchRenderDirty || changed;
+        if (searchRenderTimer) return;
+        searchRenderTimer = window.setTimeout(() => {
+            searchRenderTimer = 0;
+            if (seq !== searchSeq || !isSearchMode()) return;
+            // The map owns an independent folder scan. Publish only the grid's
+            // search lifecycle here; its tiles are reconciled in place.
+            if (searchRenderDirty) {
+                if (state.viewMode === "grid") renderGrid();
+                window.dispatchEvent(new CustomEvent("photogallery:view-updated"));
+                searchRenderDirty = false;
+            }
+            updateViewStatus();
+        }, 100);
     }
 
     function groupPathForItem(item) {
@@ -3383,76 +3591,106 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         });
     }
 
-    async function ensureRecursiveSearchItems(force = false) {
+    function ensureRecursiveSearchItems(force = false) {
         const root = String(state.curPath || "");
-
-        if (!force && state.searchLoaded && state.searchBasePath === root) {
-            state.searchLoading = false;
-            return state.searchItems;
+        if (!force && state.searchBasePath === root) {
+            if (activeSearch) return activeSearch.promise;
+            if (state.searchLoaded || state.searchError) return Promise.resolve(state.searchItems);
         }
-
-        const mySeq = ++searchSeq;
+        invalidateSearchCache();
+        const seq = searchSeq;
+        const controller = new AbortController();
+        const signal = controller.signal;
         state.searchLoading = true;
-        state.searchLoaded = false;
         state.searchBasePath = root;
-        state.searchItems = [];
+        const seen = new Set();
 
-        setStatus(`Loading photo index under /${root || ""} …`);
-
-        const serverItems = await fetchServerRecursiveSearchItems(root, force);
-
-        if (mySeq !== searchSeq) throw new Error("__stale_search__");
-
-        if (serverItems) {
-            state.searchItems = serverItems;
-            state.searchLoaded = true;
-            state.searchLoading = false;
-            return state.searchItems;
+        function checkCurrent() {
+            if (seq !== searchSeq || signal.aborted || root !== state.curPath) {
+                throw new Error("__stale_search__");
+            }
+        }
+        function progress(stats, changed = false) {
+            checkCurrent();
+            state.searchStats = { ...state.searchStats, ...stats };
+            publishSearchProgress(seq, changed);
+        }
+        function append(items, stats = {}) {
+            checkCurrent();
+            const previousCount = state.searchItems.length;
+            for (const item of filterInternalPqnasGalleryItems(items)) {
+                if (!item || (item.type && item.type !== "file")) continue;
+                const normalized = normalizeServerSearchItem(item, root);
+                if (!normalized.rel_path || seen.has(normalized.rel_path)) continue;
+                seen.add(normalized.rel_path);
+                state.searchItems.push(normalized);
+            }
+            progress(stats, previousCount !== state.searchItems.length);
         }
 
-        const out = [];
-        let scannedFolders = 0;
+        const scan = { controller, promise: null };
+        activeSearch = scan;
+        scan.promise = (async () => {
+            try {
+                const stream = window.PQNAS_PHOTOGALLERY?.searchStream;
+                if (serverSearchStreamSupported !== false && stream) {
+                    const url = galleryRecursiveSearchUrl(root, force)
+                        .replace("/gallery/search", "/gallery/search_stream");
+                    const done = await stream.read(url, { signal, onBatch: append, onProgress: progress });
+                    checkCurrent();
+                    if (done) {
+                        serverSearchStreamSupported = true;
+                        state.searchTruncated = done.truncated === true;
+                        state.searchLoaded = true;
+                        return state.searchItems;
+                    }
+                    serverSearchStreamSupported = false;
+                }
 
-        async function walk(path) {
-            if (mySeq !== searchSeq) throw new Error("__stale_search__");
+                const server = await fetchServerRecursiveSearchItems(root, force, signal);
+                checkCurrent();
+                if (server) {
+                    append(server.items, server.stats);
+                    state.searchTruncated = server.truncated;
+                    state.searchLoaded = true;
+                    return state.searchItems;
+                }
 
-            scannedFolders++;
-            setStatus(`Searching /${path || ""} … folders: ${scannedFolders}, photos: ${out.length}`);
-
-            const j = await fetchGalleryList(path, { force });
-            const items = sortItems(filterInternalPqnasGalleryItems(Array.isArray(j.items) ? j.items : []));
-
-            for (const it of items) {
-                const rel = joinPath(path, it.name);
-                if (it.type === "file") {
-                    out.push({
-                        ...it,
-                        rel_path: rel,
-                        base_path: path
+                async function walk(path) {
+                    checkCurrent();
+                    const j = await fetchGalleryList(path, { force, signal });
+                    checkCurrent();
+                    const items = sortItems(filterInternalPqnasGalleryItems(Array.isArray(j.items) ? j.items : []));
+                    const photos = items.filter((it) => it.type === "file").map((it) => ({
+                        ...it, rel_path: joinPath(path, it.name), base_path: path
+                    }));
+                    append(photos, {
+                        dirs: state.searchStats.dirs + 1,
+                        files: state.searchItems.length + photos.length,
+                        file_bytes: state.searchStats.file_bytes + photos.reduce((sum, it) => sum + (Number(it.size_bytes) || 0), 0)
                     });
+                    for (const it of items) {
+                        if (it.type === "dir") await walk(joinPath(path, it.name));
+                    }
+                }
+                await walk(root);
+                checkCurrent();
+                state.searchLoaded = true;
+                return state.searchItems;
+            } catch (e) {
+                checkCurrent();
+                state.searchError = String(e?.message || e);
+                throw e;
+            } finally {
+                if (seq === searchSeq) {
+                    state.searchLoading = false;
+                    activeSearch = null;
+                    window.clearTimeout(searchRenderTimer);
+                    searchRenderTimer = 0;
                 }
             }
-
-            for (const it of items) {
-                if (it.type === "dir") {
-                    await walk(joinPath(path, it.name));
-                }
-            }
-        }
-
-        try {
-            await walk(root);
-
-            if (mySeq !== searchSeq) throw new Error("__stale_search__");
-
-            state.searchItems = out;
-            state.searchLoaded = true;
-            return out;
-        } finally {
-            if (mySeq === searchSeq) {
-                state.searchLoading = false;
-            }
-        }
+        })();
+        return scan.promise;
     }
 
     function makeSearchGroupHeader(folderPath, count, first) {
@@ -3493,17 +3731,37 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
         const items = filteredItems();
         if (state.viewMode === "map") {
-            const gpsCount = mapItems().length;
-            const textTxt =
-                state.filter ? ` • filter: ${state.filter}` : "";
-            const rf = Number(state.ratingFilter);
-            const ratingTxt =
-                rf < 0 ? "" :
-                    (rf === 0 ? " • unrated only" : ` • ${rf}★ only`);
-
-            setStatus(`Map: ${gpsCount} GPS photo${gpsCount === 1 ? "" : "s"} under /${state.curPath || ""}${ratingTxt}${textTxt}`);
+            syncMapScopeControls();
+            if (state.mapIncludeSubfolders && state.mapScan.loading) {
+                setStatus(mapText("loading", state.mapScan));
+            } else if (state.mapIncludeSubfolders && state.mapScan.error) {
+                setStatus(mapText("failed"));
+            } else {
+                setStatus(mapText("mapCount", {
+                    count: mapItems().length,
+                    scope: mapText(state.mapIncludeSubfolders ? "recursive" : "current")
+                }));
+            }
             return;
         }
+        if (isSearchMode() && (state.searchLoading || state.searchError || state.searchTruncated)) {
+            const count = filteredItems().length;
+            const stats = state.searchStats;
+            if (state.searchLoading) {
+                setBadge("warn", "search…");
+                setStatus(pgT("photogallery.search.progress", { count, folders: stats.dirs, files: stats.files },
+                    "Searching… found {count} photos • checked {folders} folders, {files} photos"));
+            } else {
+                setBadge("warn", "partial");
+                setStatus(state.searchError
+                    ? pgT("photogallery.search.failed_partial", { count, error: state.searchError },
+                        "Search stopped: {error} • {count} matches shown; results are incomplete. Refresh to retry.")
+                    : pgT("photogallery.search.truncated", { count },
+                        "Search limit reached • {count} matches shown; results are incomplete."));
+            }
+            return;
+        }
+
         if (isSearchMode()) {
             const pathCount = new Set(items.map((it) => groupPathForItem(it))).size;
             const scopeTxt = ` under /${state.curPath || ""}`;
@@ -3517,22 +3775,34 @@ html[data-theme="orange"] .pgTopModeBtnActive{
     }
 
     async function refreshVisibleView(forceSearch = false) {
+        if (state.viewMode === "map") {
+            await refreshMapView(forceSearch);
+            return;
+        }
         try {
+            if (!forceSearch && activeSearch && state.searchBasePath === state.curPath) {
+                renderGrid();
+                window.dispatchEvent(new CustomEvent("photogallery:view-updated"));
+                if (!isSearchMode()) setBadge("ok", "ready");
+                updateViewStatus();
+                return;
+            }
             if (isSearchMode()) {
                 const needSearch =
                     forceSearch ||
-                    !state.searchLoaded ||
+                    (!state.searchLoaded && !state.searchError) ||
                     state.searchBasePath !== state.curPath;
 
                 if (needSearch) {
                     state.searchLoading = true;
                     renderGrid();
                     setBadge("warn", "search…");
-                    setStatus("Searching subfolders…");
+                    setStatus(pgT("photogallery.search.searching", null, "Searching subfolders…"));
                     await ensureRecursiveSearchItems(forceSearch);
                 }
             } else {
-                state.searchLoading = false;
+                // A running scan can finish and remain cached while the user
+                // temporarily clears the filter.
             }
 
             renderGrid();
@@ -3545,8 +3815,8 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
             state.searchLoading = false;
             renderGrid();
-            setBadge("err", "error");
-            setStatus(`Search failed: ${msg}`);
+            window.dispatchEvent(new CustomEvent("photogallery:view-updated"));
+            updateViewStatus();
         }
     }
 
@@ -3585,7 +3855,7 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
         add(it && it.capture_time_text);
 
-        if (it && it.has_gps) {
+        if (hasUsableGps(it)) {
             add("gps");
             add("has gps");
             add("geotag");
@@ -3615,15 +3885,20 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         return bits.join(" • ");
     }
 
-    function filteredItems() {
+    function filteredItems(sourceItems = null) {
         const q = String(state.filter || "").trim().toLowerCase();
         const rating = Number(state.ratingFilter);
 
-        const baseItems = isSearchMode()
-            ? sortSearchItems(state.searchItems)
-            : sortItems(state.items);
+        const useSearchOrder = sourceItems !== null || state.viewMode === "map" || isSearchMode();
+        const baseItems = sourceItems !== null
+            ? sourceItems
+            : state.viewMode === "map"
+                ? mapSourceItems()
+                : isSearchMode()
+                    ? state.searchItems
+                    : sortItems(state.items);
 
-        return baseItems.filter((it) => {
+        const matches = baseItems.filter((it) => {
             if (Number.isFinite(rating) && rating >= 0) {
                 if (it.type !== "file") return false;
                 const stars = Number(it.rating || 0) || 0;
@@ -3646,6 +3921,7 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
             return hay.includes(q);
         });
+        return useSearchOrder ? sortSearchItems(matches) : matches;
     }
     function displayItems() {
         const items = filteredItems();
@@ -4849,42 +5125,22 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         return wrap;
     }
     function hasUsableGps(item) {
-        if (!item || item.type !== "file" || !item.has_gps) return false;
-
-        const rawLat = item.gps_latitude;
-        const rawLon = item.gps_longitude;
-
-        if (
-            rawLat == null ||
-            rawLon == null ||
-            rawLat === "" ||
-            rawLon === ""
-        ) {
-            return false;
-        }
-
-        const lat = Number(rawLat);
-        const lon = Number(rawLon);
-
-        return (
-            Number.isFinite(lat) &&
-            Number.isFinite(lon) &&
-            lat >= -90 &&
-            lat <= 90 &&
-            lon >= -180 &&
-            lon <= 180
-        );
+        return mapGeo.hasUsableGps(item, state.mapIncludeZero);
     }
 
     function showItemOnMap(item) {
         if (!hasUsableGps(item)) return;
 
         state.mapFocusRelPath = currentRelPathFor(item);
+        // Explicitly locating a recursive search hit must include its folder.
+        if (parentPath(state.mapFocusRelPath) !== normalizeRelPath(state.curPath)) {
+            state.mapIncludeSubfolders = true;
+        }
         setViewMode("map");
     }
 
     function mapItems() {
-        return filteredItems().filter(hasUsableGps);
+        return filteredItems(mapSourceItems()).filter(hasUsableGps);
     }
 
     function applyViewModeUi() {
@@ -4910,50 +5166,36 @@ html[data-theme="orange"] .pgTopModeBtnActive{
     }
 
     function setViewMode(mode) {
-        if (mode === "map") {
-            state.viewMode = "map";
-        } else if (mode === "albums") {
-            state.viewMode = "albums";
-        } else {
-            state.viewMode = "grid";
+        const next = mode === "map" ? "map" : mode === "albums" ? "albums" : "grid";
+        if (next !== state.viewMode) {
+            cancelMapScope();
+            // A pending grid search must not paint stale results over the map.
+            if (state.searchLoading) invalidateSearchCache();
         }
-
-        if (state.viewMode !== "map") {
+        state.viewMode = next;
+        if (next !== "map") {
             state.mapFocusRelPath = "";
             window.PQNAS_PHOTOGALLERY?.map?.destroyMap?.();
         }
-
-        renderGrid();
-        updateViewStatus();
-
-        if (state.viewMode === "map") {
-            window.setTimeout(() => {
-                try {
-                    window.PQNAS_PHOTOGALLERY?.map?.runtime?.map?.invalidateSize?.();
-                } catch (_) {}
-            }, 0);
-        }
+        void refreshVisibleView(false);
     }
 
     function renderMap() {
         if (!mapCanvas) return;
-
-        if (isSearchMode() && state.searchLoading && !state.searchLoaded) {
+        syncMapScopeControls();
+        const scan = state.mapScan;
+        if (state.mapIncludeSubfolders && (scan.loading || scan.error)) {
+            window.PQNAS_PHOTOGALLERY?.map?.destroyMap?.();
             mapCanvas.replaceChildren();
-
-            const loading = document.createElement("div");
-            loading.className = "emptyState";
-            loading.innerHTML = `
-            <div class="h">Searching subfolders…</div>
-            <div class="p">Scanning the current folder and all deeper folders for photos with GPS coordinates.</div>
-        `;
-            mapCanvas.appendChild(loading);
+            const message = document.createElement("div");
+            message.className = "emptyState";
+            message.id = "mapScopeStateText";
+            message.textContent = scan.error ? mapText("failed") : mapText("loading", scan);
+            mapCanvas.appendChild(message);
             refreshFooterStats();
             return;
         }
-
         const items = mapItems();
-
         window.PQNAS_PHOTOGALLERY?.map?.render(mapCanvas, items, {
             currentRelPathFor,
             fmtTime,
@@ -4962,9 +5204,7 @@ html[data-theme="orange"] .pgTopModeBtnActive{
             galleryThumbUrl,
             focusRelPath: state.mapFocusRelPath,
             onFocusApplied(relPath) {
-                if (state.mapFocusRelPath === relPath) {
-                    state.mapFocusRelPath = "";
-                }
+                if (state.mapFocusRelPath === relPath) state.mapFocusRelPath = "";
             }
         });
     }
@@ -5156,93 +5396,179 @@ html[data-theme="orange"] .pgTopModeBtnActive{
         }
         renderGridBody();
     }
+    function releaseGridNode(node) {
+        for (const img of node.querySelectorAll("img.thumb")) {
+            thumbObserver?.unobserve(img);
+            observedThumbs.delete(img);
+        }
+        node.remove();
+    }
+
+    function searchItemSignature(item) {
+        // bursts.js attaches a circular _pg_capture object. Fingerprint only
+        // fields used by tiles, plus the member paths of a RAW+JPEG capture.
+        const capture = item._pg_capture;
+        return JSON.stringify([
+            state.thumbSize, item.type, item.name, currentRelPathFor(item),
+            item.size_bytes, item.mtime_unix, item.rating, item.keywords,
+            item.tags_text, item.description, item.notes_text, item.exif,
+            item.capture_time_unix, item.capture_time_text,
+            item.has_gps, item.gps_latitude, item.gps_longitude,
+            capture?.pair_kind, capture?.items?.map(currentRelPathFor)
+        ]);
+    }
+
+    function renderSearchGrid(items) {
+        const descriptors = [];
+        const groups = new Map();
+        for (const item of items) {
+            const key = groupPathForItem(item);
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(item);
+        }
+        let first = true;
+        for (const [path, groupItems] of groups) {
+            const isFirst = first;
+            descriptors.push({
+                key: `folder:${path}`,
+                signature: `${groupItems.length}:${isFirst}`,
+                create: () => makeSearchGroupHeader(path, groupItems.length, isFirst)
+            });
+            const entries = window.PQNAS_PHOTOGALLERY?.bursts?.buildDisplayItems
+                ? window.PQNAS_PHOTOGALLERY.bursts.buildDisplayItems(groupItems)
+                : groupItems.map((item) => ({ kind: "item", item }));
+            for (const entry of entries) {
+                const burst = entry.burst;
+                descriptors.push(burst ? {
+                    key: `burst:${burst.key}`,
+                    signature: JSON.stringify([burst.expanded, burst.coverIdx, burst.items.map(searchItemSignature)]),
+                    create: () => makeBurstBlock(burst)
+                } : {
+                    key: `item:${currentRelPathFor(entry.item)}`,
+                    signature: searchItemSignature(entry.item),
+                    create: () => makeTile(entry.item)
+                });
+            }
+            first = false;
+        }
+        if (!items.length) {
+            const pending = state.searchLoading;
+            const incomplete = !!state.searchError || state.searchTruncated;
+            const title = pending
+                ? pgT("photogallery.search.searching", null, "Searching subfolders…")
+                : incomplete
+                    ? pgT("photogallery.search.incomplete", null, "Search incomplete")
+                    : pgT("photogallery.search.no_matches", null, "No matching photos");
+            const detail = pending
+                ? pgT("photogallery.search.first_matches", null, "Matching photos will appear here as they are found.")
+                : incomplete
+                    ? pgT("photogallery.search.retry", null, "Refresh to retry the search.")
+                    : pgT("photogallery.search.no_matches_detail", null, "No photos matched the current filters in this folder or its subfolders.");
+            descriptors.push({
+                key: "empty", signature: `${title}:${detail}`,
+                create() {
+                    const node = document.createElement("div");
+                    node.className = "emptyState";
+                    const head = document.createElement("div");
+                    head.className = "h";
+                    head.textContent = title;
+                    const body = document.createElement("div");
+                    body.className = "p";
+                    body.textContent = detail;
+                    node.append(head, body);
+                    return node;
+                }
+            });
+        }
+
+        // Keep the first visible surviving node at the same screen position
+        // when a newly discovered folder sorts above the user's viewport.
+        const desiredByKey = new Map(descriptors.map((d) => [d.key, d]));
+        const wanted = new Set(desiredByKey.keys());
+        const viewportTop = gridWrap?.getBoundingClientRect().top || 0;
+        const anchor = Array.from(gridEl.children).find((node) => {
+            const key = node.dataset.pgGridKey;
+            return searchGridNodes.get(key)?.signature === desiredByKey.get(key)?.signature
+                && wanted.has(key) && node.getBoundingClientRect().bottom > viewportTop;
+        });
+        const anchorTop = anchor?.getBoundingClientRect().top;
+        const previousAnchorStyle = gridWrap?.style.overflowAnchor;
+        if (gridWrap) gridWrap.style.overflowAnchor = "none";
+
+        // Remove the initial directory grid/placeholder once, then retain all
+        // unchanged search nodes and their loaded thumbnails between batches.
+        for (const node of Array.from(gridEl.children)) {
+            if (!node.dataset.pgGridKey) releaseGridNode(node);
+        }
+        let cursor = gridEl.firstChild;
+        for (const descriptor of descriptors) {
+            let cached = searchGridNodes.get(descriptor.key);
+            if (!cached || cached.signature !== descriptor.signature) {
+                const node = descriptor.create();
+                node.dataset.pgGridKey = descriptor.key;
+                if (cached) {
+                    if (cursor === cached.node) cursor = cached.node.nextSibling;
+                    releaseGridNode(cached.node);
+                }
+                cached = { node, signature: descriptor.signature };
+                searchGridNodes.set(descriptor.key, cached);
+            }
+            if (cached.node !== cursor) gridEl.insertBefore(cached.node, cursor);
+            cursor = cached.node.nextSibling;
+        }
+        for (const [key, cached] of searchGridNodes) {
+            if (!wanted.has(key)) {
+                releaseGridNode(cached.node);
+                searchGridNodes.delete(key);
+            }
+        }
+        if (gridWrap && anchor?.isConnected) {
+            gridWrap.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
+        }
+        if (gridWrap) gridWrap.style.overflowAnchor = previousAnchorStyle;
+    }
+
     function renderGridBody() {
         if (!gridEl) return;
-
-        clearObservedThumbs();
-        gridEl.replaceChildren();
-
-        if (isSearchMode() && state.searchLoading && !state.searchLoaded) {
-            state.activeTilePath = "";
-            const loading = document.createElement("div");
-            loading.className = "emptyState";
-            loading.innerHTML = `
-            <div class="h">Searching subfolders…</div>
-            <div class="p">Scanning the current folder and all deeper folders for matching photos.</div>
-        `;
-            gridEl.appendChild(loading);
-            refreshFooterStats();
-            return;
-        }
-
         const items = filteredItems();
-
-        if (!items.length) {
-            state.activeTilePath = "";
-
-            const empty = document.createElement("div");
-            empty.className = "emptyState";
-
-            if (isSearchMode()) {
-                empty.innerHTML = `
-        <div class="h">No matching photos</div>
-        <div class="p">No photos matched the current search or rating filter in this folder or its subfolders.</div>
-    `;
-            } else {
-                empty.innerHTML = `
-        <div class="h">Nothing to show</div>
-        <div class="p">This folder has no subfolders or supported images that match the current filter.</div>
-    `;
-            }
-
-            gridEl.appendChild(empty);
-            refreshFooterStats();
-            return;
-        }
-
         if (isSearchMode()) {
-            const groups = new Map();
-
-            for (const item of items) {
-                const key = groupPathForItem(item);
-                if (!groups.has(key)) groups.set(key, []);
-                groups.get(key).push(item);
-            }
-
-            let first = true;
-            for (const [folderPath, groupItems] of groups) {
-                gridEl.appendChild(makeSearchGroupHeader(folderPath, groupItems.length, first));
-                const displayGroupItems =
-                    window.PQNAS_PHOTOGALLERY?.bursts?.buildDisplayItems
-                        ? window.PQNAS_PHOTOGALLERY.bursts.buildDisplayItems(groupItems)
-                        : groupItems.map((item) => ({ kind: "item", item }));
-
-                for (const entry of displayGroupItems) {
+            renderSearchGrid(items);
+        } else {
+            clearObservedThumbs();
+            searchGridNodes.clear();
+            gridEl.replaceChildren();
+            if (!items.length) {
+                state.activeTilePath = "";
+                const empty = document.createElement("div");
+                empty.className = "emptyState";
+                empty.innerHTML = `
+                    <div class="h">Nothing to show</div>
+                    <div class="p">This folder has no subfolders or supported images that match the current filter.</div>`;
+                gridEl.appendChild(empty);
+            } else {
+                for (const entry of displayItems()) {
                     if (entry.kind === "burst") gridEl.appendChild(makeBurstBlock(entry.burst));
                     else gridEl.appendChild(makeTile(entry.item));
                 }
-                first = false;
-            }
-        } else {
-            const entries = displayItems();
-            for (const entry of entries) {
-                if (entry.kind === "burst") gridEl.appendChild(makeBurstBlock(entry.burst));
-                else gridEl.appendChild(makeTile(entry.item));
             }
         }
-
         applySelectionToDom();
         ensureActiveTile();
         refreshFooterStats();
     }
 
     async function load(forceSearch = false) {
+        const loadPath = state.curPath;
+        const loadGeneration = ++galleryLoadGeneration;
+        if (forceSearch) invalidateSearchCache();
+        cancelMapScope(true);
         closeContextMenu();
         setBadge("warn", "loading…");
         setStatus("Loading gallery…");
 
         try {
-            const j = await fetchGalleryList(state.curPath, { force: forceSearch });
+            const j = await fetchGalleryList(loadPath, { force: forceSearch });
+            if (loadGeneration !== galleryLoadGeneration || state.curPath !== loadPath) return;
             state.items = filterInternalPqnasGalleryItems(Array.isArray(j.items) ? j.items : []);
             if (state.treeStats.basePath !== state.curPath) {
                 resetTreeStats();
@@ -5264,6 +5590,7 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
             await refreshVisibleView(forceSearch);
         } catch (e) {
+            if (loadGeneration !== galleryLoadGeneration || state.curPath !== loadPath) return;
             const msg = String(e && e.message ? e.message : e);
             if (msg === "__stale_search__") return;
 
@@ -5331,22 +5658,12 @@ html[data-theme="orange"] .pgTopModeBtnActive{
     });
     filterInput?.addEventListener("input", () => {
         state.filter = String(filterInput.value || "");
-
         window.clearTimeout(filterTimer);
-
-        if (isSearchMode() && (!state.searchLoaded || state.searchBasePath !== state.curPath)) {
-            state.searchLoading = true;
-            renderGrid();
-            setBadge("warn", "search…");
-            setStatus("Searching subfolders…");
-
-            filterTimer = window.setTimeout(() => {
-                refreshVisibleView(false);
-            }, 180);
-            return;
+        if (activeSearch || state.searchLoaded || state.searchError || !isSearchMode()) {
+            refreshVisibleView(false);
+        } else {
+            filterTimer = window.setTimeout(() => refreshVisibleView(false), 180);
         }
-
-        refreshVisibleView(false);
     });
 
     ratingFilter?.addEventListener("change", () => {
@@ -5728,6 +6045,7 @@ html[data-theme="orange"] .pgTopModeBtnActive{
 
     installPreviewResizeObserver();
 
+    window.PQNAS_PHOTOGALLERY.hasUsableGps = hasUsableGps;
     window.PQNAS_PHOTOGALLERY.getFilteredImageItems = () => filteredImageItems().slice();
     window.PQNAS_PHOTOGALLERY.currentRelPathFor = currentRelPathFor;
     window.PQNAS_PHOTOGALLERY.openPreviewFor = openPreviewFor;

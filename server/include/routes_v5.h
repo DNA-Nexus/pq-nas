@@ -41,6 +41,21 @@ struct RoutesV5Context {
     const std::string* allowlist_path = nullptr;
     const std::string* users_path     = nullptr;
 
+    // Security: Director rollback deletion uses the same cluster-safe physical
+    // delete transaction as normal user lifecycle deletion. Standalone leaves
+    // this callback unset and uses persisted unplaced-user deletion.
+    std::function<bool(
+        const std::string&,
+        bool*,
+        bool*,
+        bool*,
+        std::string*
+    )> erase_user_persisted_cluster_safe;
+
+    // Security: Storage Nodes must not create normal local login sessions.
+    // Their user sessions are established only through Director handoff.
+    bool interactive_user_login_allowed = false;
+
     // ---- callbacks into your existing helpers (defined in main.cpp today) ----
     std::function<long()> now_epoch;
     std::function<std::string()> now_iso_utc;
@@ -162,6 +177,10 @@ struct RoutesV5Context {
 	};
 
     std::function<bool(const httplib::Request&, httplib::Response&, std::string*, std::string*)> require_user_cookie;
+
+    // Security: cleanup-only authentication may verify an already-issued
+    // session identity on a Storage Node without consulting local users.json.
+    std::function<bool(const httplib::Request&, httplib::Response&, std::string*, std::string*)> require_cleanup_user_cookie;
 
     std::function<void(long)> app_pair_prune;
 

@@ -84,6 +84,8 @@ bool rename_subtree(const std::string& fp,
                            const std::string& to_prefix,
                            std::string* err);
 
+    // Literal, case-sensitive exact path plus descendants. Empty prefix means
+    // all rows for fp; this snapshot has no result limit or physical-path filter.
 	std::vector<FileLocationRecord> list_subtree_records(const std::string& fp,
                                                      const std::string& logical_prefix,
                                                      std::string* err);

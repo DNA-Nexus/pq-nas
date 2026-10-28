@@ -1,5 +1,6 @@
 #include "routes_workspace_external_sessions.h"
 #include "workspace_access_shared.h"
+#include "interactive_user_login_policy.h"
 #include <cctype>
 #include <deque>
 #include <limits>
@@ -402,6 +403,16 @@ void register_workspace_external_session_routes(
     // cookie. The cookie is not a normal DNA-Nexus login cookie.
     srv.Post("/api/v4/workspaces/external-sessions/consume",
              [&](const httplib::Request& req, httplib::Response& res) {
+        // Security: Storage Nodes must never mint a local workspace browser
+        // credential from surviving standalone workspace/session state.
+        // Enforce the role boundary before inspecting route configuration.
+        if (!pqnas::require_interactive_user_login(
+                deps.interactive_user_login_allowed,
+                res
+            )) {
+            return;
+        }
+
         if (!deps.reply_json || !deps.external_sessions ||
             !deps.cookie_key || !deps.session_cookie_mint || !deps.b64_std) {
             deps.reply_json(res, 500, json{

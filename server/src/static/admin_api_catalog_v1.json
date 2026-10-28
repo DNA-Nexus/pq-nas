@@ -146,6 +146,565 @@
       "curl": "curl -k -i -sS \"$BASE/api/v4/audit/verify\" -H \"Cookie: $COOKIE\""
     },
     {
+      "id": "admin.cluster.nodes.list",
+      "category": "Admin Cluster",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/admin/cluster/nodes",
+      "title": "List cluster nodes",
+      "purpose": "List Director cluster node registry records and placement-related node state.",
+      "auth": "Admin session.",
+      "source": "server/src/routes/routes_admin_cluster_nodes.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "5xx server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "nodes",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/admin/cluster/nodes\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "admin.cluster.nodes.create",
+      "category": "Admin Cluster",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/cluster/nodes",
+      "title": "Create cluster node",
+      "purpose": "Create a cluster node registry record.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_nodes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "node_id": "node-01",
+          "api_base_url": "https://node-01.example",
+          "enabled": true
+        }
+      },
+      "responses": [
+        "2xx success",
+        "400 bad_request",
+        "4xx not_found/conflict",
+        "5xx server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "nodes",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/cluster/nodes\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"node_id\":\"node-01\",\"api_base_url\":\"https://node-01.example\",\"enabled\":true}'"
+    },
+    {
+      "id": "admin.cluster.nodes.update",
+      "category": "Admin Cluster",
+      "risk": "mutating",
+      "method": "PATCH",
+      "path": "/api/v4/admin/cluster/nodes",
+      "title": "Update cluster node",
+      "purpose": "Update a cluster node registry record.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_nodes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "node_id": "node-01",
+          "api_base_url": "https://node-01.example",
+          "enabled": true
+        }
+      },
+      "responses": [
+        "2xx success",
+        "400 bad_request",
+        "4xx not_found/conflict",
+        "5xx server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "nodes",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X PATCH \"$BASE/api/v4/admin/cluster/nodes\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"node_id\":\"node-01\",\"api_base_url\":\"https://node-01.example\",\"enabled\":true}'"
+    },
+    {
+      "id": "admin.cluster.nodes.credential_rotation",
+      "category": "Admin Cluster",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/cluster/nodes/credential/rotation",
+      "title": "Rotate cluster node credential",
+      "purpose": "Rotate a Storage Node cluster bearer credential using the prepare, Director commit and finalize lifecycle.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_nodes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "node_id": "node-01"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 not_found",
+        "409 conflict",
+        "429 rate_limited",
+        "502 upstream_error/finalize_pending",
+        "503 service_unavailable",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "nodes",
+        "credential",
+        "rotation",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/cluster/nodes/credential/rotation\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"node_id\":\"node-01\"}'"
+    },
+    {
+      "id": "admin.cluster.nodes.tls_trust_migration",
+      "category": "Admin Cluster",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/cluster/nodes/tls-trust/migration",
+      "title": "Migrate cluster node TLS trust",
+      "purpose": "Verify a legacy Storage Node HTTPS endpoint with normal CA and hostname verification plus its exact SPKI pin, then establish the immutable first TLS trust binding and update the Node API URL.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_nodes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "node_id": "node-01",
+          "api_base_url": "https://node-01.internal",
+          "tls_spki_sha256_pin": "sha256/lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g="
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 not_found",
+        "409 conflict",
+        "502 bad_gateway",
+        "503 service_unavailable",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "nodes",
+        "tls",
+        "trust",
+        "migration",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/cluster/nodes/tls-trust/migration\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"node_id\":\"node-01\",\"api_base_url\":\"https://node-01.internal\",\"tls_spki_sha256_pin\":\"sha256/lAhFeu/Qcc7BJ8H5hTmTCGGtG6lMlA25dclywJ/Gi2g=\"}'"
+    },
+    {
+      "id": "admin.cluster.nodes.delete",
+      "category": "Admin Cluster",
+      "risk": "destructive",
+      "method": "DELETE",
+      "path": "/api/v4/admin/cluster/nodes",
+      "title": "Delete cluster node",
+      "purpose": "Remove a cluster node registry record when deletion constraints allow it.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_nodes.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "node_id": "node-01"
+        }
+      },
+      "responses": [
+        "2xx success",
+        "400 bad_request",
+        "4xx not_found/conflict",
+        "5xx server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "nodes",
+        "delete",
+        "destructive"
+      ],
+      "curl": "curl -k -i -sS -X DELETE \"$BASE/api/v4/admin/cluster/nodes\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"node_id\":\"node-01\"}'"
+    },
+    {
+      "id": "admin.cluster.placement_policies.list",
+      "category": "Admin Cluster",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/admin/cluster/placement-policies",
+      "title": "List placement policies",
+      "purpose": "List cluster user-placement policies and aggregate assignment state.",
+      "auth": "Admin session.",
+      "source": "server/src/routes/routes_admin_cluster_placement_policies.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "5xx server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "placement",
+        "policy",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/admin/cluster/placement-policies\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "admin.cluster.placement_policies.upsert",
+      "category": "Admin Cluster",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/cluster/placement-policies",
+      "title": "Upsert placement policy",
+      "purpose": "Create or update a cluster user-placement policy.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_placement_policies.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "policy_id": "business-backup",
+          "mode": "pinned",
+          "fallback": "deny",
+          "node_ids": [
+            "node-business-01"
+          ]
+        }
+      },
+      "responses": [
+        "2xx success",
+        "400 bad_request",
+        "4xx not_found/conflict",
+        "5xx server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "placement",
+        "policy",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/cluster/placement-policies\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"policy_id\":\"business-backup\",\"mode\":\"pinned\",\"fallback\":\"deny\",\"node_ids\":[\"node-business-01\"]}'"
+    },
+    {
+      "id": "admin.cluster.placement_policies.delete",
+      "category": "Admin Cluster",
+      "risk": "destructive",
+      "method": "DELETE",
+      "path": "/api/v4/admin/cluster/placement-policies",
+      "title": "Delete placement policy",
+      "purpose": "Delete an unassigned cluster user-placement policy.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_placement_policies.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "policy_id": "business-backup"
+        }
+      },
+      "responses": [
+        "2xx success",
+        "400 bad_request",
+        "404 not_found",
+        "409 conflict",
+        "5xx server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "placement",
+        "policy",
+        "delete",
+        "destructive"
+      ],
+      "curl": "curl -k -i -sS -X DELETE \"$BASE/api/v4/admin/cluster/placement-policies\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"policy_id\":\"business-backup\"}'"
+    },
+    {
+      "id": "admin.cluster.users.home_node",
+      "category": "Admin Cluster",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/cluster/users/home-node",
+      "title": "Assign user home node",
+      "purpose": "Assign a user's realized cluster home-node placement.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_user_placement.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP",
+          "node_id": "node-01"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "4xx not_found/conflict",
+        "5xx server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "users",
+        "placement",
+        "home-node"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/cluster/users/home-node\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\",\"node_id\":\"node-01\"}'"
+    },
+    {
+      "id": "admin.cluster.users.home_node_unassign",
+      "category": "Admin Cluster",
+      "risk": "mutating",
+      "method": "DELETE",
+      "path": "/api/v4/admin/cluster/users/home-node",
+      "title": "Unassign user home node",
+      "purpose": "Remove a user's realized cluster home-node placement only when the expected current home node still matches.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_user_placement.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP",
+          "expected_home_node": "node-01"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 not_found",
+        "409 conflict",
+        "500 server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "users",
+        "placement",
+        "home-node",
+        "unassign",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X DELETE \"$BASE/api/v4/admin/cluster/users/home-node\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\",\"expected_home_node\":\"node-01\"}'"
+    },
+    {
+      "id": "admin.cluster.users.placement_policy",
+      "category": "Admin Cluster",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/cluster/users/placement-policy",
+      "title": "Assign user placement policy",
+      "purpose": "Assign or clear a user's placement-policy override without directly moving the user.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_user_policy.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP",
+          "policy_id": "business-backup"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "4xx not_found/conflict",
+        "5xx server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "users",
+        "placement",
+        "policy"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/cluster/users/placement-policy\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\",\"policy_id\":\"business-backup\"}'"
+    },
+    {
+      "id": "admin.cluster.users.placement_preview",
+      "category": "Admin Cluster",
+      "risk": "read",
+      "method": "POST",
+      "path": "/api/v4/admin/cluster/users/placement-preview",
+      "title": "Preview user placement",
+      "purpose": "Evaluate a user's placement recommendation without mutating placement.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_user_placement_preview.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "4xx not_found/conflict",
+        "5xx server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "users",
+        "placement",
+        "preview"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/cluster/users/placement-preview\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\"}'"
+    },
+    {
+      "id": "admin.cluster.users.placement_apply",
+      "category": "Admin Cluster",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/cluster/users/placement-apply",
+      "title": "Apply user placement recommendation",
+      "purpose": "Apply a placement recommendation using expected-state checks.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_cluster_user_placement_apply.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "fingerprint": "$FP",
+          "expected_current_home_node": "node-01",
+          "expected_placement_policy_id": "business-backup",
+          "expected_recommended_home_node": "node-business-01"
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "409 conflict",
+        "5xx server_error"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "users",
+        "placement",
+        "apply"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/cluster/users/placement-apply\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"fingerprint\":\"'$FP'\",\"expected_current_home_node\":\"node-01\",\"expected_placement_policy_id\":\"business-backup\",\"expected_recommended_home_node\":\"node-business-01\"}'"
+    },
+    {
+      "id": "admin.cluster.node_enrollments.list",
+      "category": "Admin Cluster",
+      "risk": "read",
+      "method": "GET",
+      "path": "/api/v4/admin/cluster/node-enrollments",
+      "title": "List node enrollments",
+      "purpose": "List redacted storage-node enrollment records without exposing bootstrap tokens or verifier hashes.",
+      "auth": "Admin session.",
+      "source": "server/src/routes/routes_admin_node_enrollments.cpp",
+      "params": [],
+      "body": {},
+      "responses": [
+        "200 ok",
+        "503 service_unavailable"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "nodes",
+        "enrollment",
+        "read"
+      ],
+      "curl": "curl -k -i -sS \"$BASE/api/v4/admin/cluster/node-enrollments\" -H \"Cookie: $COOKIE\""
+    },
+    {
+      "id": "admin.cluster.node_enrollments.create",
+      "category": "Admin Cluster",
+      "risk": "mutating",
+      "method": "POST",
+      "path": "/api/v4/admin/cluster/node-enrollments",
+      "title": "Create node enrollment",
+      "purpose": "Create a time-limited storage-node enrollment and return its one-time bootstrap token.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_node_enrollments.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "node_id": "storage-node-01",
+          "api_base_url": "https://storage-node-01.example",
+          "required_protocol_version": 1
+        }
+      },
+      "responses": [
+        "201 created",
+        "400 bad_request",
+        "409 enrollment conflict",
+        "413 request_too_large",
+        "503 service_unavailable"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "nodes",
+        "enrollment",
+        "bootstrap-token",
+        "mutating"
+      ],
+      "curl": "curl -k -i -sS -X POST \"$BASE/api/v4/admin/cluster/node-enrollments\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"node_id\":\"storage-node-01\",\"api_base_url\":\"https://storage-node-01.example\",\"required_protocol_version\":1}'"
+    },
+    {
+      "id": "admin.cluster.node_enrollments.revoke",
+      "category": "Admin Cluster",
+      "risk": "destructive",
+      "method": "DELETE",
+      "path": "/api/v4/admin/cluster/node-enrollments",
+      "title": "Revoke node enrollment",
+      "purpose": "Revoke a pending node enrollment using its enrollment ID and expected generation.",
+      "auth": "Admin session. Requires same-origin cookie mutation protection.",
+      "source": "server/src/routes/routes_admin_node_enrollments.cpp",
+      "params": [],
+      "body": {
+        "content_type": "application/json",
+        "example": {
+          "enrollment_id": "$ENROLLMENT_ID",
+          "generation": 1
+        }
+      },
+      "responses": [
+        "200 ok",
+        "400 bad_request",
+        "404 enrollment_not_found",
+        "409 enrollment conflict",
+        "503 service_unavailable"
+      ],
+      "tags": [
+        "admin",
+        "cluster",
+        "nodes",
+        "enrollment",
+        "revoke",
+        "destructive"
+      ],
+      "curl": "curl -k -i -sS -X DELETE \"$BASE/api/v4/admin/cluster/node-enrollments\" -H \"Cookie: $COOKIE\" -H \"Origin: $BASE\" -H \"Content-Type: application/json\" --data '{\"enrollment_id\":\"'$ENROLLMENT_ID'\",\"generation\":1}'"
+    },
+    {
       "id": "admin.settings.get",
       "category": "Admin Settings",
       "risk": "read",

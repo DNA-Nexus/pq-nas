@@ -176,12 +176,27 @@ void register_admin_user_status_routes(
                 c.audit_append(ev);
             }
 
-            const bool ok_set = c.users->set_status(fp, status);
-            if (status == "disabled" || status == "revoked") {
+            // Security: status and the Director-owned Storage projection
+            // revision are persisted atomically. A failed users.json commit
+            // restores both values before this route continues.
+            const bool ok_set =
+                c.users->set_status_persisted(
+                    fp,
+                    status,
+                    c.users_path,
+                    nullptr,
+                    nullptr
+                );
+
+            if (ok_set &&
+                (status == "disabled" ||
+                 status == "revoked")) {
                 c.revoke_devices_for_fingerprint(fp);
             }
 
-            const bool ok_save = ok_set ? c.users->save(c.users_path) : false;
+            // Keep the existing audit/error flow while persistence is now
+            // performed inside set_status_persisted().
+            const bool ok_save = ok_set;
 
             {
                 pqnas::AuditEvent ev;

@@ -466,13 +466,22 @@ void register_user_avatar_routes(
 
             remove_all_avatar_variants(fp);
 
-            pqnas::UserRec u = *cur;
-            u.avatar_url.clear();
+            pqnas::UserNonAuthMetadataUpdate update;
+            update.avatar_url = std::string{};
 
-            const bool ok_upsert = c.users->upsert(u);
-            const bool ok_save = ok_upsert ? c.users->save(c.users_path) : false;
+            // Security: apply avatar metadata to the CURRENT registry record.
+            // Never write a stale full UserRec back over newer authorization.
+            const bool saved =
+                c.users->set_non_auth_metadata_persisted(
+                    fp,
+                    update,
+                    c.users_path,
+                    nullptr,
+                    nullptr,
+                    nullptr
+                );
 
-            if (!ok_upsert || !ok_save) {
+            if (!saved) {
                 reply(500, json{{"ok", false}, {"error", "server_error"}, {"message", "save failed"}});
                 return;
             }
@@ -564,23 +573,32 @@ void register_user_avatar_routes(
                 return;
             }
 
-            pqnas::UserRec u = *cur;
-            u.app_prefs_json = prefs.dump();
+            pqnas::UserNonAuthMetadataUpdate update;
+            update.app_prefs_json = prefs.dump();
 
-            const bool ok_upsert = c.users->upsert(u);
-            const bool ok_save = ok_upsert ? c.users->save(c.users_path) : false;
+            // Security: preferences are merged into the CURRENT user record
+            // under the registry mutation lock.
+            const bool saved =
+                c.users->set_non_auth_metadata_persisted(
+                    actor_fp,
+                    update,
+                    c.users_path,
+                    nullptr,
+                    nullptr,
+                    nullptr
+                );
 
             {
                 pqnas::AuditEvent ev;
                 ev.event = "user.app_prefs_update";
-                ev.outcome = (ok_upsert && ok_save) ? "ok" : "fail";
+                ev.outcome = saved ? "ok" : "fail";
                 ev.f["actor_fp"] = actor_fp;
                 ev.f["app_count"] = std::to_string(prefs.size());
                 ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
                 c.audit_append(ev);
             }
 
-            if (!ok_upsert || !ok_save) {
+            if (!saved) {
                 reply(500, json{{"ok", false}, {"error", "server_error"}, {"message", "app prefs save failed"}});
                 return;
             }
@@ -669,16 +687,24 @@ void register_user_avatar_routes(
             const std::string url =
                 std::string("/api/v4/users/avatar?fingerprint=") + actor_fp;
 
-            pqnas::UserRec u = *cur;
-            u.avatar_url = url;
+            pqnas::UserNonAuthMetadataUpdate update;
+            update.avatar_url = url;
 
-            const bool ok_upsert = c.users->upsert(u);
-            const bool ok_save = ok_upsert ? c.users->save(c.users_path) : false;
+            // Security: persist only avatar metadata against CURRENT state.
+            const bool saved =
+                c.users->set_non_auth_metadata_persisted(
+                    actor_fp,
+                    update,
+                    c.users_path,
+                    nullptr,
+                    nullptr,
+                    nullptr
+                );
 
             {
                 pqnas::AuditEvent ev;
                 ev.event = "user.avatar_upload";
-                ev.outcome = (ok_upsert && ok_save) ? "ok" : "fail";
+                ev.outcome = saved ? "ok" : "fail";
                 ev.f["actor_fp"] = actor_fp;
                 ev.f["mime"] = mime;
                 ev.f["bytes"] = std::to_string(bytes.size());
@@ -686,7 +712,7 @@ void register_user_avatar_routes(
                 c.audit_append(ev);
             }
 
-            if (!ok_upsert || !ok_save) {
+            if (!saved) {
                 reply(500, json{{"ok", false}, {"error", "server_error"}, {"message", "avatar metadata save failed"}});
                 return;
             }
@@ -732,22 +758,30 @@ void register_user_avatar_routes(
 
             remove_all_avatar_variants(actor_fp);
 
-            pqnas::UserRec u = *cur;
-            u.avatar_url.clear();
+            pqnas::UserNonAuthMetadataUpdate update;
+            update.avatar_url = std::string{};
 
-            const bool ok_upsert = c.users->upsert(u);
-            const bool ok_save = ok_upsert ? c.users->save(c.users_path) : false;
+            // Security: persist only avatar metadata against CURRENT state.
+            const bool saved =
+                c.users->set_non_auth_metadata_persisted(
+                    actor_fp,
+                    update,
+                    c.users_path,
+                    nullptr,
+                    nullptr,
+                    nullptr
+                );
 
             {
                 pqnas::AuditEvent ev;
                 ev.event = "user.avatar_remove";
-                ev.outcome = (ok_upsert && ok_save) ? "ok" : "fail";
+                ev.outcome = saved ? "ok" : "fail";
                 ev.f["actor_fp"] = actor_fp;
                 ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
                 c.audit_append(ev);
             }
 
-            if (!ok_upsert || !ok_save) {
+            if (!saved) {
                 reply(500, json{
                     {"ok", false},
                     {"error", "server_error"},

@@ -27,6 +27,29 @@ env_get() {
   fi
 }
 
+write_sanitized_env_backup() {
+  local source="$1"
+  local backup
+
+  backup="$(
+    mktemp \
+      "${ENV_FILE}.bak-$(date +%Y%m%d_%H%M%S).XXXXXX"
+  )"
+
+  # Security: one-time bootstrap credentials must not survive
+  # in pqnas.env backup files after setup or cleanup.
+  if ! awk \
+    '!/^PQNAS_(PASSWORD|OPAQUE)_BOOTSTRAP_TOKEN=/' \
+    "$source" > "$backup"
+  then
+    rm -f "$backup"
+    die "Failed to sanitize environment backup"
+  fi
+
+  chmod 0600 "$backup"
+}
+
+
 env_set() {
   local key="$1"
   local value="$2"
@@ -39,10 +62,11 @@ env_set() {
   grep -v -E "^${key}=" "$ENV_FILE" > "$tmp" || true
   printf '%s=%s\n' "$key" "$value" >> "$tmp"
 
-  cp -a "$ENV_FILE" "$ENV_FILE.bak-$(date +%Y%m%d_%H%M%S)"
+  write_sanitized_env_backup "$ENV_FILE"
   install -m 0600 -o root -g root "$tmp" "$ENV_FILE"
   rm -f "$tmp"
 }
+
 
 env_unset() {
   local key="$1"
@@ -53,7 +77,11 @@ env_unset() {
   tmp="$(mktemp)"
 
   grep -v -E "^${key}=" "$ENV_FILE" > "$tmp" || true
-  cp -a "$ENV_FILE" "$ENV_FILE.bak-$(date +%Y%m%d_%H%M%S)"
+
+  # Back up the already-sanitized replacement content, not
+  # the original file that still contains the secret.
+  write_sanitized_env_backup "$tmp"
+
   install -m 0600 -o root -g root "$tmp" "$ENV_FILE"
   rm -f "$tmp"
 }

@@ -24,8 +24,30 @@ struct AdminUserLifecycleRoutesContext {
 
     std::function<bool(const std::string&)> admin_would_remove_last_enabled_admin;
     std::function<void(const std::string&)> revoke_devices_for_fingerprint;
+
+    // Security: after durable physical deletion, authentication state must be
+    // torn down durably. Returning false leaves the delete retryable.
+    std::function<bool(const std::string&, std::string*)>
+        cleanup_auth_state_for_fingerprint;
+
     std::function<std::string()> now_iso_utc;
     std::function<void(const pqnas::AuditEvent&)> audit_append;
+
+    // Optional Director-only physical-delete transaction.
+    //
+    // Security: the callback must serialize with projection reconciliation,
+    // verify that no confirmed Storage authorization remains, and keep that
+    // serialization boundary held through the durable users.json deletion.
+    //
+    // Standalone leaves this unset and uses the normal persisted unplaced-user
+    // deletion primitive.
+    std::function<bool(
+        const std::string&,
+        bool*,
+        bool*,
+        bool*,
+        std::string*
+    )> erase_user_persisted_cluster_safe;
 };
 
 void register_admin_user_lifecycle_routes(

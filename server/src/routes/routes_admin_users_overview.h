@@ -25,6 +25,13 @@ struct AdminUsersOverviewRoutesContext {
     std::function<std::uint64_t(const std::filesystem::path&)> dir_size_bytes_best_effort;
 };
 
+// Exposed separately for deterministic route testing.
+void handle_admin_users_overview(
+    const httplib::Request& req,
+    httplib::Response& res,
+    const AdminUsersOverviewRoutesContext& ctx
+);
+
 void register_admin_users_overview_routes(
     httplib::Server& srv,
     const AdminUsersOverviewRoutesContext& ctx

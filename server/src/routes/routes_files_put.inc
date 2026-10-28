@@ -1,3 +1,7 @@
+// Security: the legacy PUT route uses local users.json authorization and
+// user_dir_for_fp() root resolution, so it must not be registered on a
+// Storage Node.
+if (!cluster_config.is_node()) {
 // ---- Files API (user storage) ----
 // PUT /api/v4/files/put?path=relative/path.bin[&overwrite=1]
 // Body: raw bytes (streamed to temp file, then renamed atomically)
@@ -827,26 +831,159 @@ srv.Put("/api/v4/files/put",
     }
 });
 
+}
 
-
-    // ---- File Manager file-version archive/blob routes ----
+// ---- File Manager file-version archive/blob routes ----
     {
-        FileVersionArchiveBlobRoutesContext file_version_archive_blob_ctx;
-        file_version_archive_blob_ctx.file_versions = &file_versions_index;
-        file_version_archive_blob_ctx.require_user_auth =
-            [&](const httplib::Request& req,
-                httplib::Response& res,
-                std::string* fp_hex,
-                std::string* role) {
-                return require_user_auth_users_actor(req, res, COOKIE_KEY, &users, fp_hex, role);
-            };
-        file_version_archive_blob_ctx.user_dir_for_fp =
-            [&](const std::string& fp_hex) {
-                return user_dir_for_fp(users, fp_hex);
-            };
+        FileVersionArchiveBlobRoutesContext
+            file_version_archive_blob_ctx;
 
-        register_file_version_archive_blob_routes(srv, file_version_archive_blob_ctx);
+        file_version_archive_blob_ctx.file_versions =
+            &file_versions_index;
+
+        if (cluster_config.is_node()) {
+            // Security: a Storage Node must never fall back to Director user
+            // authentication or UsersRegistry filesystem placement.
+            if (!storage_user_access_runtime) {
+                std::cerr
+                    << "[cluster] FATAL: Storage user access runtime "
+                       "missing during file route registration"
+                    << std::endl;
+
+                return 2;
+            }
+
+            const auto* storage_access_runtime =
+                storage_user_access_runtime.get();
+
+            file_version_archive_blob_ctx.require_user_auth =
+                [storage_access_runtime](
+                    const httplib::Request& req,
+                    httplib::Response& res,
+                    std::string* fp_hex,
+                    std::string* role,
+                    std::uint64_t*
+                        authenticated_projection_revision) {
+                    return pqnas::cluster::
+                        require_storage_user_request_auth(
+                            req,
+                            res,
+                            storage_access_runtime->
+                                request_auth_context(),
+                            fp_hex,
+                            role,
+                            authenticated_projection_revision
+                        );
+                };
+
+            file_version_archive_blob_ctx.resolve_user_root =
+                [storage_access_runtime](
+                    const std::string& fp_hex,
+                    std::uint64_t
+                        authenticated_projection_revision,
+                    std::filesystem::path* user_root) {
+                    if (user_root) {
+                        user_root->clear();
+                    }
+
+                    if (!user_root ||
+                        authenticated_projection_revision == 0) {
+                        return false;
+                    }
+
+                    pqnas::cluster::
+                        StorageUserRootResolveOutput
+                            resolved;
+
+                    const auto result =
+                        storage_access_runtime->
+                            root_resolver().
+                            resolve_at_revision(
+                                fp_hex,
+                                authenticated_projection_revision,
+                                &resolved
+                            );
+
+                    if (result !=
+                            pqnas::cluster::
+                                StorageUserRootResolveResult::
+                                    Resolved ||
+                        resolved.user_root.empty() ||
+                        !resolved.user_root.is_absolute()) {
+                        return false;
+                    }
+
+                    // Security: use only the filesystem root returned by the
+                    // revision-bound Storage authorization resolver.
+                    *user_root =
+                        resolved.user_root.lexically_normal();
+
+                    return true;
+                };
+        } else {
+            // Director compatibility path. Director sessions are not Storage
+            // projection sessions, so they intentionally carry revision zero.
+            file_version_archive_blob_ctx.require_user_auth =
+                [&](const httplib::Request& req,
+                    httplib::Response& res,
+                    std::string* fp_hex,
+                    std::string* role,
+                    std::uint64_t*
+                        authenticated_projection_revision) {
+                    if (authenticated_projection_revision) {
+                        *authenticated_projection_revision = 0;
+                    }
+
+                    return require_user_auth_users_actor(
+                        req,
+                        res,
+                        COOKIE_KEY,
+                        &users,
+                        fp_hex,
+                        role
+                    );
+                };
+
+            file_version_archive_blob_ctx.resolve_user_root =
+                [&](const std::string& fp_hex,
+                    std::uint64_t,
+                    std::filesystem::path* user_root) {
+                    if (!user_root) {
+                        return false;
+                    }
+
+                    user_root->clear();
+
+                    const std::filesystem::path resolved =
+                        user_dir_for_fp(
+                            users,
+                            fp_hex
+                        ).lexically_normal();
+
+                    if (resolved.empty() ||
+                        !resolved.is_absolute()) {
+                        return false;
+                    }
+
+                    *user_root =
+                        resolved;
+
+                    return true;
+                };
+        }
+
+        // Exactly one registration per process. The role changes only the
+        // authentication/root-resolution callbacks above.
+        register_file_version_archive_blob_routes(
+            srv,
+            file_version_archive_blob_ctx
+        );
     }
+
+    // Security: the remaining file-version/admin routes below still depend on
+    // legacy users.json authorization or user_dir_for_fp(). Keep them absent
+    // from Storage Nodes until each route is migrated to projection-bound auth.
+    if (!cluster_config.is_node()) {
 
     // ---- File version read routes ----
     {
@@ -1246,7 +1383,9 @@ srv.Put("/api/v4/files/put",
         return any ? n : 0;
     };
 
-    auto compare_app_versions = [&](const std::string& a, const std::string& b) -> int {
+    // The callbacks below outlive this legacy role-gated registration block.
+    // Keep the complete comparison chain self-contained (no local references).
+    auto compare_app_versions = [app_version_component](const std::string& a, const std::string& b) -> int {
         std::size_t ia = 0;
         std::size_t ib = 0;
 
@@ -1274,25 +1413,28 @@ srv.Put("/api/v4/files/put",
         return "";
     };
 
-    auto app_server_version_ok = [&](const std::string& minServerVersion) -> bool {
+    auto app_server_version_ok = [compare_app_versions, server_version = PQNAS_SERVER_VERSION](const std::string& minServerVersion) -> bool {
         if (minServerVersion.empty()) return true;
-        return compare_app_versions(PQNAS_SERVER_VERSION, minServerVersion) >= 0;
+        return compare_app_versions(server_version, minServerVersion) >= 0;
     };
 
-    auto app_compatibility_message = [&](const std::string& minServerVersion) -> std::string {
+    auto app_compatibility_message = [server_version = PQNAS_SERVER_VERSION](const std::string& minServerVersion) -> std::string {
         if (minServerVersion.empty()) return "";
         return std::string("Requires DNA-Nexus Server ") +
                minServerVersion +
                " or newer. Current server is " +
-               PQNAS_SERVER_VERSION +
+               server_version +
                ".";
     };
 
-    auto apply_app_compatibility_fields = [&](json& item, const json& mani) {
+    auto apply_app_compatibility_fields = [app_manifest_min_server_version,
+                                           app_server_version_ok,
+                                           app_compatibility_message,
+                                           server_version = PQNAS_SERVER_VERSION](json& item, const json& mani) {
         const std::string minServerVersion = app_manifest_min_server_version(mani);
         const bool ok = app_server_version_ok(minServerVersion);
 
-        item["server_version"] = PQNAS_SERVER_VERSION;
+        item["server_version"] = server_version;
         item["min_server_version"] = minServerVersion;
         item["compatibility_ok"] = ok;
         item["compatibility_state"] = ok ? "ok" : "server_too_old";
@@ -1377,7 +1519,7 @@ srv.Put("/api/v4/files/put",
             };
 
         apps_ctx.apply_app_compatibility_fields =
-            [&](json& item, const json& manifest) {
+            [apply_app_compatibility_fields](json& item, const json& manifest) {
                 apply_app_compatibility_fields(item, manifest);
             };
 
@@ -1387,17 +1529,17 @@ srv.Put("/api/v4/files/put",
             };
 
         apps_ctx.app_manifest_min_server_version =
-            [&](const json& mani) {
+            [app_manifest_min_server_version](const json& mani) {
                 return app_manifest_min_server_version(mani);
             };
 
         apps_ctx.app_server_version_ok =
-            [&](const std::string& min_server_version) {
+            [app_server_version_ok](const std::string& min_server_version) {
                 return app_server_version_ok(min_server_version);
             };
 
         apps_ctx.app_compatibility_message =
-            [&](const std::string& min_server_version) {
+            [app_compatibility_message](const std::string& min_server_version) {
                 return app_compatibility_message(min_server_version);
             };
 
@@ -1464,6 +1606,108 @@ register_apps_manage_routes(srv, apps_ctx);
                 std::string token_revoke_err;
                 (void)g_app_tokens.revoke_devices_for_fingerprint(fp, &token_revoke_err);
             };
+
+        admin_user_lifecycle_ctx.cleanup_auth_state_for_fingerprint =
+            [&](const std::string& fp, std::string* err) -> bool {
+                if (err) err->clear();
+
+                if (fp.empty()) {
+                    if (err) *err = "missing_fingerprint";
+                    return false;
+                }
+
+                // Security: invalidate still-active OPAQUE enrollment/reset
+                // tokens so deleted identities cannot be re-provisioned.
+                std::size_t invalidated = 0;
+                std::string cleanup_err;
+                if (!invalidate_opaque_enrollment_tokens_for_fingerprint_on_status_revoke(
+                        fp,
+                        &invalidated,
+                        &cleanup_err)) {
+                    if (err) {
+                        *err = "opaque_enrollment_cleanup_failed: " +
+                               cleanup_err;
+                    }
+                    return false;
+                }
+
+                // Security: revoke browser/app device authorization before
+                // removing reusable credential records.
+                cleanup_err.clear();
+                if (!g_app_tokens.revoke_devices_for_fingerprint(
+                        fp,
+                        &cleanup_err)) {
+                    if (err) {
+                        *err = "app_token_cleanup_failed: " + cleanup_err;
+                    }
+                    return false;
+                }
+
+                pqnas::OpaqueCredentials opaque_creds;
+                const std::string opaque_path =
+                    pqnas::opaque_credentials_path().string();
+
+                if (!opaque_creds.load(opaque_path)) {
+                    if (err) *err = "opaque_credentials_load_failed";
+                    return false;
+                }
+
+                const std::size_t opaque_erased =
+                    opaque_creds.erase_for_fingerprint(fp);
+
+                std::error_code opaque_exists_error;
+                const bool opaque_store_exists =
+                    std::filesystem::exists(
+                        opaque_path,
+                        opaque_exists_error
+                    );
+
+                if (opaque_exists_error) {
+                    if (err) *err = "opaque_credentials_stat_failed";
+                    return false;
+                }
+
+                if ((opaque_erased > 0 || opaque_store_exists) &&
+                    !opaque_creds.save_durable(opaque_path)) {
+                    if (err) *err = "opaque_credentials_save_failed";
+                    return false;
+                }
+
+                pqnas::PasswordCredentials password_creds;
+                const std::filesystem::path users_file(users_path);
+                const std::string password_path =
+                    (users_file.parent_path() /
+                     "password_credentials.json").string();
+
+                if (!password_creds.load(password_path)) {
+                    if (err) *err = "password_credentials_load_failed";
+                    return false;
+                }
+
+                const std::size_t password_erased =
+                    password_creds.erase_for_fingerprint(fp);
+
+                std::error_code password_exists_error;
+                const bool password_store_exists =
+                    std::filesystem::exists(
+                        password_path,
+                        password_exists_error
+                    );
+
+                if (password_exists_error) {
+                    if (err) *err = "password_credentials_stat_failed";
+                    return false;
+                }
+
+                if ((password_erased > 0 || password_store_exists) &&
+                    !password_creds.save_durable(password_path)) {
+                    if (err) *err = "password_credentials_save_failed";
+                    return false;
+                }
+
+                return true;
+            };
+
         admin_user_lifecycle_ctx.now_iso_utc =
             [&]() {
                 return now_iso_utc();
@@ -1472,6 +1716,9 @@ register_apps_manage_routes(srv, apps_ctx);
             [&](const pqnas::AuditEvent& ev) {
                 audit_append(ev);
             };
+
+        admin_user_lifecycle_ctx.erase_user_persisted_cluster_safe =
+            cluster_safe_user_delete;
 
         register_admin_user_lifecycle_routes(srv, admin_user_lifecycle_ctx);
     }
@@ -1503,3 +1750,5 @@ register_apps_manage_routes(srv, apps_ctx);
 
         register_auth_debug_approvals_routes(srv, auth_debug_approvals_ctx);
     }
+
+    } // !cluster_config.is_node(): legacy file/admin routes

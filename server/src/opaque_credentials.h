@@ -28,9 +28,17 @@ public:
     bool load(const std::string& path);
     bool save(const std::string& path) const;
 
+    // Security-sensitive callers use this when success must survive a crash.
+    bool save_durable(const std::string& path) const;
+
     std::optional<OpaqueCredentialRec> get(const std::string& normalized_login) const;
     bool upsert(const OpaqueCredentialRec& rec);
     bool erase(const std::string& normalized_login);
+
+    // Security: physical user deletion must remove every login alias bound to
+    // the deleted fingerprint, not only one currently known login string.
+    std::size_t erase_for_fingerprint(const std::string& fingerprint);
+
     std::size_t size() const;
 
     static std::string normalize_login(const std::string& raw);
@@ -38,6 +46,12 @@ public:
 private:
     mutable std::mutex mu_;
     std::unordered_map<std::string, OpaqueCredentialRec> by_login_;
+
+    // Security: remember the exact on-disk snapshot loaded by this instance.
+    // save() rejects stale snapshots instead of overwriting newer credentials.
+    mutable bool snapshot_loaded_ = false;
+    mutable std::string snapshot_path_;
+    mutable std::string snapshot_generation_;
 };
 
 } // namespace pqnas

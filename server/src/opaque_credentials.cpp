@@ -1,4 +1,6 @@
 #include "opaque_credentials.h"
+#include "durable_file.h"
+#include "credential_store_guard.h"
 
 #include <algorithm>
 #include <cctype>
@@ -66,11 +68,48 @@ std::string OpaqueCredentials::normalize_login(const std::string& raw) {
 
 bool OpaqueCredentials::load(const std::string& path) {
     std::lock_guard<std::mutex> lk(mu_);
-    by_login_.clear();
 
-    std::ifstream f(path);
+    by_login_.clear();
+    snapshot_loaded_ = false;
+    snapshot_path_.clear();
+    snapshot_generation_.clear();
+
+    const std::string normalized_path =
+        credential_store_normalized_path(path);
+
+    if (normalized_path.empty()) {
+        return false;
+    }
+
+    // Security: the shared file lock keeps the parsed contents and recorded
+    // generation from referring to two different on-disk snapshots.
+    CredentialStoreFileLock file_lock(
+        normalized_path,
+        CredentialStoreFileLock::Mode::shared
+    );
+
+    if (!file_lock.ok()) {
+        return false;
+    }
+
+    std::string generation;
+    if (!credential_store_generation_token(
+            normalized_path,
+            &generation
+        )) {
+        return false;
+    }
+
+    if (generation == "missing") {
+        snapshot_loaded_ = true;
+        snapshot_path_ = normalized_path;
+        snapshot_generation_ = generation;
+        return true;
+    }
+
+    std::ifstream f(normalized_path);
     if (!f.good()) {
-        return true; // missing credentials file = empty store
+        return false;
     }
 
     json j;
@@ -80,49 +119,111 @@ bool OpaqueCredentials::load(const std::string& path) {
         return false;
     }
 
-    if (!j.is_object()) return false;
+    if (!j.is_object()) {
+        return false;
+    }
 
     if (j.contains("version")) {
         const auto& version = j.at("version");
-        if (!version.is_number_integer() || version.get<int>() != 1) {
+        if (!version.is_number_integer() ||
+            version.get<int>() != 1) {
             return false;
         }
     }
 
     const auto it_accounts = j.find("accounts");
-    if (it_accounts == j.end()) return true;
-    if (!it_accounts->is_array()) return false;
 
-    for (const auto& it : *it_accounts) {
-        if (!it.is_object()) continue;
-
-        if (contains_forbidden_password_fallback_field(it)) {
+    if (it_accounts != j.end()) {
+        if (!it_accounts->is_array()) {
             return false;
         }
 
-        OpaqueCredentialRec rec;
-        rec.login = normalize_login(it.value("login", ""));
-        rec.fingerprint = it.value("fingerprint", "");
-        rec.opaque_password_file_b64 = it.value("opaque_password_file_b64", "");
-        rec.opaque_suite = it.value("opaque_suite", "");
-        rec.enabled = json_bool_or_default(it, "enabled", true);
-        rec.temporary = json_bool_or_default(it, "temporary", false);
-        rec.created_at = it.value("created_at", "");
-        rec.updated_at = it.value("updated_at", "");
+        for (const auto& it : *it_accounts) {
+            if (!it.is_object()) {
+                continue;
+            }
 
-        if (rec.login.empty()) continue;
-        if (rec.fingerprint.empty()) continue;
-        if (rec.opaque_password_file_b64.empty()) continue;
-        if (rec.opaque_suite.empty()) continue;
+            if (contains_forbidden_password_fallback_field(it)) {
+                return false;
+            }
 
-        by_login_[rec.login] = rec;
+            OpaqueCredentialRec rec;
+            rec.login =
+                normalize_login(it.value("login", ""));
+            rec.fingerprint =
+                it.value("fingerprint", "");
+            rec.opaque_password_file_b64 =
+                it.value("opaque_password_file_b64", "");
+            rec.opaque_suite =
+                it.value("opaque_suite", "");
+            rec.enabled =
+                json_bool_or_default(it, "enabled", true);
+            rec.temporary =
+                json_bool_or_default(it, "temporary", false);
+            rec.created_at =
+                it.value("created_at", "");
+            rec.updated_at =
+                it.value("updated_at", "");
+
+            if (rec.login.empty()) continue;
+            if (rec.fingerprint.empty()) continue;
+            if (rec.opaque_password_file_b64.empty()) continue;
+            if (rec.opaque_suite.empty()) continue;
+
+            by_login_[rec.login] = rec;
+        }
     }
+
+    snapshot_loaded_ = true;
+    snapshot_path_ = normalized_path;
+    snapshot_generation_ = generation;
 
     return true;
 }
 
-bool OpaqueCredentials::save(const std::string& path) const {
+bool OpaqueCredentials::save(
+    const std::string& path
+) const {
     std::lock_guard<std::mutex> lk(mu_);
+
+    const std::string normalized_path =
+        credential_store_normalized_path(path);
+
+    if (normalized_path.empty()) {
+        return false;
+    }
+
+    // Security: serialize the full read-modify-write transaction across every
+    // request-local store instance and across cooperating server processes.
+    CredentialStoreFileLock file_lock(
+        normalized_path,
+        CredentialStoreFileLock::Mode::exclusive
+    );
+
+    if (!file_lock.ok()) {
+        return false;
+    }
+
+    std::string current_generation;
+    if (!credential_store_generation_token(
+            normalized_path,
+            &current_generation
+        )) {
+        return false;
+    }
+
+    if (snapshot_loaded_) {
+        if (snapshot_path_ != normalized_path ||
+            snapshot_generation_ != current_generation) {
+            // Security: never commit a stale snapshot. Otherwise an older
+            // request could erase a newer credential or resurrect a deletion.
+            return false;
+        }
+    } else if (current_generation != "missing") {
+        // A blind first write is safe only when creating a genuinely new store.
+        // Existing stores must first be loaded so their generation is known.
+        return false;
+    }
 
     json j;
     j["version"] = 1;
@@ -130,17 +231,23 @@ bool OpaqueCredentials::save(const std::string& path) const {
 
     std::vector<std::string> keys;
     keys.reserve(by_login_.size());
+
     for (const auto& kv : by_login_) {
         keys.push_back(kv.first);
     }
+
     std::sort(keys.begin(), keys.end());
 
     for (const auto& login : keys) {
         const auto& rec = by_login_.at(login);
+
         j["accounts"].push_back(json{
             {"login", rec.login},
             {"fingerprint", rec.fingerprint},
-            {"opaque_password_file_b64", rec.opaque_password_file_b64},
+            {
+                "opaque_password_file_b64",
+                rec.opaque_password_file_b64
+            },
             {"opaque_suite", rec.opaque_suite},
             {"enabled", rec.enabled},
             {"temporary", rec.temporary},
@@ -149,24 +256,41 @@ bool OpaqueCredentials::save(const std::string& path) const {
         });
     }
 
-    std::filesystem::path p(path);
+    std::filesystem::path p(normalized_path);
     std::error_code ec;
+
     if (p.has_parent_path()) {
-        std::filesystem::create_directories(p.parent_path(), ec);
-        if (ec) return false;
+        std::filesystem::create_directories(
+            p.parent_path(),
+            ec
+        );
+
+        if (ec) {
+            return false;
+        }
     }
 
     std::filesystem::path tmp = p;
     tmp += ".tmp.";
     tmp += std::to_string(::getpid());
     tmp += ".";
-    tmp += std::to_string(static_cast<long long>(std::time(nullptr)));
+    tmp += std::to_string(
+        static_cast<long long>(std::time(nullptr))
+    );
 
     {
-        std::ofstream out(tmp.string(), std::ios::trunc);
-        if (!out.good()) return false;
+        std::ofstream out(
+            tmp.string(),
+            std::ios::trunc
+        );
+
+        if (!out.good()) {
+            return false;
+        }
+
         out << j.dump(2) << "\n";
         out.flush();
+
         if (!out.good()) {
             std::filesystem::remove(tmp, ec);
             return false;
@@ -175,19 +299,48 @@ bool OpaqueCredentials::save(const std::string& path) const {
 
     std::filesystem::permissions(
         tmp,
-        std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+        std::filesystem::perms::owner_read |
+            std::filesystem::perms::owner_write,
         std::filesystem::perm_options::replace,
         ec
     );
 
     ec.clear();
+
     std::filesystem::rename(tmp, p, ec);
+
     if (ec) {
         std::filesystem::remove(tmp, ec);
         return false;
     }
 
+    std::string committed_generation;
+    if (!credential_store_generation_token(
+            normalized_path,
+            &committed_generation
+        )) {
+        return false;
+    }
+
+    snapshot_loaded_ = true;
+    snapshot_path_ = normalized_path;
+    snapshot_generation_ = committed_generation;
+
     return true;
+}
+
+bool OpaqueCredentials::save_durable(
+    const std::string& path
+) const {
+    if (!save(path)) {
+        return false;
+    }
+
+    std::string durability_error;
+    return fsync_file_and_parent_directory(
+        path,
+        &durability_error
+    );
 }
 
 std::optional<OpaqueCredentialRec> OpaqueCredentials::get(const std::string& normalized_login) const {
@@ -220,6 +373,26 @@ bool OpaqueCredentials::erase(const std::string& normalized_login) {
 
     std::lock_guard<std::mutex> lk(mu_);
     return by_login_.erase(login) > 0;
+}
+
+std::size_t OpaqueCredentials::erase_for_fingerprint(
+    const std::string& fingerprint
+) {
+    if (fingerprint.empty()) return 0;
+
+    std::lock_guard<std::mutex> lk(mu_);
+
+    std::size_t erased = 0;
+    for (auto it = by_login_.begin(); it != by_login_.end();) {
+        if (it->second.fingerprint == fingerprint) {
+            it = by_login_.erase(it);
+            ++erased;
+        } else {
+            ++it;
+        }
+    }
+
+    return erased;
 }
 
 std::size_t OpaqueCredentials::size() const {

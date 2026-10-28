@@ -108,6 +108,7 @@ failures must return an error and should emit an audit event when security-relev
 #include <condition_variable>
 #include <set>
 #include <map>
+#include <memory>
 #include <csignal>
 #include <sys/wait.h>
 #include <sqlite3.h>
@@ -122,7 +123,67 @@ failures must return an error and should emit an audit event when security-relev
 #include "pqnas_util.h"
 #include "authz.h"
 #include "session_cookie.h"
+#include "strict_session_cookie.h"
 #include "runtime_paths.h"
+#include "durable_file.h"
+#include "opaque_credentials.h"
+#include "password_credentials.h"
+#include "cluster/server_role.h"
+#include "cluster/internal_auth.h"
+#include "cluster/storage_node_credential_runtime.h"
+#include "cluster/node_status.h"
+#include "cluster/storage_user_projection_store.h"
+#include "cluster/storage_user_session_policy.h"
+#include "cluster/storage_user_session_cookie.h"
+#include "cluster/storage_user_access_runtime.h"
+#include "cluster/storage_handoff_ticket_store.h"
+#include "cluster/storage_handoff_consume_service.h"
+#include "cluster/storage_handoff_ticket_client.h"
+#include "cluster/storage_handoff_ticket_https.h"
+#include "cluster/node_registry.h"
+#include "cluster/node_credential_registry.h"
+#include "cluster/node_tls_trust_store.h"
+#include "cluster/node_tls_https_client.h"
+#include "cluster/node_credential_rotation_service.h"
+#include "cluster/node_credential_rotation_https.h"
+#include "cluster/node_deletion_service.h"
+#include "cluster/node_enrollment_registry.h"
+#include "cluster/node_enrollment_service.h"
+#include "cluster/node_enrollment_consumption_service.h"
+#include "cluster/storage_node_enrollment_runtime.h"
+#include "cluster/storage_node_enrollment_https.h"
+#include "cluster/node_heartbeat_worker.h"
+#include "cluster/storage_user_projection_sync_state_store.h"
+#include "cluster/storage_user_projection_transition_store.h"
+#include "cluster/storage_user_projection_sync_client.h"
+#include "cluster/storage_user_projection_sync_https.h"
+#include "cluster/storage_user_projection_audit_client.h"
+#include "cluster/storage_user_projection_audit_https.h"
+#include "cluster/storage_user_projection_reconciler.h"
+#include "cluster/storage_projection_startup_consistency.h"
+#include "cluster/cluster_safe_user_delete.h"
+#include "cluster/storage_user_projection_reconcile_worker.h"
+#include "cluster/user_placement_service.h"
+#include "cluster/user_placement_preview_service.h"
+#include "cluster/user_placement_recommendation_apply_service.h"
+#include "cluster/user_placement_policy_assignment_service.h"
+#include "cluster/user_placement_policy_registry.h"
+#include "cluster/node_heartbeat_https.h"
+#include "routes/routes_internal_node_status.h"
+#include "routes/routes_internal_node_credential_rotation.h"
+#include "routes/routes_internal_storage_user_projection.h"
+#include "routes/routes_internal_storage_handoff.h"
+#include "routes/routes_storage_handoff_preauth.h"
+#include "routes/routes_storage_handoff_consume.h"
+#include "routes/routes_director_storage_handoff_start.h"
+#include "routes/routes_admin_cluster_nodes.h"
+#include "routes/routes_admin_node_enrollments.h"
+#include "routes/routes_node_enrollment_bootstrap.h"
+#include "routes/routes_admin_cluster_placement_policies.h"
+#include "routes/routes_admin_cluster_user_placement.h"
+#include "routes/routes_admin_cluster_user_placement_preview.h"
+#include "routes/routes_admin_cluster_user_placement_apply.h"
+#include "routes/routes_admin_cluster_user_policy.h"
 #include "policy.h"
 #include "routes/routes_storage_raid.h"
 #include "routes/routes_admin_storage_tiering.h"
@@ -163,6 +224,7 @@ failures must return an error and should emit an audit event when security-relev
 #include "storage_info.h"
 #include "user_quota.h"
 #include "storage_resolver.h"
+#include "storage_metadata_validation.h"
 #include "file_location_index.h"
 #include "workspaces.h"
 #include "workspace_external_invites.h"
@@ -188,6 +250,7 @@ failures must return an error and should emit an audit event when security-relev
 //pool migration
 #include "user_storage_migration.h"
 #include "storage_pools.h"
+#include "storage_pool_runtime.h"
 
 // snapshots
 #include "storage/snapshots/snapshot_scheduler.h"
@@ -679,6 +742,9 @@ static std::string static_path(const char* rel) {
 const std::string STATIC_AUDIT_HTML          = static_path("admin_audit.html");
 const std::string STATIC_AUDIT_JS            = static_path("admin_audit.js");
 const std::string STATIC_ADMIN_HTML          = static_path("admin.html");
+const std::string STATIC_DIRECTOR_ADMIN_HTML = static_path("director/admin.html");
+const std::string STATIC_DIRECTOR_ADMIN_CSS  = static_path("director/admin.css");
+const std::string STATIC_DIRECTOR_ADMIN_JS   = static_path("director/admin.js");
 const std::string STATIC_ADMIN_JS            = static_path("admin.js");
 const std::string STATIC_ADMIN_APPS_HTML     = static_path("admin_apps.html");
 const std::string STATIC_ADMIN_UPDATES_HTML  = static_path("admin_updates.html");
@@ -687,6 +753,14 @@ const std::string STATIC_APP_HTML            = static_path("app.html");
 const std::string STATIC_APP_JS              = static_path("app.js");
 const std::string STATIC_APP_FRAME_BACKGROUND_TASKS_JS =
     static_path("app_frame_background_tasks.js");
+
+const std::string STATIC_HANDOFF_DIRECTOR_JS =
+    static_path("handoff/director.js");
+const std::string STATIC_HANDOFF_STORAGE_BOOTSTRAP_JS =
+    static_path("handoff/storage_bootstrap.js");
+const std::string STATIC_HANDOFF_STORAGE_FINISH_JS =
+    static_path("handoff/storage_finish.js");
+
 const std::string STATIC_USERS_HTML          = static_path("admin_users.html");
 const std::string STATIC_ADMIN_STATS_HTML      = static_path("admin_stats.html");
 const std::string STATIC_ADMIN_STATS_JS        = static_path("admin_stats.js");
@@ -1802,42 +1876,23 @@ static bool ensure_dir_exists(const std::filesystem::path& p, std::string* err =
 
 static void pool_mounts_init_default_only();
 
-static std::mutex& pool_mu() {
-    static std::mutex mu;
-    return mu;
-}
+static std::filesystem::path data_root_for_pool_id(
+    const std::string& pool_id
+) {
+    std::filesystem::path data_root;
 
-static std::unordered_map<std::string, std::string>& pool_mount_by_id() {
-    static std::unordered_map<std::string, std::string> m;
-    return m;
-}
-
-static std::string& default_pool_id() {
-    static std::string id = "default";
-    return id;
-}
-
-static std::filesystem::path data_root_for_pool_id(const std::string& pool_id) {
-    // default / legacy pool
-    if (pool_id.empty() || pool_id == "default") {
-        return std::filesystem::path(pqnas::data_root_dir());
+    if (pqnas::resolve_storage_pool_data_root_strict(
+            pool_id,
+            &data_root)) {
+        return data_root;
     }
 
-    std::string pool_mount;
-    {
-        std::lock_guard<std::mutex> lk(pool_mu());
-        auto& m = pool_mount_by_id();
-        auto it = m.find(pool_id);
-        if (it != m.end()) pool_mount = it->second;
-    }
-
-    // named pool missing from runtime map -> safest compatibility fallback
-    if (pool_mount.empty()) {
-        return std::filesystem::path(pqnas::data_root_dir());
-    }
-
-    // canonical PQ-NAS data root inside pool
-    return std::filesystem::path(pool_mount) / "data";
+    // Compatibility: legacy Director callers historically fall back to the
+    // default data root when a named runtime pool is unavailable.
+    //
+    // Security: Storage user authorization must not call this wrapper. It
+    // uses resolve_storage_pool_data_root_strict() directly and fails closed.
+    return pqnas::data_root_path();
 }
 
 static std::string default_root_rel_for_fp(const std::string& fp_hex) {
@@ -1881,14 +1936,14 @@ static std::filesystem::path user_dir_for_fp(pqnas::UsersRegistry& users, const 
         if (!u.storage_pool_id.empty()) {
             std::string pool_mount;
 
-            // 1) Prefer runtime pool map if present
-            {
-                std::lock_guard<std::mutex> lk(pool_mu());
-                auto& m = pool_mount_by_id();
-                auto it = m.find(u.storage_pool_id);
-                if (it != m.end()) {
-                    pool_mount = it->second;
-                }
+            // 1) Prefer the shared runtime pool registry if present.
+            std::filesystem::path runtime_pool_mount;
+
+            if (pqnas::storage_pool_runtime_get_named_mount(
+                    u.storage_pool_id,
+                    &runtime_pool_mount)) {
+                pool_mount =
+                    runtime_pool_mount.string();
             }
 
             // 2) Fallback: resolve from persisted pools.json
@@ -3095,48 +3150,6 @@ static void set_rate_limited_json(httplib::Response& res, const std::string& err
         {"error", error}
     }.dump(), "application/json; charset=utf-8");
 }
-static std::string extract_named_cookie_value(const std::string& cookie_header,
-                                              const std::string& name) {
-    if (cookie_header.empty() || name.empty()) return {};
-
-    std::size_t pos = 0;
-
-    while (pos < cookie_header.size()) {
-        while (pos < cookie_header.size() &&
-               (cookie_header[pos] == ' ' ||
-                cookie_header[pos] == '\t' ||
-                cookie_header[pos] == ';')) {
-                ++pos;
-                }
-
-        const std::size_t eq = cookie_header.find('=', pos);
-        if (eq == std::string::npos) break;
-
-        std::size_t key_end = eq;
-        while (key_end > pos &&
-               (cookie_header[key_end - 1] == ' ' ||
-                cookie_header[key_end - 1] == '\t')) {
-                --key_end;
-                }
-
-        const std::string key = cookie_header.substr(pos, key_end - pos);
-
-        const std::size_t value_start = eq + 1;
-        const std::size_t semi = cookie_header.find(';', value_start);
-
-        const std::string value =
-            (semi == std::string::npos)
-                ? cookie_header.substr(value_start)
-                : cookie_header.substr(value_start, semi - value_start);
-
-        if (key == name) return value;
-
-        if (semi == std::string::npos) break;
-        pos = semi + 1;
-    }
-
-    return {};
-}
 // ----- Cookie gate: user OR admin (UsersRegistry policy) ---------------------
 // Mirrors /api/v4/me logic, but reusable for page + API gating.
 // Returns actor_fp_hex + role ("admin"|"user") on success.
@@ -3151,16 +3164,39 @@ static bool require_user_cookie_users_actor(
     if (out_fp_hex) out_fp_hex->clear();
     if (out_role) out_role->clear();
 
-    auto it = req.headers.find("Cookie");
-    if (it == req.headers.end()) {
-        reply_json(res, 401, json({{"ok",false},{"error","unauthorized"},{"message","missing cookie"}}).dump());
+    // Security: Storage Nodes authorize normal users only from the Director
+    // projection. Never fall back to the Node-local users.json registry.
+    if (!legacy_users_auth_allowed()) {
+        reply_json(
+            res,
+            403,
+            json({
+                {"ok", false},
+                {"error", "legacy_user_auth_disabled"},
+                {"message", "legacy user authentication disabled"}
+            }).dump()
+        );
         return false;
     }
 
-    const std::string& hdr = it->second;
-    const std::string cookieVal = extract_named_cookie_value(hdr, "pqnas_session");
-    if (cookieVal.empty()) {
-        reply_json(res, 401, json({{"ok",false},{"error","unauthorized"},{"message","missing pqnas_session"}}).dump());
+    std::string cookieVal;
+
+    const auto cookie_result =
+        pqnas::extract_strict_pqnas_session_cookie(
+            req,
+            &cookieVal
+        );
+
+    if (cookie_result !=
+        pqnas::StrictSessionCookieResult::Ok) {
+        const char* message =
+            cookie_result == pqnas::StrictSessionCookieResult::MissingCookieHeader
+                ? "missing cookie"
+                : cookie_result == pqnas::StrictSessionCookieResult::MissingSessionCookie
+                      ? "missing pqnas_session"
+                      : "invalid cookie";
+
+        reply_json(res, 401, json({{"ok",false},{"error","unauthorized"},{"message",message}}).dump());
         return false;
     }
 
@@ -3202,6 +3238,107 @@ static bool require_user_cookie_users_actor(
     return true;
 }
 
+// ----- Cleanup-only session identity -----------------------------------------
+// Security: RT-002 intentionally keeps credential revocation/cancellation
+// available on Storage Nodes. Verify the already-issued signed session
+// identity without consulting Node-local users.json. Cleanup handlers perform
+// their own fingerprint ownership check before changing state.
+static bool require_cleanup_session_cookie_identity(
+    const httplib::Request& req,
+    httplib::Response& res,
+    const unsigned char cookie_key[32],
+    std::string* out_fp_hex,
+    std::string* out_role
+) {
+    if (out_fp_hex) out_fp_hex->clear();
+    if (out_role) out_role->clear();
+
+    std::string cookie_val;
+
+    const auto cookie_result =
+        pqnas::extract_strict_pqnas_session_cookie(
+            req,
+            &cookie_val
+        );
+
+    if (cookie_result !=
+        pqnas::StrictSessionCookieResult::Ok) {
+        const char* message =
+            cookie_result == pqnas::StrictSessionCookieResult::MissingCookieHeader
+                ? "missing cookie"
+                : cookie_result == pqnas::StrictSessionCookieResult::MissingSessionCookie
+                      ? "missing pqnas_session"
+                      : "invalid cookie";
+
+        reply_json(
+            res,
+            401,
+            json({
+                {"ok", false},
+                {"error", "unauthorized"},
+                {"message", message}
+            }).dump()
+        );
+        return false;
+    }
+
+    std::string fp_b64;
+    long exp = 0;
+
+    if (!session_cookie_verify(
+            cookie_key,
+            cookie_val,
+            fp_b64,
+            exp
+        )) {
+        reply_json(
+            res,
+            401,
+            json({
+                {"ok", false},
+                {"error", "unauthorized"},
+                {"message", "invalid session"}
+            }).dump()
+        );
+        return false;
+    }
+
+    if (pqnas::now_epoch() > exp) {
+        reply_json(
+            res,
+            401,
+            json({
+                {"ok", false},
+                {"error", "unauthorized"},
+                {"message", "session expired"}
+            }).dump()
+        );
+        return false;
+    }
+
+    std::string raw;
+    if (!b64std_decode_to_bytes(fp_b64, raw) || raw.empty()) {
+        reply_json(
+            res,
+            401,
+            json({
+                {"ok", false},
+                {"error", "unauthorized"},
+                {"message", "invalid session"}
+            }).dump()
+        );
+        return false;
+    }
+
+    if (out_fp_hex) {
+        *out_fp_hex = std::string(raw.begin(), raw.end());
+    }
+
+    // Deliberately no role/users.json lookup on a Storage Node.
+    return true;
+}
+
+
 // ----- Bearer gate: user OR admin (AppTokenStore + UsersRegistry policy) -----
 // Mobile/API auth path. Accepts Authorization: Bearer <access_token>.
 // Returns false silently if there is no usable bearer auth, so caller can
@@ -3216,6 +3353,21 @@ static bool try_user_bearer_users_actor(
 ) {
     if (out_fp_hex) out_fp_hex->clear();
     if (out_role) out_role->clear();
+
+    // Security: legacy app tokens must not make Node-local users.json an
+    // authorization source for normal Storage Node requests.
+    if (!legacy_users_auth_allowed()) {
+        reply_json(
+            res,
+            403,
+            json({
+                {"ok", false},
+                {"error", "legacy_user_auth_disabled"},
+                {"message", "legacy user authentication disabled"}
+            }).dump()
+        );
+        return false;
+    }
 
     auto it = req.headers.find("Authorization");
     if (it == req.headers.end()) {
@@ -3313,6 +3465,21 @@ static bool require_admin_auth_users_actor(
     std::string* out_fp_hex
 ) {
     if (out_fp_hex) out_fp_hex->clear();
+
+    // Security: bearer authentication must not bypass the Storage Node
+    // legacy-admin users.json backstop.
+    if (!legacy_users_auth_allowed()) {
+        reply_json(
+            res,
+            403,
+            json({
+                {"ok", false},
+                {"error", "legacy_admin_auth_disabled"},
+                {"message", "legacy admin authentication disabled"}
+            }).dump()
+        );
+        return false;
+    }
 
     auto it = req.headers.find("Authorization");
     const bool has_bearer =
@@ -4529,10 +4696,14 @@ static std::filesystem::path pools_cfg_path_from_users_path(const std::string& u
 }
 
 static void pool_mounts_init_default_only() {
-    std::lock_guard<std::mutex> lk(pool_mu());
-    auto& m = pool_mount_by_id();
-    m.clear();
-    m[default_pool_id()] = pqnas::data_root_dir();
+    if (!pqnas::storage_pool_runtime_reset(
+            pqnas::data_root_path())) {
+        // Security: invalid trusted runtime paths must not populate the
+        // authorization-visible pool registry with ambiguous locations.
+        std::cerr
+            << "[pools] WARNING: failed to initialize runtime pool registry"
+            << std::endl;
+    }
 }
 
 static std::string pool_id_from_mount_best_effort(const std::string& mount) {
@@ -4566,18 +4737,6 @@ static std::string pool_id_from_mount_best_effort(const std::string& mount) {
 static std::filesystem::path pools_cfg_path_from_users_path(const std::string& users_path);
 static bool write_text_file_atomic(const std::string&, const std::string&);
 static bool read_text_file(const std::string&, std::string*);
-
-static bool is_pool_id_safe(const std::string& s) {
-    if (s.size() < 2 || s.size() > 24) return false;
-    for (char c : s) {
-        const bool ok =
-            (c >= 'a' && c <= 'z') ||
-            (c >= '0' && c <= '9') ||
-            (c == '_');
-        if (!ok) return false;
-    }
-    return true;
-}
 
 static std::string upper_ascii_copy(std::string s) {
     for (char& c : s) {
@@ -6767,7 +6926,7 @@ static std::vector<ManagedPoolRef> managed_pools_from_cfg(const json& cfg) {
             std::string pool_id = one.value("pool_id", "");
             if (pool_id.empty()) pool_id = pool_id_from_mount_best_effort(mount);
 
-            if (!is_pool_id_safe(pool_id)) continue;
+            if (!pqnas::valid_managed_storage_pool_id(pool_id)) continue;
 
             ManagedPoolRef r;
             r.mount = mount;
@@ -6794,7 +6953,7 @@ static std::vector<ManagedPoolRef> managed_pools_from_cfg(const json& cfg) {
                 pool_id.clear();
             }
 
-            if (!is_pool_id_safe(pool_id)) continue;
+            if (!pqnas::valid_managed_storage_pool_id(pool_id)) continue;
 
             ManagedPoolRef r;
             r.mount = mount;
@@ -6842,7 +7001,7 @@ static void pool_mounts_restore_managed(const std::string& users_path) {
     	const std::string& mount = mp.mount;
     	const std::string& pool_id = mp.pool_id;
 
-        if (!is_pool_id_safe(pool_id)) {
+        if (!pqnas::valid_managed_storage_pool_id(pool_id)) {
             std::cerr << "[pools] restore: skip invalid pool_id for mount=" << mount << std::endl;
             continue;
         }
@@ -6853,8 +7012,18 @@ static void pool_mounts_restore_managed(const std::string& users_path) {
         }
 
         if (is_btrfs_mount_active_at(mount)) {
-            std::lock_guard<std::mutex> lk(pool_mu());
-            pool_mount_by_id()[pool_id] = mount;
+            if (!pqnas::storage_pool_runtime_set_named_mount(
+                    pool_id,
+                    mount)) {
+                // Security: do not expose an invalid local pool mapping to
+                // filesystem authorization or upload placement.
+                std::cerr
+                    << "[pools] restore: invalid runtime mapping"
+                    << " pool_id=" << pool_id
+                    << " mount=" << mount
+                    << std::endl;
+                continue;
+            }
             std::cerr << "[pools] restore: already mounted pool_id=" << pool_id
                       << " mount=" << mount << std::endl;
             continue;
@@ -6911,8 +7080,18 @@ static void pool_mounts_restore_managed(const std::string& users_path) {
         }, &out, 64u * 1024u);
 
         if (is_btrfs_mount_active_at(mount)) {
-            std::lock_guard<std::mutex> lk(pool_mu());
-            pool_mount_by_id()[pool_id] = mount;
+            if (!pqnas::storage_pool_runtime_set_named_mount(
+                    pool_id,
+                    mount)) {
+                // Security: do not expose an invalid local pool mapping to
+                // filesystem authorization or upload placement.
+                std::cerr
+                    << "[pools] restore: invalid runtime mapping"
+                    << " pool_id=" << pool_id
+                    << " mount=" << mount
+                    << std::endl;
+                continue;
+            }
 		std::cerr << "[pools] restore: mounted pool_id=" << pool_id
         		  << " mount=" << mount
 		          << " via=" << log_spec
@@ -7329,16 +7508,23 @@ static json build_upload_tiering_candidates_json() {
         arr.push_back(landing_pool_candidate_to_json(c));
     }
 
-    {
-        std::lock_guard<std::mutex> lk(pool_mu());
-        for (const auto& kv : pool_mount_by_id()) {
-            const std::string& pid = kv.first;
-            const std::string& mount = kv.second;
-            if (pid.empty() || pid == "default") continue;
+    for (const auto& entry :
+         pqnas::storage_pool_runtime_snapshot()) {
+        const std::string& pid =
+            entry.pool_id;
 
-            auto c = inspect_landing_pool_candidate(pid, mount);
-            arr.push_back(landing_pool_candidate_to_json(c));
-        }
+        const std::string mount =
+            entry.mount.string();
+
+        auto c =
+            inspect_landing_pool_candidate(
+                pid,
+                mount
+            );
+
+        arr.push_back(
+            landing_pool_candidate_to_json(c)
+        );
     }
 
     return arr;
@@ -7577,35 +7763,53 @@ static UploadTieringConfig upload_tiering_config() {
     return cfg;
 }
 
-static bool landing_root_for_pool_id(const std::string& pool_id,
-                                     std::filesystem::path* out,
-                                     std::string* err) {
-    if (err) err->clear();
+static bool landing_root_for_pool_id(
+    const std::string& pool_id,
+    std::filesystem::path* out,
+    std::string* err
+) {
+    if (err) {
+        err->clear();
+    }
+
     if (!out) {
-        if (err) *err = "null out";
+        if (err) {
+            *err = "null out";
+        }
+
         return false;
     }
 
+    out->clear();
+
     // Default / non-pooled landing area is still allowed.
-    if (pool_id.empty() || pool_id == "default") {
-        *out = std::filesystem::path(pqnas::data_root_dir()).parent_path() / "landing";
+    if (pool_id.empty() ||
+        pool_id == "default") {
+        *out =
+            pqnas::data_root_path()
+                .parent_path() /
+            "landing";
+
         return true;
     }
 
-    std::string pool_mount;
-    {
-        std::lock_guard<std::mutex> lk(pool_mu());
-        auto& m = pool_mount_by_id();
-        auto it = m.find(pool_id);
-        if (it != m.end()) pool_mount = it->second;
-    }
+    std::filesystem::path pool_mount;
 
-    if (pool_mount.empty()) {
-        if (err) *err = "landing_pool_not_found";
+    if (!pqnas::storage_pool_runtime_get_named_mount(
+            pool_id,
+            &pool_mount)) {
+        if (err) {
+            *err =
+                "landing_pool_not_found";
+        }
+
         return false;
     }
 
-    *out = std::filesystem::path(pool_mount) / "landing";
+    *out =
+        pool_mount /
+        "landing";
+
     return true;
 }
 
@@ -9149,6 +9353,638 @@ int main()
         return 1;
     }
 
+    pqnas::cluster::ServerRoleConfig cluster_config;
+    std::string cluster_config_err;
+
+    if (!pqnas::cluster::load_server_role_config_from_env(
+            &cluster_config,
+            &cluster_config_err)) {
+        std::cerr
+            << "[cluster] FATAL: "
+            << cluster_config_err
+            << std::endl;
+        return 2;
+    }
+
+    // Security: a Storage Node's local users.json is not cluster user/admin
+    // authority. Configure the process-wide legacy auth backstop before any
+    // HTTP routes are registered.
+    set_legacy_users_auth_allowed(
+        !cluster_config.is_node()
+    );
+
+    if (cluster_config.is_node()) {
+        pqnas::cluster::
+            StorageNodeEnrollmentRuntimeConfig
+                enrollment_runtime_config;
+
+        const auto enrollment_config_result =
+            pqnas::cluster::
+                load_storage_node_enrollment_runtime_config_from_env(
+                    &enrollment_runtime_config
+                );
+
+        if (enrollment_config_result !=
+            pqnas::cluster::
+                StorageNodeEnrollmentRuntimeConfigResult::Ok) {
+            // Security: report only the stable category. Enrollment identity,
+            // token paths and secret material must never enter startup logs.
+            std::cerr
+                << "[cluster] FATAL: storage node enrollment "
+                   "configuration failed: "
+                << pqnas::cluster::
+                       storage_node_enrollment_runtime_config_result_code(
+                           enrollment_config_result
+                       )
+                << std::endl;
+
+            return 2;
+        }
+
+        pqnas::cluster::
+            StorageNodeEnrollmentRuntimeDependencies
+                enrollment_dependencies;
+
+        enrollment_dependencies.transport =
+            pqnas::cluster::
+                make_https_storage_node_enrollment_transport();
+
+        enrollment_dependencies.now_iso_utc =
+            []() {
+                return pqnas::now_iso_utc();
+            };
+
+        const auto enrollment_result =
+            pqnas::cluster::
+                ensure_storage_node_enrollment(
+                    cluster_config,
+                    enrollment_runtime_config,
+                    std::move(
+                        enrollment_dependencies
+                    )
+                );
+
+        if (!enrollment_result.ok) {
+            // Security: never log Director responses, configured URLs,
+            // filesystem paths, bootstrap tokens or node credentials.
+            std::cerr
+                << "[cluster] FATAL: storage node enrollment "
+                   "failed: "
+                << enrollment_result.error_code()
+                << std::endl;
+
+            return 2;
+        }
+
+        if (enrollment_result.code ==
+            pqnas::cluster::
+                StorageNodeEnrollmentRuntimeCode::Ok) {
+            std::cerr
+                << "[cluster] storage_node_enrollment=ready"
+                << " recovered="
+                << (
+                    enrollment_result.recovered
+                    ? "true"
+                    : "false"
+                )
+                << " already_enrolled="
+                << (
+                    enrollment_result.already_enrolled
+                    ? "true"
+                    : "false"
+                )
+                << std::endl;
+        }
+
+        if (enrollment_result
+                .token_cleanup_warning) {
+            std::cerr
+                << "[cluster] WARN: "
+                   "storage_node_bootstrap_token_cleanup_failed"
+                << std::endl;
+        }
+    }
+
+    pqnas::cluster::StorageNodeCredentialRuntime
+        cluster_credential_runtime;
+
+    // Node-local authorization projection state.
+    //
+    // Security: this is deliberately separate from UsersRegistry so Storage
+    // projections can never become an interactive-login user authority.
+    pqnas::cluster::StorageUserProjectionStore
+        storage_user_projection_store;
+
+    // Storage Node user authorization composition.
+    //
+    // Security: the runtime stores pointers to the projection store and cookie
+    // key, so it must remain at a stable address and be destroyed before its
+    // dependencies.
+    std::unique_ptr<
+        pqnas::cluster::StorageUserAccessRuntime
+    > storage_user_access_runtime;
+
+    // Short-lived handoff bearer state is intentionally process-local.
+    //
+    // Security: a restart invalidates outstanding tickets. The browser must
+    // restart handoff instead of recovering or persisting plaintext bearer
+    // capability across process lifetime.
+    std::unique_ptr<
+        pqnas::cluster::StorageHandoffTicketStore
+    > storage_handoff_ticket_store;
+
+    // Storage handoff consume service keeps non-owning references to the
+    // ticket store, Node-local session policy and process cookie key.
+    // Keep it at server lifetime together with those dependencies.
+    std::unique_ptr<
+        pqnas::cluster::StorageHandoffConsumeService
+    > storage_handoff_consume_service;
+
+    if (cluster_config.is_node()) {
+        std::string credential_err;
+
+        if (!cluster_credential_runtime.load(
+                cluster_config.cluster_credential_file,
+                &credential_err)) {
+            // Security: report only the failure category. Never log the
+            // credential contents or its configured filesystem path.
+            // Pending rotation state is recovered fail-closed by the runtime.
+            std::cerr
+                << "[cluster] FATAL: internal credential setup failed: "
+                << credential_err
+                << std::endl;
+            return 2;
+        }
+    }
+
+    if (cluster_config.is_node()) {
+        // Security: projection metadata is trusted Node authorization state.
+        // Derive one fixed filename from the validated config root instead of
+        // accepting a separate environment-controlled file path.
+        const std::filesystem::path
+            storage_user_projection_path =
+                pqnas::config_root_path() /
+                "storage_user_projections.json";
+
+        std::string
+            storage_user_projection_error;
+
+        if (!storage_user_projection_store.load(
+                storage_user_projection_path.string(),
+                &storage_user_projection_error)) {
+            // Security: fail closed. A malformed, linked, incorrectly owned or
+            // insufficiently private projection store must never turn into an
+            // empty authorization view on a running Storage Node.
+            //
+            // Do not log the configured path or raw file contents.
+            std::cerr
+                << "[cluster] FATAL: storage user projection "
+                   "store load failed: "
+                << storage_user_projection_error
+                << std::endl;
+
+            return 3;
+        }
+
+        std::cerr
+            << "[cluster] storage user projection store loaded "
+               "projections="
+            << storage_user_projection_store
+                   .snapshot()
+                   .size()
+            << std::endl;
+    }
+
+    std::cerr
+        << "[cluster] role="
+        << pqnas::cluster::server_role_name(cluster_config.role);
+
+    if (cluster_config.is_node()) {
+        std::cerr << " node_id=" << cluster_config.node_id;
+    }
+
+    if (cluster_config.is_node()) {
+        // Security: log configuration state only, never secret values.
+        std::cerr << " internal_auth=configured";
+    }
+
+    std::cerr << std::endl;
+
+    pqnas::cluster::NodeRegistry director_node_registry;
+
+    pqnas::cluster::NodeEnrollmentRegistry
+        director_node_enrollment_registry;
+
+    pqnas::cluster::NodeCredentialRegistry
+        director_node_credential_registry;
+
+    // Security: TLS identity bindings live for the complete Director process
+    // lifetime and are separate from bearer credential state.
+    pqnas::cluster::NodeTlsTrustStore
+        director_node_tls_trust_store;
+
+    std::unique_ptr<
+        pqnas::cluster::NodeEnrollmentService
+    > director_node_enrollment_service;
+
+    std::unique_ptr<
+        pqnas::cluster::
+            NodeEnrollmentConsumptionService
+    > director_node_enrollment_consumption_service;
+
+    std::unique_ptr<
+        pqnas::cluster::
+            NodeCredentialRotationService
+    > director_node_credential_rotation_service;
+
+    // Security: the Director browser-handoff client owns no credential
+    // material itself, but its trusted registry/store dependencies must remain
+    // valid for every future handoff request.
+    [[maybe_unused]] std::unique_ptr<
+        pqnas::cluster::StorageHandoffTicketClient
+    > director_storage_handoff_ticket_client;
+
+    pqnas::cluster::UserPlacementPolicyRegistry
+        director_placement_policy_registry;
+
+    // Shared for the complete Director lifetime. Heartbeat observations,
+    // node administration and placement decisions use the same coordination
+    // boundary for check-and-mutate sequences.
+    auto cluster_placement_mutex =
+        std::make_shared<std::mutex>();
+
+    if (cluster_config.is_director()) {
+        // Security: the Director registry is trusted control-plane state.
+        // Derive its fixed filename from the validated config root instead of
+        // accepting a separate per-file environment override.
+        const std::filesystem::path node_registry_path =
+            pqnas::config_root_path() / "node_registry.json";
+
+        std::string node_registry_error;
+
+        if (!director_node_registry.load(
+                node_registry_path.string(),
+                &node_registry_error)) {
+            // Security: fail closed. A malformed, symlinked, incorrectly owned,
+            // or otherwise unsafe registry must not start a Director with an
+            // incomplete or attacker-controlled node view.
+            std::cerr
+                << "[cluster] FATAL: Director node registry load failed: "
+                << node_registry_error
+                << std::endl;
+            return 3;
+        }
+
+        std::cerr
+            << "[cluster] Director node registry loaded nodes="
+            << director_node_registry.snapshot().size()
+            << std::endl;
+
+        // Security: enrollment intents contain bootstrap-token verifiers and
+        // are trusted control-plane state. Use one fixed filename below the
+        // validated configuration root; never accept a per-file override.
+        const std::filesystem::path
+            node_enrollment_registry_path =
+                pqnas::config_root_path() /
+                "node_enrollments.json";
+
+        std::string
+            node_enrollment_registry_error;
+
+        if (!director_node_enrollment_registry.load(
+                node_enrollment_registry_path.string(),
+                &node_enrollment_registry_error)) {
+            // Security: fail closed and do not print the configured path,
+            // verifier material or the registry's raw filesystem diagnostic.
+            std::cerr
+                << "[cluster] FATAL: Director node enrollment "
+                   "registry load failed"
+                << std::endl;
+
+            return 3;
+        }
+
+        // Security: long-lived node credentials are service-private control
+        // plane state. Use one fixed directory below the validated config root
+        // and refuse unsafe ownership, permissions, links or file types.
+        const std::filesystem::path
+            node_credential_registry_path =
+                pqnas::config_root_path() /
+                "node_credentials";
+
+        std::string
+            node_credential_registry_error;
+
+        if (!director_node_credential_registry.load(
+                node_credential_registry_path.string(),
+                &node_credential_registry_error)) {
+            // Security: do not print credential paths or raw filesystem
+            // diagnostics; either could disclose deployment details.
+            std::cerr
+                << "[cluster] FATAL: Director node credential "
+                   "registry load failed"
+                << std::endl;
+
+            return 3;
+        }
+
+        // Security: node TLS identities are trusted control-plane state.
+        // Keep them in a fixed private directory below the validated config
+        // root; never accept an independent path override or perform TOFU.
+        const std::filesystem::path
+            node_tls_trust_store_path =
+                pqnas::config_root_path() /
+                "node_tls_trust";
+
+        std::string node_tls_trust_store_error;
+
+        if (!director_node_tls_trust_store.load(
+                node_tls_trust_store_path.string(),
+                &node_tls_trust_store_error)) {
+            // Security: fail closed without disclosing the filesystem path or
+            // raw diagnostic from trusted TLS identity storage.
+            std::cerr
+                << "[cluster] FATAL: Director node TLS trust "
+                   "store load failed"
+                << std::endl;
+
+            return 3;
+        }
+
+        std::cerr
+            << "[cluster] Director node TLS trust store loaded"
+            << std::endl;
+
+        // Security: browser-handoff capability minting uses the same
+        // Director-owned Node identity, credential and pinned-TLS authorities
+        // as the other control-plane clients. Construction performs no network
+        // operation; the client revalidates mutable authority again on issue().
+        pqnas::cluster::StorageHandoffTicketClientConfig
+            storage_handoff_ticket_client_config;
+
+        storage_handoff_ticket_client_config.node_registry =
+            &director_node_registry;
+
+        storage_handoff_ticket_client_config.credential_registry =
+            &director_node_credential_registry;
+
+        storage_handoff_ticket_client_config.tls_trust_store =
+            &director_node_tls_trust_store;
+
+        storage_handoff_ticket_client_config.transport =
+            pqnas::cluster::
+                make_https_storage_handoff_ticket_transport();
+
+        director_storage_handoff_ticket_client =
+            std::make_unique<
+                pqnas::cluster::StorageHandoffTicketClient
+            >(
+                std::move(
+                    storage_handoff_ticket_client_config
+                )
+            );
+
+        pqnas::cluster::
+            NodeCredentialRotationServiceConfig
+                node_credential_rotation_service_config;
+
+        node_credential_rotation_service_config.node_registry =
+            &director_node_registry;
+
+        node_credential_rotation_service_config.credential_registry =
+            &director_node_credential_registry;
+
+        // Security: bearer rotation is authorized only toward the node identity
+        // durably established during enrollment.
+        node_credential_rotation_service_config.tls_trust_store =
+            &director_node_tls_trust_store;
+
+        node_credential_rotation_service_config.coordination_mutex =
+            cluster_placement_mutex;
+
+        node_credential_rotation_service_config.prepare_transport =
+            pqnas::cluster::
+                make_https_node_credential_rotation_prepare_transport();
+
+        node_credential_rotation_service_config.finalize_transport =
+            pqnas::cluster::
+                make_https_node_credential_rotation_finalize_transport();
+
+        // Security: credential rotation shares the Director lifecycle
+        // coordination boundary, but the service releases that mutex before
+        // every network operation.
+        director_node_credential_rotation_service =
+            std::make_unique<
+                pqnas::cluster::
+                    NodeCredentialRotationService
+            >(
+                std::move(
+                    node_credential_rotation_service_config
+                )
+            );
+
+        pqnas::cluster::
+            NodeEnrollmentServiceConfig
+                node_enrollment_service_config;
+
+        node_enrollment_service_config.registry =
+            &director_node_enrollment_registry;
+
+        node_enrollment_service_config.audit_emit =
+            [](
+                const std::string& event,
+                const std::string& outcome,
+                const std::map<
+                    std::string,
+                    std::string
+                >& fields
+            ) {
+                pqnas::AuditEvent audit;
+                audit.event = event;
+                audit.outcome = outcome;
+
+                for (const auto& field :
+                     fields) {
+                    audit.f[field.first] =
+                        field.second;
+                }
+
+                audit_append(audit);
+            };
+
+        director_node_enrollment_service =
+            std::make_unique<
+                pqnas::cluster::
+                    NodeEnrollmentService
+            >(
+                std::move(
+                    node_enrollment_service_config
+                )
+            );
+
+        pqnas::cluster::
+            NodeEnrollmentConsumptionServiceConfig
+                node_enrollment_consumption_service_config;
+
+        node_enrollment_consumption_service_config
+            .enrollment_registry =
+                &director_node_enrollment_registry;
+
+        node_enrollment_consumption_service_config
+            .credential_registry =
+                &director_node_credential_registry;
+
+        // Security: enrollment cannot reach NodeRegistered until the node's
+        // immutable TLS SPKI identity has been durably bound here.
+        node_enrollment_consumption_service_config
+            .tls_trust_store =
+                &director_node_tls_trust_store;
+
+        node_enrollment_consumption_service_config
+            .node_registry =
+                &director_node_registry;
+
+        node_enrollment_consumption_service_config
+            .audit_emit =
+                [](
+                    const std::string& event,
+                    const std::string& outcome,
+                    const std::map<
+                        std::string,
+                        std::string
+                    >& fields
+                ) {
+                    pqnas::AuditEvent audit;
+                    audit.event = event;
+                    audit.outcome = outcome;
+
+                    for (const auto& field :
+                         fields) {
+                        audit.f[field.first] =
+                            field.second;
+                    }
+
+                    audit_append(audit);
+                };
+
+        director_node_enrollment_consumption_service =
+            std::make_unique<
+                pqnas::cluster::
+                    NodeEnrollmentConsumptionService
+            >(
+                std::move(
+                    node_enrollment_consumption_service_config
+                )
+            );
+
+        // Security: log aggregate state only. Never log URLs, enrollment IDs,
+        // token verifiers, registry paths or individual node identifiers.
+        std::cerr
+            << "[cluster] Director node enrollment registry "
+               "loaded enrollments="
+            << director_node_enrollment_registry
+                   .snapshot()
+                   .size()
+            << std::endl;
+
+        // Security: placement policies are trusted control-plane state.
+        // Use a fixed filename below the validated configuration root rather
+        // than accepting an independent environment-controlled file path.
+        const std::filesystem::path
+            placement_policy_registry_path =
+                pqnas::config_root_path() /
+                "placement_policies.json";
+
+        std::string placement_policy_registry_error;
+
+        if (!director_placement_policy_registry.load(
+                placement_policy_registry_path.string(),
+                &placement_policy_registry_error)) {
+            // Security: fail closed. Starting with an incomplete or
+            // attacker-controlled policy view could place protected customer
+            // groups outside their required backup or isolation node set.
+            std::cerr
+                << "[cluster] FATAL: Director placement policy "
+                   "registry load failed: "
+                << placement_policy_registry_error
+                << std::endl;
+            return 3;
+        }
+
+        // Security: log only aggregate configuration state, never policy
+        // contents, node membership or the registry filesystem path.
+        std::cerr
+            << "[cluster] Director placement policy registry "
+               "loaded policies="
+            << director_placement_policy_registry
+                   .snapshot()
+                   .size()
+            << std::endl;
+    }
+
+    pqnas::cluster::NodeHeartbeatWorkerConfig
+        director_heartbeat_config;
+
+    director_heartbeat_config.registry =
+        &director_node_registry;
+
+    director_heartbeat_config.coordination_mutex =
+        cluster_placement_mutex;
+
+    director_heartbeat_config.credential_registry =
+        &director_node_credential_registry;
+
+    // Security: heartbeat bearer material is unavailable until an exact
+    // per-node TLS identity has been durably enrolled.
+    director_heartbeat_config.tls_trust_store =
+        &director_node_tls_trust_store;
+
+    director_heartbeat_config.fetch =
+        pqnas::cluster::
+            make_https_node_heartbeat_fetch();
+
+    director_heartbeat_config.now_iso_utc =
+        []() {
+            return pqnas::now_iso_utc();
+        };
+
+    director_heartbeat_config.audit_emit =
+        [](const std::string& event,
+           const std::string& outcome,
+           const std::map<std::string, std::string>& fields) {
+            pqnas::AuditEvent audit;
+            audit.event = event;
+            audit.outcome = outcome;
+
+            for (const auto& field : fields) {
+                audit.f[field.first] = field.second;
+            }
+
+            audit_append(audit);
+        };
+
+    pqnas::cluster::NodeHeartbeatWorker
+        director_node_heartbeat_worker(
+            std::move(director_heartbeat_config)
+        );
+
+    if (cluster_config.is_director()) {
+        std::string heartbeat_start_error;
+
+        if (!director_node_heartbeat_worker.start(
+                &heartbeat_start_error)) {
+            std::cerr
+                << "[cluster] FATAL: Director heartbeat worker failed to start: "
+                << heartbeat_start_error
+                << std::endl;
+            return 3;
+        }
+
+        std::cerr
+            << "[cluster] Director heartbeat worker started interval_s=30"
+            << std::endl;
+    }
+
     if (!load_env_key("PQNAS_SERVER_PK_B64URL", SERVER_PK, 32) ||
         !load_env_key("PQNAS_SERVER_SK_B64URL", SERVER_SK, 64) ||
         !load_env_key("PQNAS_COOKIE_KEY_B64URL", COOKIE_KEY, 32)) {
@@ -9305,7 +10141,7 @@ int main()
         return 2;
     }
     std::atomic<bool> snapshots_stop{false};
-    std::thread snapshots_thread = pqnas::snapshots::start_snapshot_scheduler(admin_settings_path, snapshots_stop);
+    std::thread snapshots_thread;
 
     // ---------------------------
     // Auto-rotation (checked before every audit.append)
@@ -9478,45 +10314,6 @@ auto maybe_auto_rotate_before_append = [&]() {
     };
 
 
-	pqnas::drive_health_monitor_start(
-    	[&](const pqnas::DriveHealthInfo& d,
-        	const std::string& prev_status,
-	        const std::string& new_status) {
-
-    	    pqnas::AuditEvent ev;
-
-        	if (new_status == "fail") {
-            	ev.event = "system.drive_failure";
-	            ev.outcome = "fail";
-    	    } else if (new_status == "warn") {
-        	    ev.event = "system.drive_warning";
-            	ev.outcome = "fail";
-	        } else if (new_status == "ok") {
-    	        ev.event = "system.drive_recovered";
-        	    ev.outcome = "ok";
-	        } else {
-    	        ev.event = "system.drive_status_changed";
-        	    ev.outcome = "ok";
-        	}
-
-	        ev.f["device"] = d.dev;
-    	    ev.f["model"] = pqnas::shorten(d.model, 120);
-        	ev.f["prev_status"] = prev_status;
-	        ev.f["new_status"] = new_status;
-    	    ev.f["health_text"] = pqnas::shorten(d.health_text, 120);
-
-	        if (d.temperature_c >= 0) ev.f["temperature_c"] = std::to_string(d.temperature_c);
-    	    if (d.percentage_used >= 0) ev.f["percentage_used"] = std::to_string(d.percentage_used);
-        	if (d.available_spare >= 0) ev.f["available_spare"] = std::to_string(d.available_spare);
-	        if (d.media_errors >= 0) ev.f["media_errors"] = std::to_string(d.media_errors);
-    	    if (d.power_on_hours >= 0) ev.f["power_on_hours"] = std::to_string(d.power_on_hours);
-        	if (!d.warning.empty()) ev.f["warning"] = pqnas::shorten(d.warning, 160);
-	        if (!d.selftest_text.empty()) ev.f["selftest"] = pqnas::shorten(d.selftest_text, 160);
-
-    	    audit_append(ev);
-    	}
-	);
-
     httplib::Server srv;
 
     pqnas::ServiceNoticesStore service_notices_store(
@@ -9668,6 +10465,538 @@ auto maybe_auto_rotate_before_append = [&]() {
         return 4;
     }
 
+
+    // ---------------------------------------------------------------------
+    // Director -> Storage user projection reconciliation.
+    //
+    // Security: compose this only after users.json has loaded successfully.
+    // The persistent sync-state remembers the last Node/revision known to
+    // have accepted each projection, allowing crash-safe reconciliation.
+    // ---------------------------------------------------------------------
+    // Security: physical user deletion, Node deletion and reconciliation
+    // share this transition mutex. RT-016 keeps reconciliation's use narrow:
+    // authoritative Director re-read + durable RT-009 pending journal only.
+    // Storage network I/O runs outside this boundary.
+    auto director_storage_projection_transition_mutex =
+        std::make_shared<std::mutex>();
+
+    pqnas::cluster::
+        StorageUserProjectionSyncStateStore
+            director_storage_projection_sync_state_store;
+
+    pqnas::cluster::
+        StorageUserProjectionTransitionStore
+            director_storage_projection_transition_store;
+
+    if (cluster_config.is_director()) {
+        const std::filesystem::path
+            projection_sync_state_path =
+                pqnas::config_root_path() /
+                "storage_projection_sync_state.json";
+
+        // Security: production Director must never silently bootstrap an
+        // empty confirmed-sync view after this file has been lost. Otherwise
+        // the previous authoritative Node could be forgotten and retain stale
+        // authorization indefinitely. Initial deployment must explicitly seed
+        // the empty version-1 state file.
+        std::error_code
+            projection_sync_state_status_error;
+
+        const auto projection_sync_state_status =
+            std::filesystem::symlink_status(
+                projection_sync_state_path,
+                projection_sync_state_status_error
+            );
+
+        if (projection_sync_state_status_error ||
+            !std::filesystem::exists(
+                projection_sync_state_status)) {
+            std::cerr
+                << "[cluster] FATAL: Director storage projection "
+                   "sync-state file is missing or inaccessible"
+                << std::endl;
+
+            return 3;
+        }
+
+        std::string
+            projection_sync_state_error;
+
+        if (!director_storage_projection_sync_state_store.load(
+                projection_sync_state_path.string(),
+                &projection_sync_state_error)) {
+            // Security: fail closed. Losing or accepting malformed confirmed
+            // synchronization state could leave an old Storage Node
+            // authorized after a placement transition.
+            //
+            // Do not log the configured path or file contents.
+            std::cerr
+                << "[cluster] FATAL: Director storage projection "
+                   "sync-state load failed: "
+                << projection_sync_state_error
+                << std::endl;
+
+            return 3;
+        }
+
+        const std::filesystem::path
+            projection_transition_journal_path =
+                pqnas::config_root_path() /
+                "storage_projection_transition_journal.json";
+
+        // Security: RT-009 pending transition knowledge may identify a Node
+        // that accepted authorization but was not yet durably confirmed.
+        // Production must never replace a lost journal with an empty one.
+        std::error_code
+            projection_transition_journal_status_error;
+
+        const auto projection_transition_journal_status =
+            std::filesystem::symlink_status(
+                projection_transition_journal_path,
+                projection_transition_journal_status_error
+            );
+
+        if (projection_transition_journal_status_error ||
+            !std::filesystem::exists(
+                projection_transition_journal_status)) {
+            std::cerr
+                << "[cluster] FATAL: Director storage projection "
+                   "transition journal is missing or inaccessible"
+                << std::endl;
+
+            return 3;
+        }
+
+        std::string
+            projection_transition_journal_error;
+
+        if (!director_storage_projection_transition_store.load(
+                projection_transition_journal_path.string(),
+                &projection_transition_journal_error)) {
+            // Security: malformed or unsafe pending authorization knowledge
+            // must fail closed. Do not log the configured path or contents.
+            std::cerr
+                << "[cluster] FATAL: Director storage projection "
+                   "transition journal load failed: "
+                << projection_transition_journal_error
+                << std::endl;
+
+            return 3;
+        }
+
+        const auto projection_startup_consistency =
+            pqnas::cluster::
+                check_storage_projection_startup_consistency(
+                    users,
+                    director_storage_projection_sync_state_store,
+                    director_storage_projection_transition_store
+                );
+
+        if (!projection_startup_consistency.ok) {
+            // Security: never continue from a users.json rollback whose
+            // previously-derived confirmed Node state is already newer.
+            // Aggregate counts only; never log user fingerprints.
+            std::cerr
+                << "[cluster] FATAL: Director authoritative user "
+                   "projection state is older than durable authorization state"
+                << " newer_confirmed_entries="
+                << projection_startup_consistency
+                       .confirmed_revision_ahead
+                << " newer_pending_entries="
+                << projection_startup_consistency
+                       .pending_revision_ahead
+                << std::endl;
+
+            return 3;
+        }
+
+        std::cerr
+            << "[cluster] Director storage projection state loaded"
+            << " confirmed_entries="
+            << director_storage_projection_sync_state_store
+                   .snapshot()
+                   .size()
+            << " pending_entries="
+            << director_storage_projection_transition_store
+                   .snapshot()
+                   .size()
+            << std::endl;
+    }
+
+    // RT010: compose Node deletion only after the durable confirmed projection
+    // state and its reconciliation transition boundary have process lifetime.
+    pqnas::cluster::NodeDeletionServiceConfig
+        director_node_deletion_service_config;
+
+    director_node_deletion_service_config.node_registry =
+        &director_node_registry;
+
+    director_node_deletion_service_config.enrollment_registry =
+        &director_node_enrollment_registry;
+
+    director_node_deletion_service_config.credential_registry =
+        &director_node_credential_registry;
+
+    director_node_deletion_service_config.tls_trust_store =
+        &director_node_tls_trust_store;
+
+    director_node_deletion_service_config.projection_sync_state_store =
+        &director_storage_projection_sync_state_store;
+
+    director_node_deletion_service_config.projection_transition_store =
+        &director_storage_projection_transition_store;
+
+    director_node_deletion_service_config.projection_transition_mutex =
+        director_storage_projection_transition_mutex;
+
+    pqnas::cluster::NodeDeletionService
+        director_node_deletion_service(
+            director_node_deletion_service_config
+        );
+
+
+    pqnas::cluster::
+        StorageUserProjectionSyncClientConfig
+            director_storage_projection_sync_client_config;
+
+    director_storage_projection_sync_client_config
+        .node_registry =
+            &director_node_registry;
+
+    director_storage_projection_sync_client_config
+        .credential_registry =
+            &director_node_credential_registry;
+
+    // Security: projection synchronization cannot materialize a bearer until
+    // the target Storage node has an authoritative TLS identity binding.
+    director_storage_projection_sync_client_config
+        .tls_trust_store =
+            &director_node_tls_trust_store;
+
+    director_storage_projection_sync_client_config
+        .transport =
+            pqnas::cluster::
+                make_https_storage_user_projection_sync_transport();
+
+    pqnas::cluster::
+        StorageUserProjectionSyncClient
+            director_storage_projection_sync_client(
+                std::move(
+                    director_storage_projection_sync_client_config
+                )
+            );
+
+    pqnas::cluster::
+        StorageUserProjectionAuditClientConfig
+            director_storage_projection_audit_client_config;
+
+    director_storage_projection_audit_client_config
+        .node_registry =
+            &director_node_registry;
+
+    director_storage_projection_audit_client_config
+        .credential_registry =
+            &director_node_credential_registry;
+
+    // Security: RT-008 readback follows the same trust-before-bearer boundary
+    // as projection mutation. No reusable bearer is materialized before the
+    // exact Storage node has an authoritative SPKI identity binding.
+    director_storage_projection_audit_client_config
+        .tls_trust_store =
+            &director_node_tls_trust_store;
+
+    director_storage_projection_audit_client_config
+        .transport =
+            pqnas::cluster::
+                make_https_storage_user_projection_audit_transport();
+
+    pqnas::cluster::
+        StorageUserProjectionAuditClient
+            director_storage_projection_audit_client(
+                std::move(
+                    director_storage_projection_audit_client_config
+                )
+            );
+
+    pqnas::cluster::
+        StorageUserProjectionReconcilerConfig
+            director_storage_projection_reconciler_config;
+
+    director_storage_projection_reconciler_config.users =
+        &users;
+
+    director_storage_projection_reconciler_config.state_store =
+        &director_storage_projection_sync_state_store;
+
+    director_storage_projection_reconciler_config.transition_store =
+        &director_storage_projection_transition_store;
+
+    // RT-016: the reconciler itself narrows this shared boundary to
+    // authoritative re-read + durable pending journal. HTTPS runs unlocked.
+    director_storage_projection_reconciler_config.transition_mutex =
+        director_storage_projection_transition_mutex;
+
+    director_storage_projection_reconciler_config.audit_emit =
+        [](
+            const std::string& event,
+            const std::string& outcome,
+            const std::map<
+                std::string,
+                std::string
+            >& fields
+        ) {
+            pqnas::AuditEvent audit;
+
+            audit.event = event;
+            audit.outcome = outcome;
+
+            for (const auto& field :
+                 fields) {
+                audit.f[field.first] =
+                    field.second;
+            }
+
+            audit_append(audit);
+        };
+
+    director_storage_projection_reconciler_config.sync_projection =
+        [&director_storage_projection_sync_client](
+            const pqnas::cluster::StorageUserProjection& projection
+        ) {
+            return
+                director_storage_projection_sync_client.sync(
+                    projection
+                );
+        };
+
+    director_storage_projection_reconciler_config
+        .list_audit_capable_nodes =
+            [&director_node_registry]() {
+                std::vector<std::string> node_ids;
+
+                const auto nodes =
+                    director_node_registry.snapshot();
+
+                node_ids.reserve(nodes.size());
+
+                for (const auto& node : nodes) {
+                    // Security: capability comes only from the authenticated
+                    // heartbeat protocol recorded by Director. Health or
+                    // enabled state must not downgrade a known v2 node into
+                    // the legacy POST path.
+                    if (pqnas::cluster::
+                            node_status_protocol_supports_projection_audit(
+                                node.protocol_version)) {
+                        node_ids.push_back(node.node_id);
+                    }
+                }
+
+                return node_ids;
+            };
+
+    director_storage_projection_reconciler_config
+        .list_audit_online_nodes =
+            [&director_node_registry]() {
+                std::vector<std::string> node_ids;
+
+                const auto nodes =
+                    director_node_registry.snapshot();
+
+                node_ids.reserve(nodes.size());
+
+                for (const auto& node : nodes) {
+                    // Security: health controls whether range proof is
+                    // attempted this pass, never whether the authenticated v2
+                    // capability is remembered.
+                    if (node.health == "online" &&
+                        pqnas::cluster::
+                            node_status_protocol_supports_projection_audit(
+                                node.protocol_version)) {
+                        node_ids.push_back(
+                            node.node_id
+                        );
+                    }
+                }
+
+                return node_ids;
+            };
+
+    director_storage_projection_reconciler_config
+        .audit_projection_range =
+            [&director_storage_projection_audit_client](
+                const pqnas::cluster::
+                    StorageUserProjectionAuditRequest& request
+            ) {
+                return
+                    director_storage_projection_audit_client.audit(
+                        request
+                    );
+            };
+
+    pqnas::cluster::
+        StorageUserProjectionReconciler
+            director_storage_projection_reconciler(
+                std::move(
+                    director_storage_projection_reconciler_config
+                )
+            );
+
+    pqnas::cluster::
+        StorageUserProjectionReconcileWorkerConfig
+            director_storage_projection_reconcile_worker_config;
+
+    director_storage_projection_reconcile_worker_config
+        .reconcile_once =
+            [&director_storage_projection_reconciler]() {
+                // RT-016: network synchronization and range-proof audit I/O
+                // run outside the shared user/Node deletion boundary. The
+                // reconciler acquires it only before a newly authorized target
+                // is durably recorded in the RT-009 pending journal.
+                const auto result =
+                    director_storage_projection_reconciler
+                        .reconcile_once();
+
+                if (!result.ok) {
+                    // Security/operations: log aggregate reconciliation
+                    // categories only. Never log fingerprints, Node URLs,
+                    // credentials, projection bodies or filesystem paths.
+                    std::cerr
+                        << "[cluster] WARNING: storage projection "
+                           "reconciliation incomplete"
+                        << " users_seen="
+                        << result.users_seen
+                        << " failed="
+                        << result.failed
+                        << " audit_deferred_nodes="
+                        << result.audit_deferred_nodes
+                        << " orphaned_states="
+                        << result.orphaned_states
+                        << " stale_states="
+                        << result.stale_states
+                        << " state_conflicts="
+                        << result.state_conflicts
+                        << " persist_failures="
+                        << result.persist_failures
+                        << std::endl;
+                }
+
+                return result;
+            };
+
+    pqnas::cluster::
+        StorageUserProjectionReconcileWorker
+            director_storage_projection_reconcile_worker(
+                std::move(
+                    director_storage_projection_reconcile_worker_config
+                )
+            );
+
+    if (cluster_config.is_director()) {
+        std::string
+            projection_reconcile_worker_error;
+
+        if (!director_storage_projection_reconcile_worker.start(
+                &projection_reconcile_worker_error)) {
+            std::cerr
+                << "[cluster] FATAL: Director storage projection "
+                   "reconciliation worker failed to start: "
+                << projection_reconcile_worker_error
+                << std::endl;
+
+            return 3;
+        }
+
+        // Security/correctness: only a running Director worker receives
+        // post-commit projection wakes. Periodic reconciliation remains the
+        // safety net if an individual best-effort wake cannot be delivered.
+        users.set_storage_projection_commit_notifier(
+            [&director_storage_projection_reconcile_worker](
+                const pqnas::StorageProjectionCommitInfo& info
+            ) {
+                // Security/audit: correlate every durable Director projection
+                // transition with the exact registry-owned revision.
+                try {
+                    pqnas::AuditEvent audit;
+
+                    audit.event =
+                        "cluster.storage_projection.committed";
+
+                    audit.outcome = "ok";
+
+                    audit.f["fingerprint"] =
+                        info.fingerprint;
+
+                    audit.f["previous_revision"] =
+                        std::to_string(
+                            info.previous_revision
+                        );
+
+                    audit.f["projection_revision"] =
+                        std::to_string(
+                            info.projection_revision
+                        );
+
+                    audit.f["previous_home_node"] =
+                        info.previous_home_node;
+
+                    audit.f["home_node"] =
+                        info.home_node;
+
+                    audit_append(audit);
+                } catch (...) {
+                    // Audit is best-effort here. Never suppress the
+                    // reconciliation wake for an already-durable commit.
+                }
+
+                (void)director_storage_projection_reconcile_worker.wake();
+            }
+        );
+
+        std::cerr
+            << "[cluster] Director storage projection reconciliation "
+               "worker started interval_s=30"
+            << std::endl;
+    }
+
+    std::function<bool(
+        const std::string&,
+        bool*,
+        bool*,
+        bool*,
+        std::string*
+    )> cluster_safe_user_delete;
+
+    if (cluster_config.is_director()) {
+        cluster_safe_user_delete =
+            [
+                &users,
+                &director_storage_projection_sync_state_store,
+                &director_storage_projection_transition_store,
+                director_storage_projection_transition_mutex,
+                users_path
+            ](
+                const std::string& fingerprint,
+                bool* erased,
+                bool* placement_blocked,
+                bool* cluster_revoke_pending,
+                std::string* error
+            ) -> bool {
+                return pqnas::cluster::
+                    erase_user_persisted_cluster_safe(
+                        users,
+                        director_storage_projection_sync_state_store,
+                        director_storage_projection_transition_store,
+                        director_storage_projection_transition_mutex,
+                        users_path,
+                        fingerprint,
+                        erased,
+                        placement_blocked,
+                        cluster_revoke_pending,
+                        error
+                    );
+            };
+    }
+
     pqnas::WorkspacesRegistry workspaces;
     const std::string workspaces_path =
         (std::filesystem::path(users_path).parent_path() / "workspaces.json").string();
@@ -9759,23 +11088,159 @@ std::cerr << "[cfg] workspace_external_invites_path=" << workspace_external_invi
 	pool_mounts_init_default_only();
 	pool_mounts_restore_managed(users_path);
 
-	{
-    	std::lock_guard<std::mutex> lk(pool_mu());
-    	auto& m = pool_mount_by_id();
-    	auto it = m.find(default_pool_id());
-	    std::cerr << "[cfg] default_pool_id=" << default_pool_id()
-    	          << " mount=" << (it == m.end() ? "(missing)" : it->second)
-        	      << std::endl;
+    if (cluster_config.is_node()) {
+        pqnas::cluster::
+            StorageUserAccessRuntimeConfig
+                storage_user_access_runtime_config;
 
-	    for (const auto& kv : m) {
-    	    if (kv.first == default_pool_id()) continue;
-        	std::cerr << "[cfg] managed_pool_id=" << kv.first
-            	      << " mount=" << kv.second
-                	  << std::endl;
-    	}
-	}
+        storage_user_access_runtime_config.projections =
+            &storage_user_projection_store;
 
-	RoutesV5Context v5;
+        // Security: the Storage authenticator domain-separates this base key
+        // by purpose + stable Node ID before verifying Storage session cookies.
+        storage_user_access_runtime_config.base_cookie_key =
+            COOKIE_KEY;
+
+        storage_user_access_runtime_config.local_node_id =
+            cluster_config.node_id;
+
+        // Security: Storage authorization must use the strict resolver directly.
+        // Never call data_root_for_pool_id(), whose Director compatibility
+        // behavior may fall back from an unavailable named pool to default.
+        storage_user_access_runtime_config.resolve_pool_data_root =
+            [](const std::string& storage_pool_id,
+               std::filesystem::path* data_root) -> bool {
+                return pqnas::
+                    resolve_storage_pool_data_root_strict(
+                        storage_pool_id,
+                        data_root
+                    );
+            };
+
+        storage_user_access_runtime_config.clock =
+            []() -> long {
+                return pqnas::now_epoch();
+            };
+
+        storage_user_access_runtime =
+            std::make_unique<
+                pqnas::cluster::
+                    StorageUserAccessRuntime
+            >(
+                std::move(
+                    storage_user_access_runtime_config
+                )
+            );
+
+        std::cerr
+            << "[cluster] Storage user access runtime composed"
+            << std::endl;
+
+        storage_handoff_ticket_store =
+            std::make_unique<
+                pqnas::cluster::
+                    StorageHandoffTicketStore
+            >();
+
+        std::cerr
+            << "[cluster] Storage handoff ticket store composed"
+            << std::endl;
+
+        if (SESS_TTL <= 0) {
+            std::cerr
+                << "[cluster] FATAL: invalid Storage handoff "
+                   "session TTL"
+                << std::endl;
+
+            return 3;
+        }
+
+        long storage_handoff_session_ttl_seconds =
+            static_cast<long>(
+                SESS_TTL
+            );
+
+        if (storage_handoff_session_ttl_seconds >
+            pqnas::cluster::
+                kStorageUserSessionCookieMaxTtlSeconds) {
+            storage_handoff_session_ttl_seconds =
+                pqnas::cluster::
+                    kStorageUserSessionCookieMaxTtlSeconds;
+        }
+
+        pqnas::cluster::
+            StorageHandoffConsumeServiceConfig
+                storage_handoff_consume_service_config;
+
+        storage_handoff_consume_service_config.ticket_store =
+            storage_handoff_ticket_store.get();
+
+        storage_handoff_consume_service_config.session_policy =
+            &storage_user_access_runtime->
+                session_policy();
+
+        storage_handoff_consume_service_config.base_cookie_key =
+            COOKIE_KEY;
+
+        storage_handoff_consume_service_config.local_node_id =
+            cluster_config.node_id;
+
+        storage_handoff_consume_service_config.session_ttl_seconds =
+            storage_handoff_session_ttl_seconds;
+
+        storage_handoff_consume_service_config.clock =
+            []() -> long {
+                return pqnas::now_epoch();
+            };
+
+        storage_handoff_consume_service =
+            std::make_unique<
+                pqnas::cluster::
+                    StorageHandoffConsumeService
+            >(
+                std::move(
+                    storage_handoff_consume_service_config
+                )
+            );
+
+        std::cerr
+            << "[cluster] Storage handoff consume service composed "
+            << "session_ttl_s="
+            << storage_handoff_session_ttl_seconds
+            << std::endl;
+    }
+
+    {
+        std::filesystem::path default_data_root;
+
+        const bool default_available =
+            pqnas::resolve_storage_pool_data_root_strict(
+                "default",
+                &default_data_root
+            );
+
+        std::cerr
+            << "[cfg] default_pool_id=default"
+            << " mount="
+            << (
+                default_available
+                    ? default_data_root.string()
+                    : "(missing)"
+            )
+            << std::endl;
+
+        for (const auto& entry :
+             pqnas::storage_pool_runtime_snapshot()) {
+            std::cerr
+                << "[cfg] managed_pool_id="
+                << entry.pool_id
+                << " mount="
+                << entry.mount.string()
+                << std::endl;
+        }
+    }
+
+    RoutesV5Context v5;
 	v5.origin = &ORIGIN;
 	v5.rp_id  = &RP_ID;
 	v5.app    = &APP_NAME;
@@ -9793,6 +11258,8 @@ std::cerr << "[cfg] workspace_external_invites_path=" << workspace_external_invi
 
 	v5.allowlist_path = &allowlist_path;
 	v5.users_path     = &users_path;
+    v5.erase_user_persisted_cluster_safe =
+        cluster_safe_user_delete;
 
 	// ---- hook existing helpers (these already exist in main.cpp today) ----
 	v5.now_epoch = []() { return pqnas::now_epoch(); };
@@ -10143,6 +11610,31 @@ v5.require_user_cookie =
         return require_user_cookie_users_actor(req, res, COOKIE_KEY, &users, fp_hex, role);
     };
 
+v5.require_cleanup_user_cookie =
+    [&](const httplib::Request& req,
+        httplib::Response& res,
+        std::string* fp_hex,
+        std::string* role) -> bool {
+        if (!legacy_users_auth_allowed()) {
+            return require_cleanup_session_cookie_identity(
+                req,
+                res,
+                COOKIE_KEY,
+                fp_hex,
+                role
+            );
+        }
+
+        return require_user_cookie_users_actor(
+            req,
+            res,
+            COOKIE_KEY,
+            &users,
+            fp_hex,
+            role
+        );
+    };
+
 v5.app_pair_prune = [&](long now) {
     g_app_pairing.prune_expired(now);
 };
@@ -10278,7 +11770,1235 @@ v5.app_pair_build_qr_uri =
 
 	// (leave v5.sign_token_v4_ed25519 unset for now; we’ll wire once v5 verify uses it)
 
+    // Security: a Storage Node must not authenticate users locally.
+    // Normal user sessions on Node are created only through Director handoff.
+    v5.interactive_user_login_allowed = !cluster_config.is_node();
+
     register_routes_v5(srv, v5);
+
+    if (cluster_config.is_node()) {
+        pqnas::cluster::InternalNodeStatusRoutesContext
+            internal_node_status_context;
+
+        internal_node_status_context.verify_authorization =
+            [&cluster_credential_runtime](
+                const std::string& authorization
+            ) {
+                return
+                    cluster_credential_runtime.
+                        verify_authorization(
+                            authorization
+                        );
+            };
+
+        internal_node_status_context.build_status_json =
+            [&](nlohmann::json* out,
+                std::string* error) -> bool {
+                if (!out) {
+                    if (error) {
+                        *error =
+                            "missing status output";
+                    }
+                    return false;
+                }
+
+                pqnas::cluster::NodeStatusSnapshot snapshot;
+
+                if (!pqnas::cluster::
+                        collect_node_status_snapshot(
+                            cluster_config.node_id,
+                            PQNAS_VERSION,
+                            pqnas::data_root_dir(),
+                            users,
+                            &snapshot,
+                            error
+                        )) {
+                    return false;
+                }
+
+                *out =
+                    pqnas::cluster::
+                        node_status_to_json(snapshot);
+
+                return true;
+            };
+
+        internal_node_status_context.reply_json =
+            [](httplib::Response& response,
+               int status,
+               const std::string& body) {
+                reply_json(response, status, body);
+            };
+
+        pqnas::cluster::
+            register_internal_node_status_routes(
+                srv,
+                internal_node_status_context
+            );
+
+        std::cerr
+            << "[cluster] internal node status route registered"
+            << std::endl;
+    }
+
+    if (cluster_config.is_node()) {
+        pqnas::cluster::
+            InternalNodeCredentialRotationRoutesContext
+                internal_node_credential_rotation_context;
+
+        // Security: credential mutation routes receive the runtime itself so
+        // authentication and state mutation remain one atomic operation.
+        internal_node_credential_rotation_context.runtime =
+            &cluster_credential_runtime;
+
+        pqnas::cluster::
+            register_internal_node_credential_rotation_routes(
+                srv,
+                internal_node_credential_rotation_context
+            );
+
+        std::cerr
+            << "[cluster] internal node credential rotation "
+               "routes registered"
+            << std::endl;
+    }
+
+    if (cluster_config.is_node()) {
+        pqnas::cluster::
+            InternalStorageUserProjectionRoutesContext
+                internal_storage_user_projection_context;
+
+        internal_storage_user_projection_context.verify_authorization =
+            [&cluster_credential_runtime](
+                const std::string& authorization
+            ) {
+                return
+                    cluster_credential_runtime.
+                        verify_authorization(
+                            authorization
+                        );
+            };
+
+        internal_storage_user_projection_context.projection_store =
+            &storage_user_projection_store;
+
+        // Security: bind accepted projections to the configured stable Node
+        // identity. Never infer this trust boundary from hostname or request
+        // metadata.
+        internal_storage_user_projection_context.local_node_id =
+            cluster_config.node_id;
+
+        internal_storage_user_projection_context.reply_json =
+            [](httplib::Response& response,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    response,
+                    status,
+                    body
+                );
+            };
+
+        pqnas::cluster::
+            register_internal_storage_user_projection_routes(
+                srv,
+                internal_storage_user_projection_context
+            );
+
+        std::cerr
+            << "[cluster] internal storage user projection "
+               "route registered"
+            << std::endl;
+    }
+
+    if (cluster_config.is_node()) {
+        pqnas::cluster::
+            InternalStorageHandoffRoutesContext
+                internal_storage_handoff_context;
+
+        internal_storage_handoff_context.verify_authorization =
+            [&cluster_credential_runtime](
+                const std::string& authorization
+            ) {
+                return
+                    cluster_credential_runtime.
+                        verify_authorization(
+                            authorization
+                        );
+            };
+
+        internal_storage_handoff_context.ticket_store =
+            storage_handoff_ticket_store.get();
+
+        // Security: handoff issuance reuses the canonical Storage session
+        // policy. It reads current Node-local projection authority on every
+        // call and rejects disabled, unallocated, invalid or wrong-node state.
+        const auto* storage_session_policy =
+            &storage_user_access_runtime->
+                session_policy();
+
+        internal_storage_handoff_context.authorize_user =
+            [storage_session_policy](
+                const std::string& fingerprint,
+                std::string* out_home_node,
+                std::uint64_t* out_projection_revision
+            ) -> bool {
+                if (!storage_session_policy ||
+                    !out_home_node ||
+                    !out_projection_revision) {
+                    return false;
+                }
+
+                pqnas::cluster::
+                    StorageUserSessionAuthorization
+                        authorization;
+
+                const auto result =
+                    storage_session_policy->
+                        authorize(
+                            fingerprint,
+                            &authorization
+                        );
+
+                if (result !=
+                        pqnas::cluster::
+                            StorageUserSessionPolicyResult::
+                                Authorized ||
+                    authorization.fingerprint !=
+                        fingerprint ||
+                    authorization.home_node.empty() ||
+                    authorization.projection_revision == 0) {
+                    return false;
+                }
+
+                *out_home_node =
+                    authorization.home_node;
+
+                *out_projection_revision =
+                    authorization.projection_revision;
+
+                return true;
+            };
+
+        internal_storage_handoff_context.reply_json =
+            [](httplib::Response& response,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    response,
+                    status,
+                    body
+                );
+            };
+
+        // Security: leave consume_rate_limit_slot unset here. Route
+        // registration installs its bounded per-peer default limiter.
+        pqnas::cluster::
+            register_internal_storage_handoff_routes(
+                srv,
+                internal_storage_handoff_context
+            );
+
+        std::cerr
+            << "[cluster] internal Storage handoff ticket "
+               "route registered"
+            << std::endl;
+    }
+
+    if (cluster_config.is_node()) {
+        // -------------------------------------------------------------
+        // Storage browser handoff endpoints.
+        // -------------------------------------------------------------
+        //
+        // Security:
+        // - ORIGIN is trusted server configuration, never Host/X-Forwarded-*
+        // - both route modules independently require canonical HTTPS origin
+        // - rate-limit callbacks remain unset so each registration installs
+        //   its bounded transport-peer limiter
+        // - consume delegates only to the Node-local consume service
+        pqnas::cluster::
+            StorageHandoffPreauthRoutesContext
+                storage_handoff_preauth_context;
+
+        storage_handoff_preauth_context.expected_origin =
+            ORIGIN;
+
+        // Security: browser return authority is trusted Node configuration.
+        // The bootstrap page never accepts a Director URL from its fragment,
+        // query string, Host header or other browser-controlled input.
+        storage_handoff_preauth_context.director_browser_origin =
+            cluster_config.director_url;
+
+        pqnas::cluster::
+            register_storage_handoff_preauth_routes(
+                srv,
+                storage_handoff_preauth_context
+            );
+
+        auto* const storage_handoff_consumer =
+            storage_handoff_consume_service.get();
+
+        if (!storage_handoff_consumer) {
+            std::cerr
+                << "[cluster] FATAL: Storage handoff consume "
+                   "service unavailable"
+                << std::endl;
+
+            return 3;
+        }
+
+        pqnas::cluster::
+            StorageHandoffConsumeRoutesContext
+                storage_handoff_consume_context;
+
+        storage_handoff_consume_context.expected_storage_origin =
+            ORIGIN;
+
+        storage_handoff_consume_context.consume =
+            [storage_handoff_consumer](
+                const std::string& ticket,
+                const std::string& browser_binding_secret,
+                pqnas::cluster::
+                    StorageHandoffConsumeServiceOutput* output
+            ) {
+                return storage_handoff_consumer->
+                    consume(
+                        ticket,
+                        browser_binding_secret,
+                        output
+                    );
+            };
+
+        storage_handoff_consume_context.now_epoch =
+            []() -> long {
+                return pqnas::now_epoch();
+            };
+
+        pqnas::cluster::
+            register_storage_handoff_consume_routes(
+                srv,
+                storage_handoff_consume_context
+            );
+
+        std::cerr
+            << "[cluster] Storage browser handoff routes registered"
+            << std::endl;
+    }
+
+    if (cluster_config.is_director()) {
+        pqnas::cluster::
+            AdminNodeEnrollmentRoutesContext
+                admin_node_enrollment_context;
+
+        admin_node_enrollment_context.service =
+            director_node_enrollment_service.get();
+
+        admin_node_enrollment_context.lifecycle_mutex =
+            cluster_placement_mutex;
+
+        admin_node_enrollment_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        admin_node_enrollment_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        admin_node_enrollment_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        admin_node_enrollment_context.now_iso_utc =
+            []() {
+                return pqnas::now_iso_utc();
+            };
+
+        admin_node_enrollment_context.add_seconds_iso_utc =
+            [](
+                const std::string& base,
+                std::uint64_t seconds,
+                std::string* output
+            ) {
+                return
+                    pqnas::cluster::
+                        add_admin_node_enrollment_seconds_iso_utc(
+                            base,
+                            seconds,
+                            output
+                        );
+            };
+
+        pqnas::cluster::
+            register_admin_node_enrollment_routes(
+                srv,
+                admin_node_enrollment_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin node enrollment "
+               "routes registered"
+            << std::endl;
+
+        pqnas::cluster::
+            NodeEnrollmentBootstrapRoutesContext
+                node_enrollment_bootstrap_context;
+
+        node_enrollment_bootstrap_context.service =
+            director_node_enrollment_consumption_service
+                .get();
+
+        node_enrollment_bootstrap_context.lifecycle_mutex =
+            cluster_placement_mutex;
+
+        node_enrollment_bootstrap_context.reply_json =
+            [](httplib::Response& response,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    response,
+                    status,
+                    body
+                );
+            };
+
+        node_enrollment_bootstrap_context.now_iso_utc =
+            []() {
+                return pqnas::now_iso_utc();
+            };
+
+        pqnas::cluster::
+            register_node_enrollment_bootstrap_routes(
+                srv,
+                node_enrollment_bootstrap_context
+            );
+
+        std::cerr
+            << "[cluster] Director node enrollment "
+               "bootstrap route registered"
+            << std::endl;
+
+        pqnas::cluster::AdminClusterNodeRoutesContext
+            admin_cluster_node_context;
+
+        admin_cluster_node_context.registry =
+            &director_node_registry;
+
+        admin_cluster_node_context.get_node_tls_trust =
+            [&director_node_tls_trust_store](
+                const std::string& node_id,
+                std::string* pin,
+                std::string* error
+            ) {
+                return
+                    director_node_tls_trust_store.get(
+                        node_id,
+                        pin,
+                        error
+                    );
+            };
+
+        admin_cluster_node_context.bind_node_tls_trust =
+            [&director_node_tls_trust_store](
+                const std::string& node_id,
+                const std::string& pin,
+                std::string* error
+            ) {
+                return
+                    director_node_tls_trust_store
+                        .bind_if_absent(
+                            node_id,
+                            pin,
+                            error
+                        );
+            };
+
+        admin_cluster_node_context.verify_node_tls_endpoint =
+            [](
+                const std::string& api_base_url,
+                const std::string& pin,
+                std::string* error
+            ) {
+                return
+                    pqnas::cluster::
+                        verify_pinned_node_https_endpoint(
+                            api_base_url,
+                            pin,
+                            error
+                        );
+            };
+
+        admin_cluster_node_context.placement_mutex =
+            cluster_placement_mutex;
+
+        admin_cluster_node_context.assigned_user_counts =
+            [&users]() {
+                return
+                    users.home_node_assignment_counts();
+            };
+
+        admin_cluster_node_context.rotation_in_progress =
+            [&director_node_credential_rotation_service](
+                const std::string& node_id
+            ) {
+                // Security: this callback is invoked while the caller holds
+                // cluster_placement_mutex. The rotation service establishes
+                // its busy marker under that same coordination boundary.
+                return
+                    director_node_credential_rotation_service &&
+                    director_node_credential_rotation_service
+                        ->rotation_in_progress(
+                            node_id
+                        );
+            };
+
+        admin_cluster_node_context.rotate_node_credential =
+            [&director_node_credential_rotation_service](
+                const std::string& node_id
+            ) {
+                if (!director_node_credential_rotation_service) {
+                    pqnas::cluster::
+                        NodeCredentialRotationResult result;
+
+                    result.code =
+                        pqnas::cluster::
+                            NodeCredentialRotationServiceCode::
+                                ServiceUnavailable;
+
+                    return result;
+                }
+
+                // Security: rotate() performs remote I/O without holding the
+                // shared placement/lifecycle coordination mutex.
+                return
+                    director_node_credential_rotation_service
+                        ->rotate(
+                            node_id
+                        );
+            };
+
+        admin_cluster_node_context.erase_unassigned_node =
+            [&director_node_deletion_service](
+                const std::string& node_id,
+                const std::string& revoked_at
+            ) {
+                return
+                    director_node_deletion_service
+                        .erase_unassigned_node_locked(
+                            node_id,
+                            revoked_at
+                        );
+            };
+
+        admin_cluster_node_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        admin_cluster_node_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        admin_cluster_node_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(res, status, body);
+            };
+
+        admin_cluster_node_context.now_iso_utc =
+            []() {
+                return pqnas::now_iso_utc();
+            };
+
+        admin_cluster_node_context.audit_append =
+            [](const pqnas::AuditEvent& audit) {
+                audit_append(audit);
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_node_routes(
+                srv,
+                admin_cluster_node_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin node routes registered"
+            << std::endl;
+
+        pqnas::cluster::
+            AdminClusterPlacementPolicyRoutesContext
+                admin_placement_policy_context;
+
+        admin_placement_policy_context.registry =
+            &director_placement_policy_registry;
+
+        admin_placement_policy_context.placement_mutex =
+            cluster_placement_mutex;
+
+        admin_placement_policy_context.assigned_user_counts =
+            [&users]() {
+                return
+                    users.placement_policy_assignment_counts();
+            };
+
+        admin_placement_policy_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        admin_placement_policy_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        admin_placement_policy_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        admin_placement_policy_context.now_iso_utc =
+            []() {
+                return pqnas::now_iso_utc();
+            };
+
+        admin_placement_policy_context.audit_append =
+            [](const pqnas::AuditEvent& audit) {
+                audit_append(audit);
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_placement_policy_routes(
+                srv,
+                admin_placement_policy_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin placement policy routes registered"
+            << std::endl;
+
+        pqnas::cluster::UserPlacementServiceConfig
+            user_placement_service_config;
+
+        user_placement_service_config.users =
+            &users;
+
+        user_placement_service_config.nodes =
+            &director_node_registry;
+
+        user_placement_service_config.placement_mutex =
+            cluster_placement_mutex;
+
+        user_placement_service_config.users_path =
+            users_path;
+
+        user_placement_service_config.audit_emit =
+            [](const std::string& event,
+               const std::string& outcome,
+               const std::map<
+                   std::string,
+                   std::string
+               >& fields) {
+                pqnas::AuditEvent audit;
+                audit.event = event;
+                audit.outcome = outcome;
+
+                for (const auto& field : fields) {
+                    audit.f[field.first] =
+                        field.second;
+                }
+
+                audit_append(audit);
+            };
+
+        auto user_placement_service =
+            std::make_shared<
+                pqnas::cluster::UserPlacementService
+            >(
+                std::move(
+                    user_placement_service_config
+                )
+            );
+
+        pqnas::cluster::
+            UserPlacementPreviewServiceConfig
+                user_placement_preview_service_config;
+
+        user_placement_preview_service_config.get_user =
+            [&users](const std::string& fingerprint)
+                -> std::optional<
+                    pqnas::cluster::
+                        UserPlacementPreviewUserSnapshot
+                > {
+                const auto user =
+                    users.get(
+                        fingerprint
+                    );
+
+                if (!user.has_value()) {
+                    return std::nullopt;
+                }
+
+                pqnas::cluster::
+                    UserPlacementPreviewUserSnapshot
+                        snapshot;
+
+                snapshot.home_node =
+                    user->home_node;
+
+                snapshot.placement_policy_id =
+                    user->placement_policy_id;
+
+                return snapshot;
+            };
+
+        user_placement_preview_service_config.node_snapshot =
+            [&director_node_registry]() {
+                return
+                    director_node_registry.snapshot();
+            };
+
+        user_placement_preview_service_config.get_policy =
+            [&director_placement_policy_registry](
+                const std::string& policy_id
+            ) {
+                return
+                    director_placement_policy_registry.get(
+                        policy_id
+                    );
+            };
+
+        user_placement_preview_service_config
+            .assigned_user_counts =
+                [&users]() {
+                    return
+                        users.home_node_assignment_counts();
+                };
+
+        user_placement_preview_service_config.placement_mutex =
+            cluster_placement_mutex;
+
+        auto user_placement_preview_service =
+            std::make_shared<
+                pqnas::cluster::
+                    UserPlacementPreviewService
+            >(
+                std::move(
+                    user_placement_preview_service_config
+                )
+            );
+
+        pqnas::cluster::
+            AdminClusterUserPlacementPreviewRoutesContext
+                user_placement_preview_route_context;
+
+        user_placement_preview_route_context.service =
+            user_placement_preview_service;
+
+        user_placement_preview_route_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        user_placement_preview_route_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        user_placement_preview_route_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_user_placement_preview_routes(
+                srv,
+                user_placement_preview_route_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin user placement preview route registered"
+            << std::endl;
+
+        pqnas::cluster::
+            UserPlacementRecommendationApplyServiceConfig
+                user_placement_apply_service_config;
+
+        user_placement_apply_service_config.users =
+            &users;
+
+        user_placement_apply_service_config.preview_service =
+            user_placement_preview_service;
+
+        user_placement_apply_service_config.users_path =
+            users_path;
+
+        user_placement_apply_service_config.audit_emit =
+            [](const std::string& event,
+               const std::string& outcome,
+               const std::map<
+                   std::string,
+                   std::string
+               >& fields) {
+                pqnas::AuditEvent audit;
+                audit.event = event;
+                audit.outcome = outcome;
+
+                for (const auto& field : fields) {
+                    audit.f[field.first] =
+                        field.second;
+                }
+
+                audit_append(audit);
+            };
+
+        auto user_placement_apply_service =
+            std::make_shared<
+                pqnas::cluster::
+                    UserPlacementRecommendationApplyService
+            >(
+                std::move(
+                    user_placement_apply_service_config
+                )
+            );
+
+        pqnas::cluster::
+            AdminClusterUserPlacementApplyRoutesContext
+                user_placement_apply_route_context;
+
+        user_placement_apply_route_context.service =
+            user_placement_apply_service;
+
+        user_placement_apply_route_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        user_placement_apply_route_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        user_placement_apply_route_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_user_placement_apply_routes(
+                srv,
+                user_placement_apply_route_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin user placement apply route registered"
+            << std::endl;
+
+        pqnas::cluster::
+            UserPlacementPolicyAssignmentServiceConfig
+                user_policy_assignment_service_config;
+
+        user_policy_assignment_service_config.users =
+            &users;
+
+        user_policy_assignment_service_config.policies =
+            &director_placement_policy_registry;
+
+        user_policy_assignment_service_config.placement_mutex =
+            cluster_placement_mutex;
+
+        user_policy_assignment_service_config.users_path =
+            users_path;
+
+        user_policy_assignment_service_config.audit_emit =
+            [](const std::string& event,
+               const std::string& outcome,
+               const std::map<
+                   std::string,
+                   std::string
+               >& fields) {
+                pqnas::AuditEvent audit;
+                audit.event = event;
+                audit.outcome = outcome;
+
+                for (const auto& field : fields) {
+                    audit.f[field.first] =
+                        field.second;
+                }
+
+                audit_append(audit);
+            };
+
+        auto user_policy_assignment_service =
+            std::make_shared<
+                pqnas::cluster::
+                    UserPlacementPolicyAssignmentService
+            >(
+                std::move(
+                    user_policy_assignment_service_config
+                )
+            );
+
+        pqnas::cluster::
+            AdminClusterUserPolicyRoutesContext
+                user_policy_route_context;
+
+        user_policy_route_context.service =
+            user_policy_assignment_service;
+
+        user_policy_route_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        user_policy_route_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        user_policy_route_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_user_policy_routes(
+                srv,
+                user_policy_route_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin user policy route registered"
+            << std::endl;
+
+        pqnas::cluster::
+            AdminClusterUserPlacementRoutesContext
+                user_placement_route_context;
+
+        user_placement_route_context.service =
+            user_placement_service;
+
+        user_placement_route_context.require_admin_auth =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) -> bool {
+                return require_admin_auth_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    users_path,
+                    &users,
+                    actor_fp
+                );
+            };
+
+        user_placement_route_context.require_same_origin =
+            [&](const httplib::Request& req,
+                httplib::Response& res) -> bool {
+                return
+                    require_same_origin_for_cookie_mutation(
+                        req,
+                        res
+                    );
+            };
+
+        user_placement_route_context.reply_json =
+            [](httplib::Response& res,
+               int status,
+               const std::string& body) {
+                reply_json(
+                    res,
+                    status,
+                    body
+                );
+            };
+
+        pqnas::cluster::
+            register_admin_cluster_user_placement_routes(
+                srv,
+                user_placement_route_context
+            );
+
+        std::cerr
+            << "[cluster] Director admin user placement route registered"
+            << std::endl;
+
+        // -----------------------------------------------------------------
+        // Director -> Storage browser handoff start
+        // -----------------------------------------------------------------
+        //
+        // Security:
+        // - browser authentication is cookie-only
+        // - the browser never chooses its Storage Node
+        // - users.json placement must match the durable projection that the
+        //   Storage Node is known to have accepted
+        // - browser/service URLs come only from the Director-owned NodeRegistry
+        // - the route itself performs a second authority read after ticket mint
+        //
+        // This route is registered only inside the Director role block.
+        pqnas::cluster::
+            DirectorStorageHandoffStartRoutesContext
+                storage_handoff_start_context;
+
+        storage_handoff_start_context.expected_director_origin =
+            ORIGIN;
+
+        storage_handoff_start_context.require_user_cookie =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* fingerprint,
+                std::string* role) -> bool {
+                return require_user_cookie_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    &users,
+                    fingerprint,
+                    role
+                );
+            };
+
+        storage_handoff_start_context.consume_rate_limit_slot =
+            pqnas::cluster::
+                make_default_director_storage_handoff_start_rate_limiter();
+
+        storage_handoff_start_context.resolve_authoritative_target =
+            [
+                &users,
+                &director_storage_projection_sync_state_store,
+                &director_node_registry
+            ](
+                const std::string& fingerprint
+            ) {
+                pqnas::cluster::
+                    DirectorStorageHandoffTargetResult result;
+
+                // Security: always re-read the authoritative user record.
+                // The authenticated browser does not provide placement data.
+                const auto user =
+                    users.get(fingerprint);
+
+                if (!user.has_value()) {
+                    result.code =
+                        pqnas::cluster::
+                            DirectorStorageHandoffTargetCode::
+                                UserNotAuthorized;
+
+                    return result;
+                }
+
+                if (user->status != "enabled" ||
+                    user->storage_state != "allocated" ||
+                    user->home_node.empty() ||
+                    user->storage_projection_revision == 0) {
+                    result.code =
+                        pqnas::cluster::
+                            DirectorStorageHandoffTargetCode::
+                                UserNotAuthorized;
+
+                    return result;
+                }
+
+                // Security: users.json alone is not sufficient authority for
+                // ticket minting. Require the exact Node/revision that the
+                // Director durably knows Storage has accepted.
+                const auto confirmed =
+                    director_storage_projection_sync_state_store.get(
+                        fingerprint
+                    );
+
+                if (!confirmed.has_value() ||
+                    confirmed->home_node != user->home_node ||
+                    confirmed->revision !=
+                        user->storage_projection_revision) {
+                    return result;
+                }
+
+                // Browser routing is Director-owned configuration. Never use
+                // Node-reported heartbeat hostname or request headers here.
+                const auto node =
+                    director_node_registry.get(
+                        user->home_node
+                    );
+
+                if (!node.has_value() ||
+                    !node->enabled ||
+                    node->api_base_url.empty() ||
+                    node->browser_base_url.empty()) {
+                    return result;
+                }
+
+                result.target.home_node =
+                    user->home_node;
+
+                result.target.projection_revision =
+                    user->storage_projection_revision;
+
+                result.target.api_base_url =
+                    node->api_base_url;
+
+                result.target.browser_base_url =
+                    node->browser_base_url;
+
+                result.code =
+                    pqnas::cluster::
+                        DirectorStorageHandoffTargetCode::Ok;
+
+                return result;
+            };
+
+        auto* const storage_handoff_ticket_client =
+            director_storage_handoff_ticket_client.get();
+
+        if (!storage_handoff_ticket_client) {
+            std::cerr
+                << "[cluster] FATAL: Director storage handoff "
+                   "ticket client unavailable"
+                << std::endl;
+
+            return 3;
+        }
+
+        storage_handoff_start_context.issue_ticket =
+            [storage_handoff_ticket_client](
+                const std::string& home_node,
+                const std::string& fingerprint,
+                const std::string& browser_binding_hash
+            ) {
+                return storage_handoff_ticket_client->issue(
+                    home_node,
+                    fingerprint,
+                    browser_binding_hash
+                );
+            };
+
+        pqnas::cluster::
+            register_director_storage_handoff_start_routes(
+                srv,
+                storage_handoff_start_context
+            );
+
+        std::cerr
+            << "[cluster] Director storage handoff start route registered"
+            << std::endl;
+    }
 
     pqnas::ActivityRoutesDeps activity_deps;
     activity_deps.users = &users;
@@ -11201,17 +13921,62 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
     // ---- Core UI shell routes ----
     {
         CoreUiShellRoutesContext core_ui_shell_ctx;
+        core_ui_shell_ctx.is_director =
+            cluster_config.is_director();
+
+        core_ui_shell_ctx.is_storage_node =
+            cluster_config.is_node();
+
         core_ui_shell_ctx.static_system_js = STATIC_SYSTEM_JS;
         core_ui_shell_ctx.static_audit_html = STATIC_AUDIT_HTML;
         core_ui_shell_ctx.static_admin_html = STATIC_ADMIN_HTML;
+        core_ui_shell_ctx.static_director_admin_html =
+            STATIC_DIRECTOR_ADMIN_HTML;
+        core_ui_shell_ctx.static_director_admin_css =
+            STATIC_DIRECTOR_ADMIN_CSS;
+        core_ui_shell_ctx.static_director_admin_js =
+            STATIC_DIRECTOR_ADMIN_JS;
+        core_ui_shell_ctx.static_app_html = STATIC_APP_HTML;
         core_ui_shell_ctx.static_app_js = STATIC_APP_JS;
         core_ui_shell_ctx.static_app_frame_background_tasks_js =
             STATIC_APP_FRAME_BACKGROUND_TASKS_JS;
         core_ui_shell_ctx.static_admin_js = STATIC_ADMIN_JS;
 
+        core_ui_shell_ctx.static_handoff_director_js =
+            STATIC_HANDOFF_DIRECTOR_JS;
+        core_ui_shell_ctx.static_handoff_storage_bootstrap_js =
+            STATIC_HANDOFF_STORAGE_BOOTSTRAP_JS;
+        core_ui_shell_ctx.static_handoff_storage_finish_js =
+            STATIC_HANDOFF_STORAGE_FINISH_JS;
+
         core_ui_shell_ctx.require_admin =
             [&](const httplib::Request& req, httplib::Response& res, std::string* actor_fp) {
                 return require_admin_cookie_users_actor(req, res, COOKIE_KEY, users_path, &users, actor_fp);
+            };
+
+        core_ui_shell_ctx.require_user =
+            [&](const httplib::Request& req,
+                httplib::Response& res,
+                std::string* actor_fp) {
+                std::string role;
+
+                return require_user_cookie_users_actor(
+                    req,
+                    res,
+                    COOKIE_KEY,
+                    &users,
+                    actor_fp,
+                    &role
+                );
+            };
+
+        core_ui_shell_ctx.is_admin =
+            [&](const httplib::Request& req) {
+                return is_admin_cookie_users(
+                    req,
+                    COOKIE_KEY,
+                    &users
+                );
             };
 
         core_ui_shell_ctx.read_file_to_string =
@@ -11447,25 +14212,6 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
 
 
 
-/*
-    srv.Get("/app", [&](const httplib::Request&, httplib::Response& res) {
-        const std::string body = slurp_file(STATIC_APP_HTML);
-        if (body.empty()) {
-            res.status = 404;
-            res.set_content("missing app.html", "text/plain");
-            return;
-        }
-        res.set_content(body, "text/html; charset=utf-8");
-    });
-*/
-    srv.Get("/app", [&](const httplib::Request&, httplib::Response& res) {
-        const std::string body = slurp_file(STATIC_APP_HTML);
-        if (body.empty()) { res.status = 404; res.set_content("missing app.html","text/plain"); return; }
-        res.set_header("Cache-Control", "no-store");
-        res.set_header("X-Content-Type-Options", "nosniff");
-        res.set_content(body, "text/html; charset=utf-8");
-    });
-
 
 
     srv.Get("/", [&](const httplib::Request&, httplib::Response& res) {
@@ -11552,18 +14298,37 @@ srv.Get("/api/v4/system", [&](const httplib::Request& req, httplib::Response& re
     	    audit_append(ev);
 	    };
 
-    	auto it = req.headers.find("Cookie");
-    	if (it == req.headers.end()) {
-	        audit_fail("missing_cookie_header");
-        	reply_json(res, 401, json({{"ok",false},{"error","unauthorized"},{"message","missing cookie"}}).dump());
-    	    return;
-	    }
+        std::string cookieVal;
 
-	    const std::string& hdr = it->second;
-        const std::string cookieVal = extract_named_cookie_value(hdr, "pqnas_session");
-        if (cookieVal.empty()) {
-            audit_fail("missing_pqnas_session");
-            reply_json(res, 401, json({{"ok",false},{"error","unauthorized"},{"message","missing pqnas_session"}}).dump());
+        const auto cookie_result =
+            pqnas::extract_strict_pqnas_session_cookie(
+                req,
+                &cookieVal
+            );
+
+        if (cookie_result != pqnas::StrictSessionCookieResult::Ok) {
+            const bool missing_header =
+                cookie_result == pqnas::StrictSessionCookieResult::MissingCookieHeader;
+            const bool missing_session =
+                cookie_result == pqnas::StrictSessionCookieResult::MissingSessionCookie;
+
+            audit_fail(
+                missing_header
+                    ? "missing_cookie_header"
+                    : missing_session
+                          ? "missing_pqnas_session"
+                          : "invalid_cookie_header"
+            );
+
+            reply_json(
+                res,
+                401,
+                json({
+                    {"ok", false},
+                    {"error", "unauthorized"},
+                    {"message", missing_header ? "missing cookie" : missing_session ? "missing pqnas_session" : "invalid cookie"}
+                }).dump()
+            );
             return;
         }
 
@@ -11933,33 +14698,57 @@ srv.Post("/api/v4/user/vault/master-recovery", [&](const httplib::Request& req, 
         return;
     }
 
-    pqnas::UserRec u = *cur;
-    u.vault_master_recovery_status = norm.value("status", std::string("not_configured"));
-    u.vault_master_recovery_public_key_b64 = norm.value("public_key_b64", std::string(""));
-    u.vault_master_recovery_public_key_sha256 = norm.value("public_key_sha256", std::string(""));
-    u.vault_master_recovery_created_at = norm.value("created_at", 0LL);
-    u.vault_master_recovery_label = norm.value("label", std::string(""));
+    pqnas::UserNonAuthMetadataUpdate update;
+    update.vault_master_recovery_status =
+        norm.value("status", std::string("not_configured"));
+    update.vault_master_recovery_public_key_b64 =
+        norm.value("public_key_b64", std::string(""));
+    update.vault_master_recovery_public_key_sha256 =
+        norm.value("public_key_sha256", std::string(""));
+    update.vault_master_recovery_created_at =
+        norm.value("created_at", 0LL);
+    update.vault_master_recovery_label =
+        norm.value("label", std::string(""));
 
-    const bool ok_upsert = users.upsert(u);
-    const bool ok_save = ok_upsert ? users.save(users_path) : false;
+    pqnas::UserRec updated_user;
+
+    // Security: Vault recovery metadata is merged into CURRENT registry state.
+    const bool saved =
+        users.set_non_auth_metadata_persisted(
+            actor_fp,
+            update,
+            users_path,
+            nullptr,
+            &updated_user,
+            nullptr
+        );
 
     {
         pqnas::AuditEvent ev;
         ev.event = "user.vault_master_recovery_update";
-        ev.outcome = (ok_upsert && ok_save) ? "ok" : "fail";
+        ev.outcome = saved ? "ok" : "fail";
         ev.f["actor_fp"] = actor_fp;
         ev.f["role"] = actor_role;
-        ev.f["status"] = u.vault_master_recovery_status;
-        ev.f["key_id"] = pqnas::shorten(u.vault_master_recovery_public_key_sha256, 24);
+        ev.f["status"] =
+            saved
+                ? updated_user.vault_master_recovery_status
+                : norm.value("status", std::string("not_configured"));
+        ev.f["key_id"] =
+            pqnas::shorten(
+                saved
+                    ? updated_user.vault_master_recovery_public_key_sha256
+                    : norm.value("public_key_sha256", std::string("")),
+                24
+            );
         ev.f["ip"] = req.remote_addr.empty() ? "?" : req.remote_addr;
         audit_append(ev);
     }
 
-    if (!ok_upsert || !ok_save) {
+    if (!saved) {
         reply_json(res, 500, json{
             {"ok", false},
             {"error", "server_error"},
-            {"message", ok_upsert ? "users save failed" : "user update failed"}
+            {"message", "user update failed"}
         }.dump());
         return;
     }
@@ -11969,7 +14758,7 @@ srv.Post("/api/v4/user/vault/master-recovery", [&](const httplib::Request& req, 
         {"ok", true},
         {"fingerprint_hex", actor_fp},
         {"role", actor_role},
-        {"vault_master_recovery", vault_master_recovery_to_json(u)}
+        {"vault_master_recovery", vault_master_recovery_to_json(updated_user)}
     }.dump());
 });
 
@@ -12049,20 +14838,30 @@ srv.Post("/api/v4/user/profile/update", [&](const httplib::Request& req, httplib
         return;
     }
 
-    pqnas::UserRec u = *cur;
+    pqnas::UserNonAuthMetadataUpdate update;
 
     // Safe self-edit fields only.
-    u.name = name;
-    u.email = email;
-    u.avatar_url = avatar_url;
+    update.name = name;
+    update.email = email;
+    update.avatar_url = avatar_url;
 
-    const bool ok_upsert = users.upsert(u);
-    const bool ok_save = ok_upsert ? users.save(users_path) : false;
+    pqnas::UserRec updated_user;
+
+    // Security: self-service metadata is applied to CURRENT registry state.
+    const bool saved =
+        users.set_non_auth_metadata_persisted(
+            actor_fp,
+            update,
+            users_path,
+            nullptr,
+            &updated_user,
+            nullptr
+        );
 
     {
         pqnas::AuditEvent ev;
         ev.event = "user.profile_update";
-        ev.outcome = (ok_upsert && ok_save) ? "ok" : "fail";
+        ev.outcome = saved ? "ok" : "fail";
         ev.f["actor_fp"] = actor_fp;
         ev.f["role"] = actor_role;
         if (!name.empty()) ev.f["name"] = pqnas::shorten(name, 80);
@@ -12072,20 +14871,11 @@ srv.Post("/api/v4/user/profile/update", [&](const httplib::Request& req, httplib
         audit_append(ev);
     }
 
-    if (!ok_upsert) {
+    if (!saved) {
         reply_json(res, 500, json{
             {"ok", false},
             {"error", "server_error"},
             {"message", "profile update failed"}
-        }.dump());
-        return;
-    }
-
-    if (!ok_save) {
-        reply_json(res, 500, json{
-            {"ok", false},
-            {"error", "server_error"},
-            {"message", "users save failed"}
         }.dump());
         return;
     }
@@ -12095,11 +14885,11 @@ srv.Post("/api/v4/user/profile/update", [&](const httplib::Request& req, httplib
         {"profile", {
             {"fingerprint", actor_fp},
             {"role", actor_role},
-            {"status", u.status},
-            {"name", u.name},
-            {"email", u.email},
-            {"avatar_url", u.avatar_url},
-            {"group", u.group}
+            {"status", updated_user.status},
+            {"name", updated_user.name},
+            {"email", updated_user.email},
+            {"avatar_url", updated_user.avatar_url},
+            {"group", updated_user.group}
         }}
     }.dump());
 });
@@ -12119,6 +14909,10 @@ c.allowlist = &allowlist;
 c.users     = &users;
 c.allowlist_path = &allowlist_path;
 c.users_path     = &users_path;
+
+// Security: normal QR/user login is not a valid authentication path on
+// Storage Nodes. Director handoff is the only normal-user session entry.
+c.interactive_user_login_allowed = !cluster_config.is_node();
 
 // approvals/pending (bridge)
 c.approvals_prune = [&](long now){ approvals_prune(now); };
@@ -12857,7 +15651,13 @@ srv.Post("/api/v5/verify", [&](const httplib::Request& req, httplib::Response& r
             return false;
         }
 
-        return true;
+        // Security: the rename is not a durable auth-state commit until
+        // both the file and parent directory have reached stable storage.
+        return pqnas::fsync_file_and_parent_directory(
+            path,
+            err
+        );
+
     };
 
     auto invalidate_opaque_enrollment_tokens_for_fingerprint_on_status_revoke =
@@ -12915,6 +15715,32 @@ srv.Post("/api/v5/verify", [&](const httplib::Request& req, httplib::Response& r
                 if (!save_opaque_enrollments_for_admin_status(path, doc, &serr)) {
                     if (err) *err = "opaque_enrollments_save_failed: " + serr;
                     return false;
+                }
+            } else {
+                std::error_code exists_error;
+                const bool store_exists =
+                    std::filesystem::exists(
+                        path,
+                        exists_error
+                    );
+
+                if (exists_error) {
+                    if (err) *err = "opaque_enrollments_stat_failed";
+                    return false;
+                }
+
+                if (store_exists) {
+                    std::string durability_error;
+                    if (!pqnas::fsync_file_and_parent_directory(
+                            path,
+                            &durability_error)) {
+                        if (err) {
+                            *err =
+                                "opaque_enrollments_durability_failed: " +
+                                durability_error;
+                        }
+                        return false;
+                    }
                 }
             }
 
@@ -13380,8 +16206,9 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
 
 
     // ---- Chunked Upload API (user storage, My Files) ----
-    // ---- Chunked Upload API (user storage, My Files) ----
-    {
+    // Security: this route still uses legacy users.json authorization/root
+    // resolution and therefore must not exist on a Storage Node.
+    if (!cluster_config.is_node()) {
         ChunkedUploadRoutesContext uploads_ctx;
         uploads_ctx.users = &users;
         uploads_ctx.file_versions = &file_versions_index;
@@ -13505,13 +16332,19 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
 // ============================================================================
 
     // ---- Files core routes ----
-    // Transitional bulk split: route/helper block lives in routes_files_core.inc.
-
+    // Security: these routes still use legacy users.json authorization and
+    // user_dir_for_fp() root resolution. Storage Node access must go only
+    // through explicitly migrated projection-backed routes.
+    if (!cluster_config.is_node()) {
 #include "routes/routes_files_core.inc"
+    }
 
     // ---- Gallery / ReelStack routes ----
-    // Transitional bulk split: route/helper block lives in routes_gallery_reelstack.inc.
+    // Security: these legacy routes resolve user roots through users.json.
+    // Keep them off Storage Nodes until projection-backed migration exists.
+    if (!cluster_config.is_node()) {
 #include "routes/routes_gallery_reelstack.inc"
+    }
 
 
     // ---- Files PUT upload route ----
@@ -13520,8 +16353,11 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
 
 
     // ---- Shares / public share / gallery export routes ----
-    // Transitional bulk split: route/helper block lives in routes_shares_public.inc.
+    // Security: share tokens must not revive Node-local users.json authority.
+    // Keep this legacy route family off Storage Nodes.
+    if (!cluster_config.is_node()) {
 #include "routes/routes_shares_public.inc"
+    }
 
 
     // ************************* END OF ROUTES *************************** //
@@ -13606,6 +16442,54 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
         }
     };
 
+    // Reliability: do not start these non-RAII background threads until all
+    // fatal startup validation has completed. An early return with a joinable
+    // std::thread can otherwise end in std::terminate() during teardown.
+    snapshots_thread =
+        pqnas::snapshots::start_snapshot_scheduler(
+            admin_settings_path,
+            snapshots_stop
+        );
+
+    pqnas::drive_health_monitor_start(
+        [&](const pqnas::DriveHealthInfo& d,
+            const std::string& prev_status,
+            const std::string& new_status) {
+
+            pqnas::AuditEvent ev;
+
+            if (new_status == "fail") {
+                ev.event = "system.drive_failure";
+                ev.outcome = "fail";
+            } else if (new_status == "warn") {
+                ev.event = "system.drive_warning";
+                ev.outcome = "fail";
+            } else if (new_status == "ok") {
+                ev.event = "system.drive_recovered";
+                ev.outcome = "ok";
+            } else {
+                ev.event = "system.drive_status_changed";
+                ev.outcome = "ok";
+            }
+
+            ev.f["device"] = d.dev;
+            ev.f["model"] = pqnas::shorten(d.model, 120);
+            ev.f["prev_status"] = prev_status;
+            ev.f["new_status"] = new_status;
+            ev.f["health_text"] = pqnas::shorten(d.health_text, 120);
+
+            if (d.temperature_c >= 0) ev.f["temperature_c"] = std::to_string(d.temperature_c);
+            if (d.percentage_used >= 0) ev.f["percentage_used"] = std::to_string(d.percentage_used);
+            if (d.available_spare >= 0) ev.f["available_spare"] = std::to_string(d.available_spare);
+            if (d.media_errors >= 0) ev.f["media_errors"] = std::to_string(d.media_errors);
+            if (d.power_on_hours >= 0) ev.f["power_on_hours"] = std::to_string(d.power_on_hours);
+            if (!d.warning.empty()) ev.f["warning"] = pqnas::shorten(d.warning, 160);
+            if (!d.selftest_text.empty()) ev.f["selftest"] = pqnas::shorten(d.selftest_text, 160);
+
+            audit_append(ev);
+        }
+    );
+
 	// ---- Start background workers ----
 
 	std::atomic<bool> tiering_worker_stop{false};
@@ -13651,10 +16535,35 @@ srv.Post("/api/v4/system/drives/selftest/start", [&](const httplib::Request& req
         }
         std::cerr << std::endl;
     }
-	std::cerr << "PQ-NAS server listening on 0.0.0.0:" << LISTEN_PORT << std::endl;
-	srv.listen("0.0.0.0", LISTEN_PORT);
+	const char* listen_host =
+	    pqnas::cluster::default_listen_host_for_role(
+	        cluster_config.role
+	    );
+
+	std::cerr
+	    << "PQ-NAS server listening on "
+	    << listen_host
+	    << ":"
+	    << LISTEN_PORT
+	    << std::endl;
+
+	srv.listen(listen_host, LISTEN_PORT);
 
 	// ---- Shutdown sequence ----
+
+	// Detach the registry callback before stopping the worker so no later
+	// persisted mutation can retain a callback into its shutdown lifetime.
+	if (cluster_config.is_director()) {
+		users.set_storage_projection_commit_notifier({});
+	}
+
+	// Stop Director projection reconciliation first so no more Storage
+	// authorization writes occur during the remaining shutdown sequence.
+	director_storage_projection_reconcile_worker.stop_and_join();
+
+	// Then stop heartbeat so no more Director node-registry observations mutate
+	// while the remaining background services are being shut down.
+	director_node_heartbeat_worker.stop_and_join();
 
 	// Stop background drive health monitor
 	pqnas::drive_health_monitor_stop();

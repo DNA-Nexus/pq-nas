@@ -5,10 +5,11 @@ PQ-NAS CLI Installer (Textual) — Wizard v1
 Flow:
   1) Disk selection (safe: system disks marked + blocked)
   2) Backend selection: ext4 / btrfs
-  3) Plan preview (exact commands shown)
-  4) Optional reverse proxy (nginx, HTTP-only)
-  5) Typed confirm: "WIPE <diskname>" or "INSTALL <mountpoint>"
-  6) Execute with live log
+  3) Server role and storage-node enrollment settings
+  4) Plan preview (exact commands shown)
+  5) Optional reverse proxy (nginx, HTTP-only)
+  6) Typed confirm: "WIPE <diskname>" or "INSTALL <mountpoint>"
+  7) Execute with live log
 
 Notes:
 - Run as root (sudo). Disk operations + systemd need it.
@@ -25,12 +26,15 @@ import json
 import os
 import re
 import shlex
+import stat
 import subprocess
 import secrets
+import threading
 import shutil
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -49,6 +53,49 @@ from textual.widgets import (
     Log,
 )
 
+from pqnas_static_assets import install_static_assets
+from pqnas_secure_files import (
+    atomic_write_private_file,
+    read_private_file_text,
+    validate_exact_private_env_keys,
+)
+from pqnas_cluster_config import (
+    ClusterConfigError,
+    ClusterInstallConfig,
+    is_legacy_director_tls_pin_upgrade,
+    load_existing_cluster_config,
+    render_cluster_env_lines,
+    validate_cluster_config,
+)
+from pqnas_cluster_secrets import (
+    DEFAULT_NODE_BOOTSTRAP_TOKEN_FILE,
+    DEFAULT_NODE_CREDENTIAL_FILE,
+    ClusterSecretError,
+    apply_cluster_bootstrap_secret,
+    validate_node_bootstrap_token,
+    wipe_secret_buffer,
+)
+
+from pqnas_director_projection_state import (
+    DIRECTOR_PROJECTION_BOOTSTRAP_CONFIRM_SUFFIX,
+    binary_rollback_restart_allowed,
+    director_projection_bootstrap_confirmation_required,
+    ensure_director_projection_sync_state,
+)
+
+from pqnas_mutable_config import (
+    atomic_write_managed_text,
+    ensure_managed_binary_created,
+    prepare_mutable_config_directory,
+    prepare_service_state_directory,
+    prepare_storage_runtime_layout,
+    read_managed_text,
+    read_packaged_text,
+    service_owner_ids,
+)
+
+import pqnas_installer_core as installer_core
+
 # -----------------------------------------------------------------------------
 # Small UI/log helpers
 # -----------------------------------------------------------------------------
@@ -64,12 +111,47 @@ class InstallerLog(Log):
     provided. Most of this installer writes short status messages with
     log.write("..."), so normalize every message into a line here instead of
     requiring every call site to remember the newline.
+
+    ExecuteScreen performs long-running installation work in a thread worker.
+    Textual widgets are not thread-safe, so worker-originated log writes are
+    marshalled back to the UI thread with App.call_from_thread().
     """
+
+    def __init__(self, *args, **kwargs):
+        # Security: bound retained installer output so a very noisy external
+        # process cannot grow the Textual log indefinitely.
+        kwargs.setdefault("max_lines", 4000)
+        super().__init__(*args, **kwargs)
+        self._ui_thread_id = threading.get_ident()
+
+    def _write_ui(self, text, *args, **kwargs):
+        return super().write(text, *args, **kwargs)
+
     def write(self, data="", *args, **kwargs):
         text = str(data)
         if not text.endswith("\n"):
             text += "\n"
-        return super().write(text, *args, **kwargs)
+
+        # Security: cap a single log write as well as total retained lines.
+        # External command output is untrusted and may contain huge lines.
+        encoded = text.encode("utf-8", errors="replace")
+        max_write_bytes = 16 * 1024
+        if len(encoded) > max_write_bytes:
+            text = encoded[:max_write_bytes].decode(
+                "utf-8",
+                errors="replace",
+            ).rstrip("\n")
+            text += "\n[log entry truncated]\n"
+
+        if threading.get_ident() != self._ui_thread_id:
+            return self.app.call_from_thread(
+                self._write_ui,
+                text,
+                *args,
+                **kwargs,
+            )
+
+        return self._write_ui(text, *args, **kwargs)
 
 
 def looks_like_ip(host: str) -> bool:
@@ -947,77 +1029,101 @@ def install_opaque_helper_assets(asset_root: str, log: Optional[Log] = None) -> 
 
 
 def ensure_opaque_runtime_config(
-        config_dir: str = "/etc/pqnas",
+        config_dir: str = "/srv/pqnas/config",
         helper_path: str = "/usr/local/libexec/pqnas/pqnas_opaque_helper",
         log: Optional[Log] = None,
 ) -> Tuple[str, str]:
     """
-    Prepare OPAQUE runtime config:
-      /etc/pqnas/opaque_credentials.json
-      /etc/pqnas/opaque_server_setup.bin
-
-    The files are readable by pqnas only. The server setup is created by
-    pqnas user so the daemon can validate and use it without root.
+    Prepare OPAQUE credentials and server setup in mutable runtime config.
     """
-    ensure_service_user("pqnas", log=log)
+    owner_uid, owner_gid = service_owner_ids("pqnas")
 
-    os.makedirs(config_dir, exist_ok=True)
-    subprocess.run(["chown", "pqnas:pqnas", config_dir], check=False)
-    os.chmod(config_dir, 0o750)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions - Security-reviewed: service-owned runtime/config directory; pqnas needs traversal and there is no world access.
+    credentials_path = os.path.join(
+        config_dir,
+        "opaque_credentials.json",
+    )
+    setup_path = os.path.join(
+        config_dir,
+        "opaque_server_setup.bin",
+    )
 
-    credentials_path = os.path.join(config_dir, "opaque_credentials.json")
-    setup_path = os.path.join(config_dir, "opaque_server_setup.bin")
+    credentials_created = atomic_write_managed_text(
+        credentials_path,
+        '{\n  "version": 1,\n  "accounts": []\n}\n',
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+        file_mode=0o600,
+        replace_existing=False,
+    )
 
-    if not os.path.exists(credentials_path):
-        tmp = credentials_path + ".new"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write('{\n  "version": 1,\n  "accounts": []\n}\n')
-        os.chmod(tmp, 0o600)
-        subprocess.run(["chown", "pqnas:pqnas", tmp], check=False)
-        os.replace(tmp, credentials_path)
-        if log:
-            log.write(f"[*] Created OPAQUE credentials store: {credentials_path}")
-    else:
-        subprocess.run(["chown", "pqnas:pqnas", credentials_path], check=False)
-        os.chmod(credentials_path, 0o600)
-        if log:
-            log.write(f"[*] OPAQUE credentials store exists: {credentials_path}")
+    if log:
+        if credentials_created:
+            log.write("[*] Created OPAQUE credentials store.")
+        else:
+            log.write("[*] Existing OPAQUE credentials store preserved.")
 
-    if not os.path.exists(setup_path):
-        if log:
-            log.write(f"[*] Creating OPAQUE server setup: {setup_path}")
-
-        create = subprocess.run(
-            ["sudo", "-u", "pqnas", helper_path, "server-setup-create", setup_path],
+    def create_setup(temporary_path: str) -> None:
+        result = subprocess.run(
+            [
+                "sudo",
+                "-u",
+                "pqnas",
+                helper_path,
+                "server-setup-create",
+                temporary_path,
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             check=False,
         )
-        if create.returncode != 0:
-            raise RuntimeError("OPAQUE server setup create failed:\n" + (create.stdout or "").strip())
-    else:
-        if log:
-            log.write(f"[*] OPAQUE server setup exists: {setup_path}")
 
-    subprocess.run(["chown", "pqnas:pqnas", setup_path], check=False)
-    os.chmod(setup_path, 0o600)
+        if result.returncode != 0:
+            # Security: helper output may contain implementation details.
+            # Keep the installer error stable and free of raw subprocess text.
+            raise RuntimeError(
+                "OPAQUE server setup creation failed"
+            )
+
+    setup_created = ensure_managed_binary_created(
+        setup_path,
+        create_setup,
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+        file_mode=0o600,
+    )
+
+    if log:
+        if setup_created:
+            log.write("[*] Created OPAQUE server setup.")
+        else:
+            log.write("[*] Existing OPAQUE server setup preserved.")
 
     check = subprocess.run(
-        ["sudo", "-u", "pqnas", helper_path, "server-setup-check", setup_path],
+        [
+            "sudo",
+            "-u",
+            "pqnas",
+            helper_path,
+            "server-setup-check",
+            setup_path,
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         check=False,
     )
+
     if check.returncode != 0:
-        raise RuntimeError("OPAQUE server setup check failed:\n" + (check.stdout or "").strip())
+        # Security: do not expose raw helper output through installer errors.
+        raise RuntimeError(
+            "OPAQUE server setup validation failed"
+        )
 
     if log:
         log.write("[*] OPAQUE runtime config validated.")
 
     return credentials_path, setup_path
-
 
 def run_cmd_capture(argv: List[str]) -> str:
     p = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -1057,7 +1163,7 @@ def rollback_binaries(dest_dir: str = "/usr/local/bin") -> None:
 
 
 def have_cmd(name: str) -> bool:
-    return shutil.which(name) is not None
+    return installer_core.have_cmd(name)
 
 
 def ldd_missing_libs(bin_path: str) -> List[str]:
@@ -1080,35 +1186,14 @@ def ldd_missing_libs(bin_path: str) -> List[str]:
     return missing
 
 
-def apt_install(pkgs: List[str], log: Optional[Log] = None) -> None:
-    if not have_cmd("apt-get"):
-        raise RuntimeError("apt-get not found (unsupported distro).")
-
-    def w(msg: str) -> None:
-        if log:
-            log.write(msg)
-        else:
-            print(msg)
-
-    w("[*] apt-get update …")
-    p1 = subprocess.run(
-        ["apt-get", "update", "-y"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
+def apt_install(
+        pkgs: List[str],
+        log: Optional[Log] = None,
+) -> None:
+    return installer_core.apt_install(
+        pkgs,
+        log=log,
     )
-    if p1.returncode != 0:
-        raise RuntimeError(f"apt-get update failed:\n{(p1.stdout or '').strip()}")
-
-    w(f"[*] apt-get install: {' '.join(pkgs)} …")
-    p2 = subprocess.run(
-        ["apt-get", "install", "-y", *pkgs],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    if p2.returncode != 0:
-        raise RuntimeError(f"apt-get install failed:\n{(p2.stdout or '').strip()}")
 
 
 def ensure_runtime_deps_for_server(server_exec: str, log: Optional[Log] = None, extra_ldd_paths: Optional[List[str]] = None) -> None:
@@ -1282,6 +1367,27 @@ class InstallState:
     plan: List[List[str]] = None
     plan_notes: List[str] = None
 
+    # Non-secret cluster settings are preserved across installer upgrades.
+    # Security: the one-time node bootstrap token itself is never stored here.
+    cluster_config: ClusterInstallConfig = field(
+        default_factory=ClusterInstallConfig
+    )
+
+    # Preserve the validated startup value for safe token cleanup when the
+    # selected role or enrollment changes during this installer run.
+    original_cluster_config: ClusterInstallConfig = field(
+        default_factory=ClusterInstallConfig
+    )
+
+    # Security: one-shot operator acknowledgement for creating missing
+    # Director confirmed/pending projection authorization state. Never infer
+    # this permission from an upgrade flag or installed binaries.
+    director_projection_sync_state_bootstrap_approved: bool = False
+
+    # Security: short-lived plaintext storage only. This buffer is never
+    # rendered into pqnas.env and is wiped after the descriptor-based write.
+    node_bootstrap_token: Optional[bytearray] = None
+
     # Internal verifier/session mode. Keep this v5-only.
     # Do not use this for QR-vs-password UI selection.
     auth_mode: str = "v5"
@@ -1301,13 +1407,24 @@ class InstallState:
     nginx_hostname: str = ""  # server_name (e.g. nas.example.com or 192.168.1.50)
     nginx_listen_port: int = 80
 
-    # Optional Let's Encrypt HTTPS (only used if nginx_enabled)
+    # Optional Let's Encrypt HTTPS terminated locally by this host.
     https_enabled: bool = False
     https_email: str = ""
     https_redirect: bool = True
+
+    # Public HTTPS may terminate at an upstream reverse proxy while this
+    # host's local nginx remains HTTP-only.
+    external_tls_termination: bool = False
+
     # Android app pairing TLS SPKI pin.
     # Written as PQNAS_TLS_SPKI_SHA256_PIN when HTTPS cert material is available.
     tls_spki_pin_sha256: str = ""
+
+
+def installer_public_origin(
+        st: InstallState,
+) -> Optional[str]:
+    return installer_core.installer_public_origin(st)
 
 
 # -----------------------------------------------------------------------------
@@ -1316,10 +1433,7 @@ class InstallState:
 
 
 def run_cmd(argv: List[str]) -> str:
-    p = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if p.returncode != 0:
-        raise RuntimeError(f"Command failed: {' '.join(argv)}\n{(p.stderr or '').strip()}")
-    return p.stdout or ""
+    return installer_core.run_cmd(argv)
 
 
 def lsblk_json() -> dict:
@@ -1375,8 +1489,53 @@ def fmt_cmd(argv: List[str]) -> str:
 
 
 def dev_part_path(disk: Disk) -> str:
-    # nvme uses p1, sata uses 1
-    return f"{disk.path}p1" if "nvme" in disk.name else f"{disk.path}1"
+    return installer_core.dev_part_path(disk)
+
+
+def wait_for_block_device(
+        path: str,
+        timeout_seconds: float = 10.0,
+        poll_interval_seconds: float = 0.05,
+) -> None:
+    """
+    Wait until the kernel/udev publishes the expected partition block device.
+
+    Security/reliability: partition creation and partprobe can return before
+    the /dev node is usable. Require the exact expected path to be a real
+    block device rather than accepting a regular file or symlink.
+    """
+    if timeout_seconds <= 0:
+        raise ValueError(
+            "block-device wait timeout must be positive"
+        )
+    if poll_interval_seconds <= 0:
+        raise ValueError(
+            "block-device poll interval must be positive"
+        )
+
+    deadline = time.monotonic() + timeout_seconds
+
+    while True:
+        try:
+            mode = os.lstat(path).st_mode
+        except FileNotFoundError:
+            pass
+        else:
+            if stat.S_ISBLK(mode):
+                return
+            raise RuntimeError(
+                f"Expected block device at {path}"
+            )
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError(
+                f"Timed out waiting for block device: {path}"
+            )
+
+        time.sleep(
+            min(poll_interval_seconds, remaining)
+        )
 
 
 def get_uuid_for_device(dev: str) -> str:
@@ -1420,30 +1579,35 @@ def write_fstab_uuid(mountpoint: str, fstype: str, uuid: str, options: str) -> N
 
 
 def create_pqnas_layout(root: str) -> None:
-    for p in (
-        "data",
-        "logs",
-        "apps/bundled",
-        "apps/installed",
-        "apps/users",
-        "audit",
-        "tmp",
+    owner_uid, owner_gid = service_owner_ids("pqnas")
 
-        # Server-managed caches. These are generated artifacts, not user data.
-        "cache",
-        "cache/gallery_thumbs",
-        "cache/reelstack_thumbs",
-        "cache/reelstack_meta",
-        "cache/reelstack_index",
-        "cache/music_covers",
-        "cache/workspace_file_thumbs",
-        "cache/share_posters",
-    ):
-        ensure_dir(os.path.join(root, p))
+    # Security: existing-filesystem mode may use a storage root that does not
+    # exist yet. Create only the missing final directory component through the
+    # descriptor-based helper so symlinks and unsafe parent metadata are rejected.
+    if not os.path.lexists(root):
+        prepare_service_state_directory(
+            root,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
+        )
 
+    # Security: create only the known service-owned runtime directories.
+    # Every component is opened without following symlinks, and ownership is
+    # changed only on validated directory descriptors.
+    prepare_storage_runtime_layout(
+        root,
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+    )
+    prepare_service_state_directory(
+        "/var/lib/pqnas",
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+    )
+
+    # These contain installed code/static assets and remain root-managed.
     ensure_dir("/opt/pqnas/static")
     ensure_dir("/opt/pqnas/static/branding")
-
 
 def find_dna_lib_source(asset_root: str) -> str:
     """
@@ -1548,52 +1712,43 @@ def ensure_dna_alerts_runtime_dir(log: Optional[Log] = None) -> str:
     Create runtime data dir for PQ-NAS DNA alerts identity.
     Does NOT create identity; only prepares filesystem.
     """
-    path = "/var/lib/pqnas/dna-alerts"
-    os.makedirs(path, exist_ok=True)
-
-    p = subprocess.run(
-        ["id", "-u", "pqnas"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
+    owner_uid, owner_gid = service_owner_ids("pqnas")
+    prepare_service_state_directory(
+        "/var/lib/pqnas",
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
     )
-    if p.returncode != 0:
-        raise RuntimeError("pqnas service user does not exist before preparing DNA alerts runtime dir")
-
-    subprocess.run(["chown", "-R", "pqnas:pqnas", "/var/lib/pqnas"], check=True)
-    subprocess.run(["chmod", "750", "/var/lib/pqnas"], check=True)
-    subprocess.run(["chmod", "750", path], check=True)
+    path = prepare_service_state_directory(
+        "/var/lib/pqnas/dna-alerts",
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+    )
 
     if log:
         log.write(f"[*] Prepared DNA alerts runtime dir: {path}")
 
     return path
 
-
 def ensure_notification_runtime_dir(log: Optional[Log] = None) -> str:
     """
     Runtime state directory for notification throttling and weekly counters.
     """
-    path = "/var/lib/pqnas/notifications"
-    os.makedirs(path, exist_ok=True)
-
-    p = subprocess.run(
-        ["id", "-u", "pqnas"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
+    owner_uid, owner_gid = service_owner_ids("pqnas")
+    prepare_service_state_directory(
+        "/var/lib/pqnas",
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
     )
-    if p.returncode != 0:
-        raise RuntimeError("pqnas service user does not exist before preparing notification runtime dir")
-
-    subprocess.run(["chown", "-R", "pqnas:pqnas", path], check=True)
-    subprocess.run(["chmod", "750", path], check=True)
+    path = prepare_service_state_directory(
+        "/var/lib/pqnas/notifications",
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+    )
 
     if log:
         log.write(f"[*] Prepared notification runtime dir: {path}")
 
     return path
-
 
 def install_notification_worker_assets(asset_root: str, log: Optional[Log] = None) -> str:
     """
@@ -1697,7 +1852,7 @@ WantedBy=timers.target
 
 
 def seed_dna_connect_alert_defaults(
-        admin_settings_path: str = "/etc/pqnas/admin_settings.json",
+        admin_settings_path: str = "/srv/pqnas/config/admin_settings.json",
         *,
         cli_path: str = "/usr/local/bin/dna-connect-cli",
         data_dir: str = "/var/lib/pqnas/dna-alerts",
@@ -1708,12 +1863,19 @@ def seed_dna_connect_alert_defaults(
     Does not force-enable alerts and does not overwrite existing admin choices.
     """
     try:
+        owner_uid, owner_gid = service_owner_ids("pqnas")
+        text = read_managed_text(
+            admin_settings_path,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
+            file_mode=0o640,
+        )
+
         data = {}
-        if os.path.isfile(admin_settings_path):
-            with open(admin_settings_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if not isinstance(data, dict):
-                    data = {}
+        if text is not None:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                data = parsed
 
         cfg = data.get("dna_connect_alerts")
         if not isinstance(cfg, dict):
@@ -1727,63 +1889,53 @@ def seed_dna_connect_alert_defaults(
         if not isinstance(cfg.get("recipient"), str):
             cfg["recipient"] = ""
             changed = True
-        if not isinstance(cfg.get("cli_path"), str) or not cfg.get("cli_path", "").strip():
+        if (
+            not isinstance(cfg.get("cli_path"), str)
+            or not cfg.get("cli_path", "").strip()
+        ):
             cfg["cli_path"] = cli_path
             changed = True
-        if not isinstance(cfg.get("data_dir"), str) or not cfg.get("data_dir", "").strip():
+        if (
+            not isinstance(cfg.get("data_dir"), str)
+            or not cfg.get("data_dir", "").strip()
+        ):
             cfg["data_dir"] = data_dir
             changed = True
-        if cfg.get("min_level") not in ("security", "error", "warning", "info"):
+        if cfg.get("min_level") not in (
+            "security",
+            "error",
+            "warning",
+            "info",
+        ):
             cfg["min_level"] = "warning"
             changed = True
 
         data["dna_connect_alerts"] = cfg
 
         if changed:
-            tmp = admin_settings_path + ".new"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-                f.write("\n")
-            os.replace(tmp, admin_settings_path)
+            atomic_write_managed_text(
+                admin_settings_path,
+                json.dumps(data, indent=2) + "\n",
+                owner_uid=owner_uid,
+                owner_gid=owner_gid,
+                file_mode=0o640,
+                replace_existing=True,
+            )
             if log:
-                log.write(f"[*] Seeded DNA alert defaults in {admin_settings_path}")
-        else:
-            if log:
-                log.write("[*] DNA alert defaults already present in admin settings.")
+                log.write("[*] Seeded DNA alert defaults.")
+        elif log:
+            log.write(
+                "[*] DNA alert defaults already present "
+                "in admin settings."
+            )
 
-    except Exception as e:
-        raise RuntimeError(f"Failed to seed DNA alert defaults: {e}")
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed to seed DNA alert defaults safely"
+        ) from exc
 
 def ensure_runtime_deps_for_dna_alert_cli(cli_path: str, log: Optional[Log] = None) -> None:
     ensure_runtime_deps_for_server(cli_path, log=log, extra_ldd_paths=["/usr/local/lib/libdna.so"])
-def install_static_assets(asset_root: str, dest_root: str = "/opt/pqnas/static") -> None:
-    """
-    Copy static web assets into /opt/pqnas/static.
-
-    repo mode:    <repo>/server/src/static/*
-    package mode: <pkg>/static/*
-    """
-    pkg = os.path.join(asset_root, "static")
-    repo = os.path.join(asset_root, "server", "src", "static")
-
-    src = pkg if os.path.isdir(pkg) else repo
-    if not os.path.isdir(src):
-        raise RuntimeError(f"Missing static dir (tried): {pkg} and {repo}")
-
-    os.makedirs(dest_root, exist_ok=True)
-
-    for name in os.listdir(src):
-        s = os.path.join(src, name)
-        d = os.path.join(dest_root, name)
-
-        if os.path.isdir(s):
-            if os.path.exists(d):
-                shutil.rmtree(d)
-            shutil.copytree(s, d)
-        else:
-            shutil.copy2(s, d)
-
-
 def install_bundled_apps(asset_root: str, apps_bundled_dest: str) -> None:
     """
     Install bundled app ZIPs into the storage root.
@@ -1841,84 +1993,126 @@ def install_bundled_apps(asset_root: str, apps_bundled_dest: str) -> None:
 
 def ensure_config_files(root: str, asset_root: str) -> None:
     """
-    Ensure PQ-NAS config files exist.
+    Ensure mutable PQ-NAS runtime configuration exists under <root>/config.
 
-    Production layout:
-      - /etc/pqnas/*.json
-      - /srv/pqnas/* (storage root)
-
-    Default source:
-      - <asset_root>/config
+    Root-managed environment, trust, and hardware-secret files remain under
+    /etc/pqnas and must never become service-owned.
     """
+    owner_uid, owner_gid = service_owner_ids("pqnas")
+    config_dir = prepare_mutable_config_directory(
+        root,
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+    )
+
     src = os.path.join(asset_root, "config")
     if not os.path.isdir(src):
-        raise RuntimeError(f"Missing config dir: {src}")
+        raise RuntimeError("Missing packaged config directory")
 
-    etc_dir = "/etc/pqnas"
-    os.makedirs(etc_dir, exist_ok=True)
+    legacy_dir = "/etc/pqnas"
 
-    force = os.environ.get("PQNAS_FORCE_CONFIG", "").strip().lower() in ("1", "true", "yes", "y", "on")
-
-    for name in ("admin_settings.json", "policy.json", "users.json", "shares.json", "pools.json"):
-        s = os.path.join(src, name)
-        d = os.path.join(etc_dir, name)
-
-        if not os.path.exists(s):
-            raise RuntimeError(f"Missing default config: {s}")
-
-        if os.path.exists(d) and not force:
-            continue
-
-        shutil.copy2(s, d)
-
-    # Ensure app auth store exists (mutable runtime auth state)
-    app_auth_path = os.path.join(etc_dir, "app_auth.json")
-    if not os.path.exists(app_auth_path):
-        with open(app_auth_path, "w", encoding="utf-8") as f:
-            f.write('{\n  "version": 1,\n  "devices": {},\n  "refresh_tokens": {}\n}\n')
-
-    # Notifications + Warnings settings.
-    # Secrets such as Telegram bot tokens are stored here later by the admin UI.
-    # Create the file with safe defaults and strict permissions so first save
-    # does not depend on directory ownership edge cases.
-    notifications_path = os.path.join(etc_dir, "notifications.json")
-    if not os.path.exists(notifications_path):
-        tmp = notifications_path + ".new"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(
-                '{\n'
-                '  "version": 1,\n'
-                '  "info_email_enabled": true,\n'
-                '  "info_telegram_enabled": false,\n'
-                '  "warnings_email_enabled": true,\n'
-                '  "warnings_telegram_enabled": false,\n'
-                '  "weekly_summary_enabled": true,\n'
-                '  "extra_emails": [],\n'
-                '  "telegram_bot_token": "",\n'
-                '  "telegram_chat_id": ""\n'
-                '}\n'
+    def refuse_legacy_overwrite(
+            name: str,
+            destination: str,
+    ) -> None:
+        legacy = os.path.join(legacy_dir, name)
+        if not os.path.lexists(destination) and os.path.lexists(legacy):
+            # Security: never replace an existing legacy identity/auth store
+            # with packaged defaults. Automatic migration needs a separately
+            # reviewed copier that validates every source inode and file type.
+            raise RuntimeError(
+                "Legacy mutable configuration requires manual migration"
             )
-        os.chmod(tmp, 0o600)
-        subprocess.run(["chown", "pqnas:pqnas", tmp], check=False)
-        os.replace(tmp, notifications_path)
-    else:
-        subprocess.run(["chown", "pqnas:pqnas", notifications_path], check=False)
-        os.chmod(notifications_path, 0o600)
 
-    # Optional breadcrumb under storage root
-    try:
-        marker_dir = os.path.join(root, "config")
-        os.makedirs(marker_dir, exist_ok=True)
-        marker_path = os.path.join(marker_dir, "README.txt")
-        if not os.path.exists(marker_path):
-            with open(marker_path, "w", encoding="utf-8") as f:
-                f.write(
-                    "PQ-NAS config lives in /etc/pqnas.\n"
-                    "This directory is intentionally not used for runtime config.\n"
-                )
-    except Exception:
-        pass
+    for name in (
+        "admin_settings.json",
+        "policy.json",
+        "users.json",
+        "shares.json",
+        "pools.json",
+    ):
+        source = os.path.join(src, name)
+        destination = os.path.join(config_dir, name)
 
+        if not os.path.lexists(destination):
+            refuse_legacy_overwrite(name, destination)
+
+        text = read_packaged_text(source)
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                "Packaged mutable configuration is invalid"
+            ) from exc
+
+        if not isinstance(parsed, (dict, list)):
+            raise RuntimeError(
+                "Packaged mutable configuration has invalid shape"
+            )
+
+        atomic_write_managed_text(
+            destination,
+            text,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
+            file_mode=0o640,
+            replace_existing=False,
+        )
+
+    defaults = (
+        (
+            "app_auth.json",
+            '{\n'
+            '  "version": 1,\n'
+            '  "devices": {},\n'
+            '  "refresh_tokens": {}\n'
+            '}\n',
+            0o640,
+        ),
+        (
+            "notifications.json",
+            '{\n'
+            '  "version": 1,\n'
+            '  "info_email_enabled": true,\n'
+            '  "info_telegram_enabled": false,\n'
+            '  "warnings_email_enabled": true,\n'
+            '  "warnings_telegram_enabled": false,\n'
+            '  "weekly_summary_enabled": true,\n'
+            '  "extra_emails": [],\n'
+            '  "telegram_bot_token": "",\n'
+            '  "telegram_chat_id": ""\n'
+            '}\n',
+            0o600,
+        ),
+    )
+
+    for name, text, mode in defaults:
+        destination = os.path.join(config_dir, name)
+
+        if not os.path.lexists(destination):
+            refuse_legacy_overwrite(name, destination)
+
+        atomic_write_managed_text(
+            destination,
+            text,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
+            file_mode=mode,
+            replace_existing=False,
+        )
+
+    atomic_write_managed_text(
+        os.path.join(config_dir, "README.txt"),
+        (
+            "PQ-NAS mutable runtime configuration lives here.\n"
+            "Root-managed environment and trust files remain in "
+            "/etc/pqnas.\n"
+        ),
+        owner_uid=owner_uid,
+        owner_gid=owner_gid,
+        file_mode=0o640,
+        replace_existing=False,
+    )
 
 def write_env_file(
         root: str,
@@ -1930,15 +2124,18 @@ def write_env_file(
         login_mode: Optional[str] = None,
         password_bootstrap_token: Optional[str] = None,
         tls_spki_pin_sha256: Optional[str] = None,
+        cluster_config: Optional[ClusterInstallConfig] = None,
 ) -> None:
 
     etc_dir = "/etc/pqnas"
     os.makedirs(etc_dir, exist_ok=True)
 
     env_path = os.path.join(etc_dir, "pqnas.env")
+    config_root = os.path.join(root, "config")
 
     lines = [
-        "PQNAS_CONFIG=/etc/pqnas",
+        f"PQNAS_CONFIG={config_root}",
+        f"PQNAS_CONFIG_ROOT={config_root}",
         "",
         "# Optional SMTP settings for Notifications + Warnings email delivery.",
         "# If PQNAS_SMTP_HOST is empty, pqnas_notify.py falls back to local sendmail/msmtp.",
@@ -2004,17 +2201,27 @@ def write_env_file(
         lines += [f"PQNAS_TLS_SPKI_SHA256_PIN={tls_spki_pin_sha256}"]
 
 
+    # Security: render only validated non-secret cluster settings.
+    # The one-time node bootstrap token belongs in its private token file.
+    lines += render_cluster_env_lines(
+        cluster_config or ClusterInstallConfig()
+    )
+
     # Security: do not write PQNAS_DNA_LIB into the server environment.
     # Server-side DNA identity generation loads libdna_lib.so from the fixed
     # root-managed runtime path to avoid environment-controlled dlopen().
     # The installer still installs the library to that fixed path.
-    with open(env_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
+    # Security: write the root-owned environment file through a private
+    # sibling temp inode, fsync it, and atomically replace the final name.
+    atomic_write_private_file(
+        env_path,
+        "\n".join(lines) + "\n",
+        owner_uid=0,
+        owner_gid=0,
+        replace_existing=True,
+    )
 
-    os.chown(env_path, 0, 0)
-    os.chmod(env_path, 0o600)
-
-def write_keys_env(asset_root: str, path: str = "/etc/pqnas/keys.env") -> None:
+def write_keys_env(asset_root: str, path: str = "/etc/pqnas/keys.env") -> bool:
     """
     Generate Ed25519 + cookie keys and write systemd-friendly EnvironmentFile.
     Searches for pqnas_keygen in:
@@ -2022,7 +2229,25 @@ def write_keys_env(asset_root: str, path: str = "/etc/pqnas/keys.env") -> None:
       2) <asset_root>/pqnas_keygen              (package)
       3) <asset_root>/build/bin/pqnas_keygen    (repo)
     """
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    required_keys = frozenset({
+        "PQNAS_SERVER_PK_B64URL",
+        "PQNAS_SERVER_SK_B64URL",
+        "PQNAS_COOKIE_KEY_B64URL",
+    })
+
+    # Security: upgrades preserve identity only after the opened key file has
+    # passed metadata, bounded UTF-8, exact-key, and non-empty-value checks.
+    existing_keys = read_private_file_text(
+        path,
+        owner_uid=0,
+        owner_gid=0,
+    )
+    if existing_keys is not None:
+        validate_exact_private_env_keys(
+            existing_keys,
+            required_keys,
+        )
+        return False
 
     candidates = [
         "/usr/local/bin/pqnas_keygen",
@@ -2048,15 +2273,24 @@ def write_keys_env(asset_root: str, path: str = "/etc/pqnas/keys.env") -> None:
             v = v.strip().strip("'").strip('"')
             kv.append(f"{k.strip()}={v}")
 
-    needed = {"PQNAS_SERVER_PK_B64URL", "PQNAS_SERVER_SK_B64URL", "PQNAS_COOKIE_KEY_B64URL"}
     got = {x.split("=", 1)[0] for x in kv}
-    if not needed.issubset(got):
-        raise RuntimeError(f"pqnas_keygen output missing keys: {sorted(needed - got)}")
+    if got != required_keys:
+        raise RuntimeError(
+            "pqnas_keygen output did not contain the exact required keys"
+        )
 
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(kv) + "\n")
+    validate_exact_private_env_keys(
+        "\n".join(kv) + "\n",
+        required_keys,
+    )
 
-    os.chmod(path, 0o600)
+    return atomic_write_private_file(
+        path,
+        "\n".join(kv) + "\n",
+        owner_uid=0,
+        owner_gid=0,
+        replace_existing=False,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -2277,9 +2511,11 @@ def write_systemd_unit(
     unit_path = "/etc/systemd/system/pqnas.service"
 
     writable_paths = " ".join(dict.fromkeys([
-        "/etc/pqnas",
         storage_root or "/srv/pqnas",
         "/var/lib/pqnas",
+        # The guarded root update helper runs inside this service mount
+        # namespace and needs these paths writable through ProtectSystem.
+        # DAC ownership remains root:root so pqnas itself cannot modify them.
         "/usr/local/bin",
         "/opt/pqnas",
     ]))
@@ -2405,19 +2641,7 @@ def ensure_service_user(user: str = "pqnas", log: Optional[Log] = None) -> None:
     if log:
         log.write(f"[*] Created service user: {user}")
 
-def ensure_pqnas_ownership(root: str, log: Optional[Log] = None) -> None:
-    paths = [
-        root,
-        "/etc/pqnas",
-        "/opt/pqnas",
-        "/var/lib/pqnas",
-    ]
 
-    for p in paths:
-        if os.path.exists(p):
-            subprocess.run(["chown", "-R", "pqnas:pqnas", p], check=True)
-            if log:
-                log.write(f"[*] Ownership set: pqnas:pqnas {p}")
 
 def enable_letsencrypt_nginx(domain: str, email: str, redirect: bool, logw=None) -> bool:
     """
@@ -2531,21 +2755,16 @@ def nginx_sites_layout() -> str:
         return "confd"
     return "sites"
 
-def letsencrypt_cert_paths(hostname: str) -> tuple[str, str]:
-    """
-    Return (fullchain, privkey) paths for a hostname under /etc/letsencrypt/live/<host>/.
-    """
-    h = (hostname or "").strip()
-    base = f"/etc/letsencrypt/live/{h}"
-    return (os.path.join(base, "fullchain.pem"), os.path.join(base, "privkey.pem"))
+def letsencrypt_cert_paths(
+        hostname: str,
+) -> tuple[str, str]:
+    return installer_core.letsencrypt_cert_paths(hostname)
 
 
-def have_letsencrypt_cert(hostname: str) -> bool:
-    """
-    True if certbot/letsencrypt cert files exist for hostname.
-    """
-    fullchain, privkey = letsencrypt_cert_paths(hostname)
-    return os.path.isfile(fullchain) and os.path.isfile(privkey)
+def have_letsencrypt_cert(
+        hostname: str,
+) -> bool:
+    return installer_core.have_letsencrypt_cert(hostname)
 
 
 def ensure_letsencrypt_reuse_key(hostname: str, log: Optional[Log] = None) -> bool:
@@ -2647,76 +2866,24 @@ def compute_tls_spki_sha256_pin_from_cert(cert_path: str) -> str:
     return pin
 
 
-def compute_tls_spki_sha256_pin_from_host(hostname: str, port: int = 443) -> str:
-    """
-    Best-effort fallback for external HTTPS / Cloudflare / non-local TLS.
-
-    This asks the currently reachable TLS endpoint for its leaf certificate and
-    computes the SPKI pin from that. Prefer local Let's Encrypt cert files when
-    available.
-    """
-    host = (hostname or "").strip()
-    if not host:
-        return ""
-
-    p1 = subprocess.run(
-        ["openssl", "s_client", "-connect", f"{host}:{port}", "-servername", host],
-        input=b"",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        timeout=15,
-        check=False,
+def compute_tls_spki_sha256_pin_from_host(
+        hostname: str,
+        port: int = 443,
+) -> str:
+    return installer_core.compute_tls_spki_sha256_pin_from_host(
+        hostname,
+        port,
     )
-    if p1.returncode != 0 or not p1.stdout:
-        return ""
 
-    p2 = subprocess.run(
-        ["openssl", "x509", "-pubkey", "-noout"],
-        input=p1.stdout,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+
+def detect_external_tls_spki_sha256_pin(
+        hostname: str,
+        log: Optional[Log] = None,
+) -> tuple[str, str]:
+    return installer_core.detect_external_tls_spki_sha256_pin(
+        hostname,
+        log=log,
     )
-    if p2.returncode != 0 or not p2.stdout:
-        return ""
-
-    p3 = subprocess.run(
-        ["openssl", "pkey", "-pubin", "-outform", "DER"],
-        input=p2.stdout,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if p3.returncode != 0 or not p3.stdout:
-        return ""
-
-    p4 = subprocess.run(
-        ["openssl", "dgst", "-sha256", "-binary"],
-        input=p3.stdout,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if p4.returncode != 0 or not p4.stdout:
-        return ""
-
-    p5 = subprocess.run(
-        ["openssl", "base64", "-A"],
-        input=p4.stdout,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if p5.returncode != 0 or not p5.stdout:
-        return ""
-
-    b64 = (p5.stdout or b"").decode("ascii", errors="replace").strip()
-    pin = f"sha256/{b64}"
-
-    if not re.fullmatch(r"sha256/[A-Za-z0-9+/]{43}=", pin):
-        return ""
-
-    return pin
 
 
 def detect_tls_spki_sha256_pin(hostname: str, log: Optional[Log] = None) -> tuple[str, str]:
@@ -2742,15 +2909,10 @@ def detect_tls_spki_sha256_pin(hostname: str, log: Optional[Log] = None) -> tupl
             if log:
                 log.write(f"[WARN] Could not compute TLS SPKI pin from {fullchain}: {e}")
 
-    try:
-        pin = compute_tls_spki_sha256_pin_from_host(host, 443)
-        if pin:
-            return (pin, f"{host}:443")
-    except Exception as e:
-        if log:
-            log.write(f"[WARN] Could not compute TLS SPKI pin from live host {host}:443: {e}")
-
-    return ("", "")
+    return detect_external_tls_spki_sha256_pin(
+        host,
+        log=log,
+    )
 
 def write_nginx_site_http_only(
         server_name: str,
@@ -2966,69 +3128,16 @@ def nginx_test_reload(log: Optional[Log] = None) -> None:
 # -----------------------------------------------------------------------------
 
 
-def plan_for(state: InstallState) -> Tuple[List[List[str]], List[str]]:
-    """
-    Returns: (plan_argvs, notes)
-    Plan uses a single-disk model for now.
-    """
-    assert state.disk, "disk not selected"
-    d = state.disk
-    mp = state.mountpoint.rstrip("/") or "/srv/pqnas"
+def detect_existing_filesystem_info(
+        path: str,
+) -> tuple[str, str, str]:
+    return installer_core.detect_existing_filesystem_info(path)
 
-    notes: List[str] = []
-    plan: List[List[str]] = []
 
-    if state.install_mode == "existing":
-        notes.append("Mode: existing filesystem (NO wipe, NO partitioning).")
-        notes.append(f"PQ-NAS will be installed under: {mp}")
-        notes.append("WARNING: This uses your current root filesystem capacity.")
-        return plan, notes
-
-    if d.is_system:
-        raise RuntimeError("Refusing to operate on system disk (contains / mount).")
-
-    # Always clean slate first
-    plan += [
-        ["wipefs", "-a", d.path],
-        ["sgdisk", "--zap-all", d.path],
-        ["dd", "if=/dev/zero", f"of={d.path}", "bs=1M", "count=32", "status=none"],
-        ["sync"],
-        ["sgdisk", "--zap-all", d.path],
-        ["partprobe", d.path],
-    ]
-    notes.append("Disk will be destroyed (wipefs + zap GPT + zero first 32MiB).")
-
-    if state.backend == "ext4":
-        part = dev_part_path(d)
-        plan += [
-            ["parted", d.path, "--script", "mklabel", "gpt", "mkpart", "primary", "ext4", "1MiB", "100%"],
-            ["partprobe", d.path],
-            ["mkfs.ext4", "-F", "-L", "PQNAS_DATA", part],
-            ["mkdir", "-p", mp],
-            ["mount", part, mp],
-        ]
-        notes.append("Backend: ext4 (no snapshots).")
-
-    elif state.backend == "btrfs":
-        part = dev_part_path(d)
-        plan += [
-            ["parted", d.path, "--script", "mklabel", "gpt", "mkpart", "primary", "btrfs", "1MiB", "100%"],
-            ["partprobe", d.path],
-            ["mkfs.btrfs", "-f", "-L", "PQNAS_DATA", part],
-            ["mkdir", "-p", mp],
-            ["mount", part, mp],
-            ["btrfs", "subvolume", "create", f"{mp}/data"],
-            ["btrfs", "subvolume", "create", f"{mp}/snaps"],
-            ["umount", mp],
-            ["mount", "-o", "subvol=data", part, mp],
-        ]
-        notes.append("Backend: btrfs (snapshots supported via subvolumes).")
-
-    else:
-        raise RuntimeError(f"Unknown backend: {state.backend}")
-
-    notes.append("TODO: fstab + permissions.")
-    return plan, notes
+def plan_for(
+        state: InstallState,
+) -> Tuple[List[List[str]], List[str]]:
+    return installer_core.plan_for(state)
 
 
 # -----------------------------------------------------------------------------
@@ -3053,7 +3162,7 @@ class DiskSelectScreen(Screen):
         with Horizontal():
             with Vertical(id="left"):
                 yield Static(
-                    "[b]Step 1/6[/b] Select target disk\n\n"
+                    "[b]Step 1/7[/b] Select target disk\n\n"
                     "[r]R[/r] refresh  •  [r]N[/r] next  •  [r]Q[/r] quit\n",
                     classes="muted",
                 )
@@ -3144,8 +3253,9 @@ class DiskSelectScreen(Screen):
 
         if chosen_mode == "existing":
             self.mode_hint.update(
-                "WARNING: Existing filesystem mode uses your current root disk capacity. "
-                "Use /srv/pqnas and monitor free space."
+                "WARNING: Existing filesystem mode shares capacity with the "
+                "filesystem backing the selected PQ-NAS path. "
+                "Review the backing mount in the plan and monitor free space."
             )
 
         app.push_screen(BackendSelectScreen())
@@ -3157,7 +3267,7 @@ class BackendSelectScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
-            yield Static("[b]Step 2/6[/b] Select storage backend\n", classes="muted")
+            yield Static("[b]Step 2/7[/b] Select storage backend\n", classes="muted")
 
             self.radio = RadioSet(
                 RadioButton("ext4 (simple, no snapshots)", id="ext4"),
@@ -3212,6 +3322,333 @@ class BackendSelectScreen(Screen):
 
         app.state.backend = chosen
         app.state.mountpoint = mp
+        app.push_screen(ClusterRoleScreen())
+
+class ClusterRoleScreen(Screen):
+    BINDINGS = [
+        ("b", "back", "Back"),
+        ("n", "next", "Next"),
+        ("q", "quit", "Quit"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Vertical():
+            yield Static(
+                "[b]Step 3/7[/b] Select server role\n",
+                classes="muted",
+            )
+
+            self.role_radio = RadioSet(
+                RadioButton(
+                    "Standalone server",
+                    id="standalone",
+                ),
+                RadioButton(
+                    "Director control-plane server",
+                    id="director",
+                ),
+                RadioButton(
+                    "Storage node",
+                    id="node",
+                ),
+            )
+            yield self.role_radio
+
+            yield Static(
+                "\nStorage-node enrollment settings "
+                "(ignored for other roles):",
+                classes="muted",
+            )
+
+            self.node_id_in = Input(
+                placeholder="cellnode1",
+            )
+            yield Static("Node ID:", classes="muted")
+            yield self.node_id_in
+
+            self.director_url_in = Input(
+                placeholder="https://director.example",
+            )
+            yield Static(
+                "Director HTTPS base URL:",
+                classes="muted",
+            )
+            yield self.director_url_in
+
+            self.director_tls_pin_in = Input(
+                placeholder="sha256/...",
+            )
+            yield Static(
+                "Director TLS SPKI SHA-256 pin "
+                "(obtain out-of-band):",
+                classes="muted",
+            )
+            yield self.director_tls_pin_in
+
+            self.enrollment_id_in = Input(
+                placeholder="enrollment identifier",
+            )
+            yield Static(
+                "Enrollment ID:",
+                classes="muted",
+            )
+            yield self.enrollment_id_in
+
+            self.generation_in = Input(
+                value="1",
+                placeholder="1",
+            )
+            yield Static(
+                "Enrollment generation:",
+                classes="muted",
+            )
+            yield self.generation_in
+
+            self.node_api_url_in = Input(
+                placeholder="https://cellnode1.example",
+            )
+            yield Static(
+                "Storage-node HTTPS API URL:",
+                classes="muted",
+            )
+            yield self.node_api_url_in
+
+            self.token_in = Input(
+                placeholder="One-time 43-character bootstrap token",
+                password=True,
+            )
+            yield Static(
+                "One-time bootstrap token:",
+                classes="muted",
+            )
+            yield self.token_in
+
+            with Horizontal():
+                yield Button(
+                    "Back",
+                    id="back",
+                    variant="default",
+                )
+                yield Button(
+                    "Next",
+                    id="next",
+                    variant="primary",
+                )
+
+            self.hint = Static(
+                "",
+                classes="warn",
+            )
+            yield self.hint
+
+        yield Footer()
+
+    def on_mount(self) -> None:
+        app: InstallerApp = self.app  # type: ignore
+        config = app.state.cluster_config
+
+        for button in self.role_radio.query(
+            RadioButton
+        ):
+            if button.id == config.role:
+                button.value = True
+
+        base = config
+        if (
+            base.role != "node"
+            and app.state.original_cluster_config.role == "node"
+        ):
+            base = app.state.original_cluster_config
+
+        if base.role == "node":
+            self.node_id_in.value = base.node_id
+            self.director_url_in.value = base.director_url
+            self.director_tls_pin_in.value = (
+                base.director_tls_spki_sha256_pin
+            )
+            self.enrollment_id_in.value = base.enrollment_id
+            self.generation_in.value = str(
+                base.enrollment_generation
+            )
+            self.node_api_url_in.value = (
+                base.node_api_base_url
+            )
+
+        self.token_in.value = ""
+        self.hint.update(
+            "Standalone is the safe default. "
+            "A new or changed storage-node enrollment "
+            "requires its one-time token."
+        )
+
+    def on_button_pressed(
+        self,
+        event: Button.Pressed,
+    ) -> None:
+        if event.button.id == "back":
+            self.action_back()
+        elif event.button.id == "next":
+            self.action_next()
+
+    def action_back(self) -> None:
+        self.app.pop_screen()
+
+    def action_next(self) -> None:
+        app: InstallerApp = self.app  # type: ignore
+
+        chosen = None
+        for button in self.role_radio.query(
+            RadioButton
+        ):
+            if button.value:
+                chosen = button.id
+                break
+
+        if chosen not in (
+            "standalone",
+            "director",
+            "node",
+        ):
+            self.hint.update(
+                "Choose standalone, Director, or storage node."
+            )
+            return
+
+        if chosen == "standalone":
+            selected = ClusterInstallConfig(
+                role="standalone"
+            )
+        elif chosen == "director":
+            selected = ClusterInstallConfig(
+                role="director"
+            )
+        else:
+            generation_text = (
+                self.generation_in.value or ""
+            ).strip()
+
+            if (
+                not generation_text
+                or not generation_text.isascii()
+                or not generation_text.isdigit()
+                or len(generation_text) > 20
+            ):
+                self.hint.update(
+                    "Enrollment generation must be a positive integer."
+                )
+                return
+
+            path_source = app.state.cluster_config
+            if (
+                path_source.role != "node"
+                and app.state.original_cluster_config.role == "node"
+            ):
+                path_source = (
+                    app.state.original_cluster_config
+                )
+
+            credential_file = (
+                path_source.cluster_credential_file
+                if path_source.role == "node"
+                else DEFAULT_NODE_CREDENTIAL_FILE
+            )
+            bootstrap_file = (
+                path_source.bootstrap_token_file
+                if path_source.role == "node"
+                else DEFAULT_NODE_BOOTSTRAP_TOKEN_FILE
+            )
+
+            try:
+                selected = validate_cluster_config(
+                    ClusterInstallConfig(
+                        role="node",
+                        node_id=(
+                            self.node_id_in.value or ""
+                        ).strip(),
+                        director_url=(
+                            self.director_url_in.value or ""
+                        ).strip(),
+                        # Security: trust anchors must already be
+                        # canonical; never trim or normalize pin text here.
+                        director_tls_spki_sha256_pin=(
+                            self.director_tls_pin_in.value or ""
+                        ),
+                        cluster_credential_file=credential_file,
+                        enrollment_id=(
+                            self.enrollment_id_in.value or ""
+                        ).strip(),
+                        enrollment_generation=int(
+                            generation_text,
+                            10,
+                        ),
+                        node_api_base_url=(
+                            self.node_api_url_in.value or ""
+                        ).strip(),
+                        bootstrap_token_file=bootstrap_file,
+                    )
+                )
+            except ClusterConfigError as exc:
+                self.hint.update(
+                    f"Invalid storage-node configuration: {exc}"
+                )
+                return
+
+        legacy_director_pin_upgrade = (
+            is_legacy_director_tls_pin_upgrade(
+                app.state.original_cluster_config,
+                selected,
+            )
+        )
+
+        if selected != app.state.cluster_config:
+            wipe_secret_buffer(
+                app.state.node_bootstrap_token
+            )
+            app.state.node_bootstrap_token = None
+
+        if selected.role != "node":
+            wipe_secret_buffer(
+                app.state.node_bootstrap_token
+            )
+            app.state.node_bootstrap_token = None
+            self.token_in.value = ""
+        else:
+            raw_token = self.token_in.value or ""
+
+            if raw_token:
+                try:
+                    token_buffer = (
+                        validate_node_bootstrap_token(
+                            raw_token
+                        )
+                    )
+                except ClusterSecretError as exc:
+                    self.hint.update(
+                        f"Invalid bootstrap token: {exc}"
+                    )
+                    return
+
+                wipe_secret_buffer(
+                    app.state.node_bootstrap_token
+                )
+                app.state.node_bootstrap_token = (
+                    token_buffer
+                )
+                self.token_in.value = ""
+            elif (
+                selected !=
+                    app.state.original_cluster_config
+                and not legacy_director_pin_upgrade
+                and app.state.node_bootstrap_token is None
+            ):
+                self.hint.update(
+                    "A new or changed storage-node enrollment "
+                    "requires the one-time bootstrap token."
+                )
+                return
+
+        app.state.cluster_config = selected
         app.push_screen(PlanScreen())
 
 
@@ -3221,7 +3658,7 @@ class PlanScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
-            yield Static("[b]Step 3/6[/b] Plan preview (exact commands)\n", classes="muted")
+            yield Static("[b]Step 4/7[/b] Plan preview (exact commands)\n", classes="muted")
             self.plan_box = Static("", classes="muted")
             yield self.plan_box
             with Horizontal():
@@ -3249,6 +3686,14 @@ class PlanScreen(Screen):
         text.append(f"[b]Mode:[/b] {app.state.install_mode}")
         text.append(f"[b]Backend:[/b] {app.state.backend}")
         text.append(f"[b]Login:[/b] {login_mode_label(app.state.login_mode)}")
+        text.append(
+            f"[b]Server role:[/b] {app.state.cluster_config.role}"
+        )
+        if app.state.cluster_config.role == "node":
+            text.append(
+                f"[b]Storage node:[/b] "
+                f"{app.state.cluster_config.node_id}"
+            )
         text.append(f"[b]Mountpoint:[/b] {app.state.mountpoint}\n")
         text.append("[b]Notes:[/b]")
         for n in (app.state.plan_notes or []):
@@ -3281,18 +3726,27 @@ class ReverseProxyScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
-            yield Static("[b]Step 4/6[/b] Optional reverse proxy (nginx)\n", classes="muted")
+            yield Static("[b]Step 5/7[/b] Optional reverse proxy (nginx)\n", classes="muted")
 
             yield Static(
                 "If enabled, PQ-NAS will be reachable via:\n"
                 "  http://<hostname>/   (no :8081)\n\n"
+                "Standalone can listen directly on port 8081.\n"
+                "Director and Storage Node roles remain on "
+                "127.0.0.1:8081. A local reverse proxy or "
+                "secure tunnel is required for remote access.\n\n"
                 "Hostname can be a domain or an IP.\n"
-                "For real-world use, the hostname must resolve to this server (DNS / router DNS / hosts).\n",
+                "Use TLS when exposing the service outside "
+                "the host.\n",
                 classes="muted",
             )
 
             self.enable = RadioSet(
-                RadioButton("No reverse proxy (keep :8081)", id="off"),
+                RadioButton(
+                    "No local nginx "
+                    "(use the role-safe listener)",
+                    id="off",
+                ),
                 RadioButton("Enable nginx reverse proxy", id="on"),
             )
             yield self.enable
@@ -3316,15 +3770,25 @@ class ReverseProxyScreen(Screen):
             yield self.host_in
 
             yield Static(
-                "[dim]For Cloudflare Tunnel with no local nginx, still enter the public hostname here. "
-                "The installer will write PQNAS_ORIGIN/PQNAS_RP_ID for login verification.[/dim]",
+                "[dim]If HTTPS terminates on another proxy, select the external "
+                "HTTPS option. The installer will keep local nginx HTTP-only "
+                "while writing an HTTPS public origin for login verification. "
+                "With local nginx disabled, external HTTPS is selected "
+                "automatically.[/dim]",
                 classes="muted",
             )
 
-            yield Static("\n[b]HTTPS (optional)[/b]", classes="muted")
+            yield Static("\n[b]Public HTTPS mode[/b]", classes="muted")
             self.https_enable = RadioSet(
                 RadioButton("HTTP only", id="https_off"),
-                RadioButton("Enable HTTPS (Let’s Encrypt)", id="https_on"),
+                RadioButton(
+                    "Public HTTPS terminates at an external reverse proxy",
+                    id="https_external",
+                ),
+                RadioButton(
+                    "Enable HTTPS locally (Let’s Encrypt)",
+                    id="https_on",
+                ),
             )
             yield self.https_enable
 
@@ -3361,9 +3825,17 @@ class ReverseProxyScreen(Screen):
         for btn in self.login_mode.query(RadioButton):
             btn.value = (btn.id == st.login_mode)
 
-        # https on/off
+        # Public TLS mode. Local Let's Encrypt and upstream TLS termination
+        # are intentionally separate states.
+        if st.external_tls_termination:
+            https_mode = "https_external"
+        elif st.https_enabled:
+            https_mode = "https_on"
+        else:
+            https_mode = "https_off"
+
         for btn in self.https_enable.query(RadioButton):
-            btn.value = (btn.id == ("https_on" if st.https_enabled else "https_off"))
+            btn.value = (btn.id == https_mode)
 
         self.email_in.value = st.https_email or ""
 
@@ -3377,15 +3849,27 @@ class ReverseProxyScreen(Screen):
         enabled = any(btn.value and btn.id == "on" for btn in self.enable.query(RadioButton))
         self.host_in.disabled = False
 
-        https_on = enabled and any(btn.value and btn.id == "https_on" for btn in self.https_enable.query(RadioButton))
-        self.email_in.disabled = not https_on
+        if not enabled:
+            # No local listener means the public hostname is served by an
+            # external HTTPS proxy/tunnel, preserving the existing behaviour.
+            for btn in self.https_enable.query(RadioButton):
+                btn.value = (btn.id == "https_external")
 
-        if not https_on:
+        for btn in self.https_enable.query(RadioButton):
+            btn.disabled = (not enabled and btn.id != "https_external")
+
+        local_https_on = enabled and any(
+            btn.value and btn.id == "https_on"
+            for btn in self.https_enable.query(RadioButton)
+        )
+        self.email_in.disabled = not local_https_on
+
+        if not local_https_on:
             for btn in self.redirect_btn.query(RadioButton):
                 btn.value = (btn.id == "redir_off")
 
         for btn in self.redirect_btn.query(RadioButton):
-            btn.disabled = not https_on
+            btn.disabled = not local_https_on
 
         if not enabled:
             self.err.update("")
@@ -3417,18 +3901,38 @@ class ReverseProxyScreen(Screen):
             self.err.update("Enter a hostname or IP (no spaces, no slashes).")
             return
 
+        tls_mode = "https_off"
+        for btn in self.https_enable.query(RadioButton):
+            if btn.value:
+                tls_mode = btn.id
+                break
+
+        if tls_mode not in ("https_off", "https_external", "https_on"):
+            self.err.update("Choose HTTP, external HTTPS, or local Let’s Encrypt.")
+            return
+
+        if tls_mode == "https_on" and not enabled:
+            self.err.update("Local Let’s Encrypt requires the local nginx reverse proxy.")
+            return
+
         st.nginx_enabled = enabled
         st.nginx_hostname = host
         st.nginx_listen_port = 80
+        st.external_tls_termination = (
+            (not enabled) or tls_mode == "https_external"
+        )
 
         if enabled:
             if not host:
                 self.err.update("Reverse proxy enabled: enter a hostname or IP.")
                 return
 
-            st.https_enabled = any(btn.value and btn.id == "https_on" for btn in self.https_enable.query(RadioButton))
+            st.https_enabled = (tls_mode == "https_on")
             st.https_email = (self.email_in.value or "").strip()
-            st.https_redirect = any(btn.value and btn.id == "redir_on" for btn in self.redirect_btn.query(RadioButton))
+            st.https_redirect = any(
+                btn.value and btn.id == "redir_on"
+                for btn in self.redirect_btn.query(RadioButton)
+            )
 
             if st.https_enabled:
                 if not st.https_email or "@" not in st.https_email:
@@ -3467,7 +3971,7 @@ class ConfirmScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
-            yield Static("[b]Step 5/6[/b] Destructive confirmation\n", classes="warn")
+            yield Static("[b]Step 6/7[/b] Destructive confirmation\n", classes="warn")
             self.msg = Static("", classes="muted")
             yield self.msg
 
@@ -3499,25 +4003,64 @@ class ConfirmScreen(Screen):
         self.logw.write("")
 
         mode = app.state.install_mode
+        root = (
+            app.state.mountpoint.rstrip("/")
+            or "/srv/pqnas"
+        )
+
+        # Security: approval is one-shot and is granted only by the exact
+        # confirmation phrase shown on this screen.
+        app.state.director_projection_sync_state_bootstrap_approved = False
+
+        self.director_projection_sync_state_bootstrap_required = (
+            director_projection_bootstrap_confirmation_required(
+                root,
+                mode,
+                app.state.cluster_config,
+            )
+        )
 
         if mode == "existing":
-            self.required = f"INSTALL {app.state.mountpoint.rstrip('/') or '/srv/pqnas'}"
-            self.msg.update(
+            base_required = f"INSTALL {root}"
+            message = (
                 "This will install PQ-NAS into the existing filesystem.\n\n"
                 "No partitioning or formatting will be done.\n\n"
                 "Target path:\n\n"
-                f"[b]{app.state.mountpoint}[/b]\n\n"
-                "To proceed, type exactly:\n\n"
-                f"[b]{self.required}[/b]\n"
+                f"[b]{app.state.mountpoint}[/b]\n"
             )
         else:
             assert d is not None
-            self.required = f"WIPE {d.name}"
-            self.msg.update(
-                f"This will DESTROY ALL DATA on [b]{d.path}[/b].\n\n"
-                "To proceed, type exactly:\n\n"
-                f"[b]{self.required}[/b]\n"
+            base_required = f"WIPE {d.name}"
+            message = (
+                f"This will DESTROY ALL DATA on [b]{d.path}[/b].\n"
             )
+
+        if self.director_projection_sync_state_bootstrap_required:
+            self.required = (
+                f"{base_required} "
+                f"{DIRECTOR_PROJECTION_BOOTSTRAP_CONFIRM_SUFFIX}"
+            )
+            message += (
+                "\n[b]DIRECTOR CONTROL-PLANE WARNING[/b]\n\n"
+                "Missing Director projection authorization-state files will "
+                "need to be created. This is safe only when intentionally "
+                "initializing or explicitly upgrading this Director control "
+                "plane.\n\n"
+                "If this server previously acted as a Director and these "
+                "files should exist, STOP and restore them from backup:\n"
+                "  storage_projection_sync_state.json\n"
+                "  storage_projection_transition_journal.json\n\n"
+                "Resetting either file can forget a Storage Node that is "
+                "confirmed or may already have accepted authorization.\n"
+            )
+        else:
+            self.required = base_required
+
+        message += (
+            "\nTo proceed, type exactly:\n\n"
+            f"[b]{self.required}[/b]\n"
+        )
+        self.msg.update(message)
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input is self.confirm_in:
@@ -3530,6 +4073,8 @@ class ConfirmScreen(Screen):
             self._start()
 
     def action_back(self) -> None:
+        app: InstallerApp = self.app  # type: ignore
+        app.state.director_projection_sync_state_bootstrap_approved = False
         self.app.pop_screen()
 
     def action_try_start(self) -> None:
@@ -3547,6 +4092,11 @@ class ConfirmScreen(Screen):
         if val != self.required:
             self.err.update("Confirmation does not match. Nothing has been done.")
             return
+
+        app: InstallerApp = self.app  # type: ignore
+        app.state.director_projection_sync_state_bootstrap_approved = bool(
+            self.director_projection_sync_state_bootstrap_required
+        )
         self.app.push_screen(ExecuteScreen())
 
 
@@ -3555,10 +4105,21 @@ class ConfirmScreen(Screen):
 class RollbackScreen(Screen):
     BINDINGS = [("q", "quit", "Quit"), ("b", "back", "Back")]
 
-    def __init__(self, error_text: str, *, was_upgrade: bool) -> None:
+    def __init__(
+        self,
+        error_text: str,
+        *,
+        was_upgrade: bool,
+        restart_after_rollback: bool = True,
+    ) -> None:
         super().__init__()
         self.error_text = error_text
         self.was_upgrade = was_upgrade
+
+        # Security: binary rollback is not equivalent to config/data rollback.
+        # Destructive installs and newly bootstrapped Director authority must
+        # leave the service stopped after restoring old binaries.
+        self.restart_after_rollback = restart_after_rollback
 
         # Ensure attributes exist even if something calls methods early
         self.err_box: Optional[Static] = None
@@ -3572,6 +4133,15 @@ class RollbackScreen(Screen):
         with Vertical():
             yield Static("[b]Service failed to start[/b]\n", classes="warn")
 
+            rollback_effect = (
+                "  • Rollback will restore those .bak files and restart "
+                "pqnas.service.\n"
+                if self.restart_after_rollback
+                else
+                "  • Rollback will restore those .bak files but will NOT "
+                "restart pqnas.service.\n"
+            )
+
             expl = (
                 "What happened:\n"
                 "  • PQ-NAS was installed, but systemd could not start pqnas.service.\n\n"
@@ -3580,8 +4150,8 @@ class RollbackScreen(Screen):
                 "      /usr/local/bin/pqnas_server.bak\n"
                 "      /usr/local/bin/pqnas_keygen.bak\n"
                 "      /usr/local/bin/nodus-cli.bak\n"
-                "  • Rollback will restore those .bak files and restart pqnas.service.\n\n"
-                "Notes:\n"
+                + rollback_effect +
+                "\nNotes:\n"
                 "  • Rollback changes ONLY binaries, not your data/config.\n"
             )
             yield Static(expl, classes="muted")
@@ -3597,7 +4167,17 @@ class RollbackScreen(Screen):
                 self.btn_keep = Button("Keep new binaries (no rollback)", id="keep", variant="default")
                 yield self.btn_keep
 
-                self.btn_rollback = Button("Rollback binaries + restart service", id="rollback", variant="error")
+                rollback_label = (
+                    "Rollback binaries + restart service"
+                    if self.restart_after_rollback
+                    else
+                    "Rollback binaries (leave service stopped)"
+                )
+                self.btn_rollback = Button(
+                    rollback_label,
+                    id="rollback",
+                    variant="error",
+                )
                 yield self.btn_rollback
 
             self.out = InstallerLog()
@@ -3651,6 +4231,17 @@ class RollbackScreen(Screen):
         self.out.write("[*] systemd daemon-reload …")
         subprocess.run(["systemctl", "daemon-reload"], check=False)
 
+        if not self.restart_after_rollback:
+            # Security: old binaries must not be started automatically against
+            # destructively replaced data/config or newly bootstrapped Director
+            # authority. Recovery requires an explicit operator decision.
+            self.out.write(
+                "✅ Binary rollback done. pqnas.service was intentionally "
+                "left stopped because data/config authority changed during "
+                "this installer run."
+            )
+            return
+
         self.out.write("[*] Restarting pqnas.service …")
         p = subprocess.run(
             ["systemctl", "restart", "pqnas.service"],
@@ -3665,6 +4256,40 @@ class RollbackScreen(Screen):
             self.out.write("❌ Rollback attempted but service still failed to start:")
             self.out.write((p.stdout or "").strip() or "(no output)")
 
+def nginx_health_check_output(
+        nginx_enabled: bool,
+) -> str:
+    """
+    Run the optional nginx diagnostic without allowing a missing
+    executable to terminate the installer health screen.
+    """
+    if not nginx_enabled:
+        return "[SKIP] nginx reverse proxy is not enabled."
+
+    nginx_path = shutil.which("nginx")
+
+    if not nginx_path:
+        return "[SKIP] nginx executable is not installed."
+
+    try:
+        return (
+            run_cmd_capture([nginx_path, "-t"])
+            or "(no output)"
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "[ERROR] nginx health check failed."
+
+
+def installer_health_access_target(
+        public_origin: Optional[str],
+        server_role: str,
+) -> tuple[str, str, str]:
+    return installer_core.installer_health_access_target(
+        public_origin,
+        server_role,
+    )
+
+
 class HealthScreen(Screen):
     BINDINGS = [
         ("q", "quit", "Quit"),
@@ -3678,23 +4303,25 @@ class HealthScreen(Screen):
         mp: str,
         mode: str,
         backend: str,
+        server_role: str,
+        public_origin: Optional[str],
         nginx_enabled: bool,
         nginx_hostname: str,
         nginx_port: int,
         auth_mode: str,
         login_mode: str,
-        password_bootstrap_token: str,
     ) -> None:
         super().__init__()
         self.mp = mp
         self.mode = mode
         self.backend = backend
+        self.server_role = server_role
+        self.public_origin = public_origin
         self.nginx_enabled = nginx_enabled
         self.nginx_hostname = nginx_hostname
         self.nginx_port = nginx_port
         self.auth_mode = auth_mode
         self.login_mode = login_mode
-        self.password_bootstrap_token = password_bootstrap_token
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -3708,7 +4335,12 @@ class HealthScreen(Screen):
                 yield Button("Refresh checks", id="refresh", variant="primary")
                 yield Button("systemctl status pqnas", id="status_pqnas", variant="default")
                 yield Button("journalctl pqnas", id="logs_pqnas", variant="default")
-                yield Button("nginx -t", id="nginx_test", variant="default")
+                yield Button(
+                    "nginx -t",
+                    id="nginx_test",
+                    variant="default",
+                    disabled=not self.nginx_enabled,
+                )
                 yield Button("ip addr", id="ip_addr", variant="default")
 
             self.out = InstallerLog()
@@ -3721,55 +4353,59 @@ class HealthScreen(Screen):
         self.action_refresh()
 
     def _render_summary(self) -> None:
-        if self.nginx_enabled and self.nginx_hostname:
-            url = f"http://{self.nginx_hostname}/"
-        else:
-            url = "http://<server-ip>:8081/"
+        role = (self.server_role or "standalone").strip().lower()
+
+        url_label, url, listener_note = installer_health_access_target(
+            self.public_origin,
+            role,
+        )
 
         lines = [
             f"[b]Storage:[/b] {self.mp}",
             f"[b]Mode:[/b] {self.mode}",
             f"[b]Backend:[/b] {self.backend}",
+            f"[b]Server role:[/b] {role}",
             f"[b]Auth mode:[/b] v5 (forced by installer)",
             f"[b]Login mode:[/b] {login_mode_label(self.login_mode)}",
             "",
-            f"[b]Access URL:[/b] {url}",
+            f"[b]{url_label}:[/b] {url}",
         ]
 
-        if self.login_mode == "password":
+        if listener_note:
             lines += [
                 "",
-                "[b]First password admin bootstrap[/b]",
-                "Create the first admin after install with:",
-                "curl -k -X POST https://<your-host>/api/auth/password/bootstrap-admin \\",
-                "  -H 'Content-Type: application/json' \\",
-                f"  -H 'X-PQNAS-Bootstrap-Token: {self.password_bootstrap_token}' \\",
-                "  -d '{\"login\":\"admin@example.com\",\"password\":\"change-this-long-password\",\"name\":\"Admin\"}'",
-                "",
-                "The response shows 24 recovery words once.",
-                "After bootstrap, remove PQNAS_PASSWORD_BOOTSTRAP_TOKEN from /etc/pqnas/pqnas.env and restart pqnas.service.",
-            ]
-        elif self.login_mode == "opaque":
-            lines += [
-                "",
-                "[b]OPAQUE auth[/b]",
-                "OPAQUE helper and server setup were initialized:",
-                "  /usr/local/libexec/pqnas/pqnas_opaque_helper",
-                "  /etc/pqnas/opaque_server_setup.bin",
-                "  /etc/pqnas/opaque_credentials.json",
-                "",
-                "Create the first admin through the OPAQUE bootstrap flow using:",
-                f"  X-PQNAS-Bootstrap-Token: {self.password_bootstrap_token}",
-                "",
-                "After bootstrap, remove PQNAS_OPAQUE_BOOTSTRAP_TOKEN from /etc/pqnas/pqnas.env and restart pqnas.service.",
+                f"[b]Listener note:[/b] {listener_note}",
             ]
 
+        if self.login_mode in ("password", "opaque"):
+            lines += [
+                "",
+                "[b]First administrator setup[/b]",
+                "Run the installed bootstrap helper:",
+                "  sudo pqnas-first-admin",
+                "",
+                "The helper removes the active bootstrap token "
+                "after successful setup.",
+            ]
+
+        if self.login_mode == "opaque":
+            lines += [
+                "",
+                "[b]OPAQUE runtime[/b]",
+                "OPAQUE helper and managed state:",
+                "  /usr/local/libexec/pqnas/pqnas_opaque_helper",
+                f"  {self.mp}/config/opaque_server_setup.bin",
+                f"  {self.mp}/config/opaque_credentials.json",
+            ]
 
         if self.nginx_enabled and self.nginx_hostname:
             if looks_like_ip(self.nginx_hostname):
                 lines.append("[b]DNS:[/b] not needed (you used an IP).")
             else:
-                lines.append("[b]DNS:[/b] make sure this hostname resolves to this server (DNS/router/hosts).")
+                lines.append(
+                    "[b]DNS:[/b] make sure this hostname resolves "
+                    "to this server (DNS/router/hosts)."
+                )
 
         self.summary.update("\n".join(lines))
 
@@ -3779,55 +4415,124 @@ class HealthScreen(Screen):
     def action_refresh(self) -> None:
         self.out.write("== checks ==")
 
-        # pqnas.service status
         self.out.write("$ systemctl is-active pqnas.service")
-        self.out.write(run_cmd_capture(["systemctl", "is-active", "pqnas.service"]) or "(no output)")
+        self.out.write(
+            run_cmd_capture(
+                ["systemctl", "is-active", "pqnas.service"]
+            )
+            or "(no output)"
+        )
 
         self.out.write("$ systemctl status pqnas.service --no-pager -l")
-        self.out.write(run_cmd_capture(["systemctl", "status", "pqnas.service", "--no-pager", "-l"]) or "(no output)")
+        self.out.write(
+            run_cmd_capture(
+                [
+                    "systemctl",
+                    "status",
+                    "pqnas.service",
+                    "--no-pager",
+                    "-l",
+                ]
+            )
+            or "(no output)"
+        )
 
         if self.nginx_enabled:
             self.out.write("")
             self.out.write("$ systemctl is-active nginx")
-            self.out.write(run_cmd_capture(["systemctl", "is-active", "nginx"]) or "(no output)")
+            self.out.write(
+                run_cmd_capture(
+                    ["systemctl", "is-active", "nginx"]
+                )
+                or "(no output)"
+            )
 
             self.out.write("$ nginx -t")
-            self.out.write(run_cmd_capture(["nginx", "-t"]) or "(no output)")
+            self.out.write(
+                nginx_health_check_output(self.nginx_enabled)
+            )
 
         self.out.write("")
-        self.out.write("$ ss -lntp | rg ':80|:8081'  (best effort)")
-        # Don't fail if ss/rg missing; just show what we can.
+        self.out.write(
+            "$ ss -lntp | rg ':80|:8081'  (best effort)"
+        )
+
         try:
             ss = run_cmd_capture(["ss", "-lntp"])
-            filt = "\n".join([ln for ln in ss.splitlines() if (":80" in ln or ":8081" in ln)])
-            self.out.write(filt or "(no listeners found for :80/:8081 in ss output)")
-        except Exception as e:
-            self.out.write(f"(could not run ss: {e})")
+            filtered = "\n".join(
+                line
+                for line in ss.splitlines()
+                if ":80" in line or ":8081" in line
+            )
+            self.out.write(
+                filtered
+                or (
+                    "(no listeners found for "
+                    ":80/:8081 in ss output)"
+                )
+            )
+        except Exception:
+            self.out.write(
+                "[ERROR] listener check could not be executed."
+            )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        bid = event.button.id
-        if bid == "refresh":
+        button_id = event.button.id
+
+        if button_id == "refresh":
             self.action_refresh()
             return
 
-        if bid == "status_pqnas":
-            self.out.write("$ systemctl status pqnas.service --no-pager -l")
-            self.out.write(run_cmd_capture(["systemctl", "status", "pqnas.service", "--no-pager", "-l"]) or "(no output)")
+        if button_id == "status_pqnas":
+            self.out.write(
+                "$ systemctl status pqnas.service --no-pager -l"
+            )
+            self.out.write(
+                run_cmd_capture(
+                    [
+                        "systemctl",
+                        "status",
+                        "pqnas.service",
+                        "--no-pager",
+                        "-l",
+                    ]
+                )
+                or "(no output)"
+            )
             return
 
-        if bid == "logs_pqnas":
-            self.out.write("$ journalctl -u pqnas.service -n 200 --no-pager")
-            self.out.write(run_cmd_capture(["journalctl", "-u", "pqnas.service", "-n", "200", "--no-pager"]) or "(no output)")
+        if button_id == "logs_pqnas":
+            self.out.write(
+                "$ journalctl -u pqnas.service -n 200 --no-pager"
+            )
+            self.out.write(
+                run_cmd_capture(
+                    [
+                        "journalctl",
+                        "-u",
+                        "pqnas.service",
+                        "-n",
+                        "200",
+                        "--no-pager",
+                    ]
+                )
+                or "(no output)"
+            )
             return
 
-        if bid == "nginx_test":
+        if button_id == "nginx_test":
             self.out.write("$ nginx -t")
-            self.out.write(run_cmd_capture(["nginx", "-t"]) or "(no output)")
+            self.out.write(
+                nginx_health_check_output(self.nginx_enabled)
+            )
             return
 
-        if bid == "ip_addr":
+        if button_id == "ip_addr":
             self.out.write("$ ip -br addr")
-            self.out.write(run_cmd_capture(["ip", "-br", "addr"]) or "(no output)")
+            self.out.write(
+                run_cmd_capture(["ip", "-br", "addr"])
+                or "(no output)"
+            )
             return
 
 
@@ -3837,7 +4542,7 @@ class ExecuteScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
-            yield Static("[b]Step 6/6[/b] Executing… (live log)\n", classes="muted")
+            yield Static("[b]Step 7/7[/b] Executing… (live log)\n", classes="muted")
             self.logw = InstallerLog()
             yield self.logw
             self.done = Static("", classes="muted")
@@ -3858,6 +4563,10 @@ class ExecuteScreen(Screen):
         log_line(self.logw, f"Mode: {mode}")
         log_line(self.logw, f"Mountpoint: {st.mountpoint}")
         log_line(self.logw, f"Login mode: {login_mode_label(st.login_mode)}")
+        log_line(
+            self.logw,
+            f"Server role: {st.cluster_config.role}",
+        )
         if st.login_mode == "password":
             log_line(self.logw, "First-admin helper will be installed as: /usr/local/sbin/pqnas-first-admin")
             log_line(self.logw, "After installation, run: sudo pqnas-first-admin")
@@ -3872,14 +4581,35 @@ class ExecuteScreen(Screen):
             "from /usr/local/bin/*.bak and restart the service.\n"
         )
 
-        self.set_timer(0.05, self._run_install)
+        self.run_worker(
+            self._run_install,
+            name="installer-execute",
+            thread=True,
+        )
+
+    def _update_done_from_worker(self, text: str) -> None:
+        app: InstallerApp = self.app  # type: ignore
+        app.call_from_thread(self.done.update, text)
+
+    def _push_screen_from_worker(
+        self,
+        screen_factory: Callable[[], Screen],
+    ) -> None:
+        app: InstallerApp = self.app  # type: ignore
+        app.call_from_thread(
+            lambda: app.push_screen(screen_factory())
+        )
 
     def _run_install(self) -> None:
         app: InstallerApp = self.app  # type: ignore
         st = app.state
 
         if not st.disk:
-            self.done.update("No disk selected.")
+            wipe_secret_buffer(
+                st.node_bootstrap_token
+            )
+            st.node_bootstrap_token = None
+            self._update_done_from_worker("No disk selected.")
             return
 
         mode = st.install_mode
@@ -3888,11 +4618,15 @@ class ExecuteScreen(Screen):
         # 1) Execute destructive plan only in disk mode
         if mode == "disk":
             if not plan:
-                self.done.update("No plan to execute.")
+                wipe_secret_buffer(
+                    st.node_bootstrap_token
+                )
+                st.node_bootstrap_token = None
+                self._update_done_from_worker("No plan to execute.")
                 return
 
             ok = True
-            for argv in plan:
+            for index, argv in enumerate(plan):
                 self.logw.write(f"$ {fmt_cmd(argv)}")
                 try:
                     p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -3904,13 +4638,39 @@ class ExecuteScreen(Screen):
                         ok = False
                         self.logw.write(f"[ERROR] exit code {rc}")
                         break
+
+                    next_argv = (
+                        plan[index + 1]
+                        if index + 1 < len(plan)
+                        else []
+                    )
+
+                    if (
+                        argv[0] == "partprobe" and
+                        next_argv and
+                        next_argv[0] in (
+                            "mkfs.ext4",
+                            "mkfs.btrfs",
+                        )
+                    ):
+                        partition = dev_part_path(st.disk)
+                        self.logw.write(
+                            f"Waiting for block device: {partition}"
+                        )
+                        wait_for_block_device(
+                            partition
+                        )
                 except Exception as e:
                     ok = False
                     self.logw.write(f"[ERROR] {e}")
                     break
 
             if not ok:
-                self.done.update(
+                wipe_secret_buffer(
+                    st.node_bootstrap_token
+                )
+                st.node_bootstrap_token = None
+                self._update_done_from_worker(
                     "\n❌ Failed.\n\n"
                     "Nothing else will be executed. Check the log above.\n"
                     "You can safely rerun after wiping again.\n"
@@ -3930,7 +4690,6 @@ class ExecuteScreen(Screen):
             asset_root = REPO_ROOT  # REPO_ROOT == ASSET_ROOT in this file
 
             log_line(self.logw, "== Finalize ==")
-            subprocess.run(["mkdir", "-p", mp], check=False)
 
             if mode == "disk":
                 if backend in ("ext4", "btrfs"):
@@ -3952,8 +4711,92 @@ class ExecuteScreen(Screen):
             else:
                 self.logw.write("Existing filesystem mode: NOT writing /etc/fstab and NOT changing mounts.")
 
-            self.logw.write(f"Creating PQ-NAS directory layout under {mp} …")
+            self.logw.write("Ensuring pqnas service user …")
+            ensure_service_user("pqnas", log=self.logw)
+
+            self.logw.write("Stopping pqnas.service (if running) …")
+            if systemd_unit_exists("pqnas.service"):
+                subprocess.run(
+                    ["systemctl", "stop", "pqnas.service"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                # Stop only; do NOT disable during upgrades.
+                #
+                # If the installer is interrupted after stop but before the final
+                # "enable --now", nginx would otherwise be left proxying to a
+                # disabled/dead backend and the public site shows 502 Bad Gateway.
+                #
+                # Finalization still calls:
+                #   systemctl enable --now pqnas.service
+                pass
+            else:
+                self.logw.write(
+                    "pqnas.service not installed yet; "
+                    "skipping stop/disable."
+                )
+
+            subprocess.run(
+                ["pkill", "-f", r"^/usr/local/bin/pqnas_server$"],
+                check=False,
+            )
+            subprocess.run(
+                ["pkill", "-f", "pqnas_server"],
+                check=False,
+            )
+
+            self.logw.write(
+                f"Creating secure PQ-NAS runtime layout under {mp} …"
+            )
             create_pqnas_layout(mp)
+
+            self.logw.write(
+                "Checking Director projection authorization state …"
+            )
+            director_state_owner_uid, director_state_owner_gid = (
+                service_owner_ids("pqnas")
+            )
+
+            try:
+                director_projection_state_action = (
+                    ensure_director_projection_sync_state(
+                        mp,
+                        st.cluster_config,
+                        bootstrap_approved=(
+                            st.director_projection_sync_state_bootstrap_approved
+                        ),
+                        owner_uid=director_state_owner_uid,
+                        owner_gid=director_state_owner_gid,
+                    )
+                )
+            finally:
+                # Security: approval cannot leak into a later installer action.
+                st.director_projection_sync_state_bootstrap_approved = False
+
+            self.logw.write(
+                "[*] Director projection authorization state: "
+                f"{director_projection_state_action}"
+            )
+
+            self.logw.write(
+                "Applying storage-node bootstrap secret state …"
+            )
+            try:
+                cluster_secret_action = (
+                    apply_cluster_bootstrap_secret(
+                        st.original_cluster_config,
+                        st.cluster_config,
+                        st.node_bootstrap_token,
+                    )
+                )
+            finally:
+                st.node_bootstrap_token = None
+
+            self.logw.write(
+                "[*] Cluster bootstrap secret state: "
+                f"{cluster_secret_action}"
+            )
 
             self.logw.write("Installing static assets to /opt/pqnas/static …")
             install_static_assets(asset_root, "/opt/pqnas/static")
@@ -3981,11 +4824,10 @@ class ExecuteScreen(Screen):
             self.logw.write(f"Installing bundled apps to {mp}/apps/bundled …")
             install_bundled_apps(asset_root, os.path.join(mp, "apps", "bundled"))
 
-            self.logw.write("Ensuring /etc/pqnas config files …")
+            self.logw.write(
+                f"Ensuring mutable runtime config under {mp}/config …"
+            )
             ensure_config_files(mp, asset_root)
-
-            self.logw.write("Ensuring pqnas service user …")
-            ensure_service_user("pqnas", log=self.logw)
 
             self.logw.write("Installing DNA Connect alert runtime …")
             dna_alert_cli_path, dna_alert_lib_path = install_dna_alert_runtime(asset_root, log=self.logw)
@@ -3995,7 +4837,7 @@ class ExecuteScreen(Screen):
 
             self.logw.write("Seeding DNA alert defaults into admin settings …")
             seed_dna_connect_alert_defaults(
-                "/etc/pqnas/admin_settings.json",
+                os.path.join(mp, "config", "admin_settings.json"),
                 cli_path=dna_alert_cli_path,
                 data_dir=dna_alert_data_dir,
                 log=self.logw,
@@ -4014,24 +4856,29 @@ class ExecuteScreen(Screen):
             tls_pin_source = ""
 
             if st.nginx_hostname:
-                if st.nginx_enabled:
-                    if have_letsencrypt_cert(st.nginx_hostname):
-                        origin = f"https://{st.nginx_hostname}"
-                    else:
-                        origin = f"http://{st.nginx_hostname}"
-                else:
-                    # External HTTPS handled elsewhere (e.g. Cloudflare Tunnel / external reverse proxy)
-                    origin = f"https://{st.nginx_hostname}"
-
+                origin = installer_public_origin(st)
                 rp_id = st.nginx_hostname
 
             if origin and origin.startswith("https://") and st.nginx_hostname:
-                ensure_letsencrypt_reuse_key(st.nginx_hostname, log=self.logw)
+                if st.external_tls_termination or not st.nginx_enabled:
+                    # Security: external TLS must pin the certificate actually
+                    # served by the public endpoint, never stale local LE files.
+                    tls_spki_pin_sha256, tls_pin_source = (
+                        detect_external_tls_spki_sha256_pin(
+                            st.nginx_hostname,
+                            log=self.logw,
+                        )
+                    )
+                else:
+                    ensure_letsencrypt_reuse_key(
+                        st.nginx_hostname,
+                        log=self.logw,
+                    )
+                    tls_spki_pin_sha256, tls_pin_source = detect_tls_spki_sha256_pin(
+                        st.nginx_hostname,
+                        log=self.logw,
+                    )
 
-                tls_spki_pin_sha256, tls_pin_source = detect_tls_spki_sha256_pin(
-                    st.nginx_hostname,
-                    log=self.logw,
-                )
                 st.tls_spki_pin_sha256 = tls_spki_pin_sha256
 
             write_env_file(
@@ -4042,6 +4889,7 @@ class ExecuteScreen(Screen):
                 auth_mode=st.auth_mode,
                 login_mode=st.login_mode,
                 password_bootstrap_token=st.password_bootstrap_token,
+                cluster_config=st.cluster_config,
                 tls_spki_pin_sha256=tls_spki_pin_sha256,
             )
 
@@ -4074,36 +4922,17 @@ class ExecuteScreen(Screen):
 
             install_snapshot_restore_assets(asset_root, backend, log=self.logw)
 
-            self.logw.write("Stopping pqnas.service (if running) …")
-            if systemd_unit_exists("pqnas.service"):
-                subprocess.run(
-                    ["systemctl", "stop", "pqnas.service"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
-                # Stop only; do NOT disable during upgrades.
-                #
-                # If the installer is interrupted after stop but before the final
-                # "enable --now", nginx would otherwise be left proxying to a
-                # disabled/dead backend and the public site shows 502 Bad Gateway.
-                #
-                # Finalization still calls:
-                #   systemctl enable --now pqnas.service
-                pass
-            else:
-                self.logw.write("pqnas.service not installed yet; skipping stop/disable.")
-
-            subprocess.run(["pkill", "-f", r"^/usr/local/bin/pqnas_server$"], check=False)
-            subprocess.run(["pkill", "-f", "pqnas_server"], check=False)
-
             server_exec, keygen_exec, nodus_exec, was_upgrade = install_binaries(asset_root, "/usr/local/bin")
 
             opaque_helper_path: Optional[str] = None
             if st.login_mode == "opaque":
                 self.logw.write("Installing OPAQUE helper and runtime config …")
                 opaque_helper_path = install_opaque_helper_assets(asset_root, log=self.logw)
-                ensure_opaque_runtime_config("/etc/pqnas", opaque_helper_path, log=self.logw)
+                ensure_opaque_runtime_config(
+                    os.path.join(mp, "config"),
+                    opaque_helper_path,
+                    log=self.logw,
+                )
 
             if was_upgrade:
                 self.logw.write("Upgrade detected: previous binaries saved as /usr/local/bin/*.bak")
@@ -4184,12 +5013,19 @@ class ExecuteScreen(Screen):
             self.logw.write(f"[*] Update Center apply wrapper ready: {update_apply_wrapper}")
             self.logw.write("[*] Update Center apply helper is ready for authenticated admin UI use.")
 
-            self.logw.write("Generating /etc/pqnas/keys.env …")
-            write_keys_env(asset_root, "/etc/pqnas/keys.env")
-            self.logw.write("keys.env written (mode 600).")
-
-            self.logw.write("Setting ownership for pqnas runtime paths …")
-            ensure_pqnas_ownership(mp, log=self.logw)
+            self.logw.write("Ensuring /etc/pqnas/keys.env …")
+            keys_created = write_keys_env(
+                asset_root,
+                "/etc/pqnas/keys.env",
+            )
+            if keys_created:
+                self.logw.write(
+                    "keys.env created (root:root, mode 600)."
+                )
+            else:
+                self.logw.write(
+                    "Existing safe keys.env preserved."
+                )
 
             unit_path = write_systemd_unit(server_exec, "/etc/pqnas/pqnas.env", storage_root=mp)
             self.logw.write(f"Wrote unit: {unit_path}")
@@ -4204,8 +5040,24 @@ class ExecuteScreen(Screen):
                 err_text = str(e)
                 self.logw.write("[ERROR] pqnas.service failed to start.")
                 self.logw.write(err_text)
-                self.app.push_screen(RollbackScreen(err_text, was_upgrade=was_upgrade))
-                self.done.update(
+                # Security: rollback restores binaries only. Automatic restart
+                # is safe only when the existing filesystem was preserved and
+                # this run did not create a new Director authority snapshot.
+                restart_after_rollback = (
+                    binary_rollback_restart_allowed(
+                        mode,
+                        director_projection_state_action,
+                    )
+                )
+
+                self._push_screen_from_worker(
+                    lambda: RollbackScreen(
+                        err_text,
+                        was_upgrade=was_upgrade,
+                        restart_after_rollback=restart_after_rollback,
+                    )
+                )
+                self._update_done_from_worker(
                     "\n⚠️ Service failed to start.\n\n"
                     "Use the rollback screen to restore previous binaries or keep the new ones.\n"
                 )
@@ -4234,16 +5086,46 @@ class ExecuteScreen(Screen):
                 ensure_nginx_installed(log=self.logw)
 
                 self.logw.write("Writing nginx site config …")
-                conf_path = write_nginx_site_https_if_available(
-                    server_name=st.nginx_hostname,
-                    upstream_host="127.0.0.1",
-                    upstream_port=8081,
-                    client_max_body_size="2g",
-                )
-                if have_letsencrypt_cert(st.nginx_hostname):
-                    self.logw.write(f"✅ nginx enabled: https://{st.nginx_hostname}/ (http redirects with 308)")
+
+                if st.external_tls_termination:
+                    conf_path = write_nginx_site_http_only(
+                        server_name=st.nginx_hostname,
+                        upstream_host="127.0.0.1",
+                        upstream_port=8081,
+                        listen_port=st.nginx_listen_port,
+                    )
+                    self.logw.write(
+                        f"✅ local nginx enabled: http://{st.nginx_hostname}/ "
+                        "(public HTTPS terminates externally)"
+                    )
+                elif st.https_enabled:
+                    conf_path = write_nginx_site_https_if_available(
+                        server_name=st.nginx_hostname,
+                        upstream_host="127.0.0.1",
+                        upstream_port=8081,
+                        client_max_body_size="2g",
+                    )
+                    if have_letsencrypt_cert(st.nginx_hostname):
+                        self.logw.write(
+                            f"✅ nginx enabled: https://{st.nginx_hostname}/ "
+                            "(http redirects with 308)"
+                        )
+                    else:
+                        self.logw.write(
+                            f"✅ nginx enabled: http://{st.nginx_hostname}/ "
+                            "(awaiting local TLS certificate)"
+                        )
                 else:
-                    self.logw.write(f"✅ nginx enabled: http://{st.nginx_hostname}/ (no TLS cert detected)")
+                    conf_path = write_nginx_site_http_only(
+                        server_name=st.nginx_hostname,
+                        upstream_host="127.0.0.1",
+                        upstream_port=8081,
+                        listen_port=st.nginx_listen_port,
+                    )
+                    self.logw.write(
+                        f"✅ nginx enabled: http://{st.nginx_hostname}/ "
+                        "(HTTP-only selected)"
+                    )
 
                 self.logw.write(f"Wrote: {conf_path}")
 
@@ -4277,6 +5159,7 @@ class ExecuteScreen(Screen):
                             auth_mode=st.auth_mode,
                             login_mode=st.login_mode,
                             password_bootstrap_token=st.password_bootstrap_token,
+                            cluster_config=st.cluster_config,
                             tls_spki_pin_sha256=tls_spki_pin_sha256,
                         )
                         run_systemctl(["restart", "pqnas.service"])
@@ -4312,16 +5195,29 @@ class ExecuteScreen(Screen):
                             auth_mode=st.auth_mode,
                             login_mode=st.login_mode,
                             password_bootstrap_token=st.password_bootstrap_token,
+                            cluster_config=st.cluster_config,
                             tls_spki_pin_sha256="",
                         )
                         run_systemctl(["restart", "pqnas.service"])
 
-                if have_letsencrypt_cert(st.nginx_hostname):
-                    self.logw.write(f"✅ nginx ready: https://{st.nginx_hostname}/  (http redirects with 308)")
-                    self.logw.write("PQNAS_ORIGIN will be set to https automatically on next install/run (or edit /etc/pqnas/pqnas.env).")
+                if st.external_tls_termination:
+                    self.logw.write(
+                        f"✅ local nginx ready: http://{st.nginx_hostname}/"
+                    )
+                    self.logw.write(
+                        f"✅ public origin: https://{st.nginx_hostname}/ "
+                        "(TLS terminates externally)"
+                    )
+                elif st.https_enabled and have_letsencrypt_cert(st.nginx_hostname):
+                    self.logw.write(
+                        f"✅ nginx ready: https://{st.nginx_hostname}/ "
+                        "(http redirects with 308)"
+                    )
                 else:
-                    self.logw.write(f"✅ nginx ready: http://{st.nginx_hostname}/  (no TLS cert detected)")
-                    self.logw.write("Tip: after you add TLS (certbot), PQNAS_ORIGIN should be https://… and HTTP should redirect with 308.")
+                    self.logw.write(
+                        f"✅ nginx ready: http://{st.nginx_hostname}/ "
+                        "(HTTP-only)"
+                    )
 
                 if not looks_like_ip(st.nginx_hostname):
                     self.logw.write("Note: if you used a hostname, ensure it resolves to this server (DNS/router/hosts).")
@@ -4334,7 +5230,7 @@ class ExecuteScreen(Screen):
             self.logw.write("")
             self.logw.write("Layout created: data/ logs/ apps/ audit/ tmp/")
 
-            self.done.update(
+            self._update_done_from_worker(
                 "\n✅ Done.\n\n"
                 f"Storage path: {mp}\n"
                 f"Mode: {mode}\n"
@@ -4344,24 +5240,31 @@ class ExecuteScreen(Screen):
                 "First admin setup:\n"
                 "  sudo pqnas-first-admin\n"
             )
-            self.app.push_screen(
-                HealthScreen(
+            self._push_screen_from_worker(
+                lambda: HealthScreen(
                     mp=mp,
                     mode=mode,
                     backend=backend,
+                    server_role=st.cluster_config.role,
+                    public_origin=installer_public_origin(st),
                     nginx_enabled=st.nginx_enabled,
                     nginx_hostname=st.nginx_hostname,
                     nginx_port=st.nginx_listen_port,
                     auth_mode=st.auth_mode,
                     login_mode=st.login_mode,
-                    password_bootstrap_token=st.password_bootstrap_token,
                 )
             )
             return
 
         except Exception as e:
+            # Security: failures before the token-file write must not leave the
+            # one-time plaintext token retained in installer state.
+            wipe_secret_buffer(
+                st.node_bootstrap_token
+            )
+            st.node_bootstrap_token = None
             self.logw.write(f"[FINALIZE ERROR] {e}")
-            self.done.update(
+            self._update_done_from_worker(
                 "\n⚠️ Finalize failed.\n\n"
                 "Check log above.\n"
             )
@@ -4389,6 +5292,26 @@ class InstallerApp(App):
     def on_mount(self) -> None:
         if os.geteuid() != 0:
             self.exit(message="Run as root: sudo ./installer/install.sh")
+            return
+
+        try:
+            # Security: never source pqnas.env as shell code. Read the bounded
+            # file through the descriptor-based private-file helper and parse
+            # only the known non-secret cluster settings.
+            loaded_cluster_config = (
+                load_existing_cluster_config()
+            )
+            self.state.original_cluster_config = loaded_cluster_config
+            self.state.cluster_config = loaded_cluster_config
+        except ClusterConfigError as exc:
+            self.exit(
+                message=(
+                    "Refusing to overwrite unsafe or invalid existing "
+                    f"cluster configuration: {exc}"
+                )
+            )
+            return
+
         self.push_screen(DiskSelectScreen())
 
 

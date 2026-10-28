@@ -24,6 +24,7 @@
 
 #include "allowlist.h"
 #include "users_registry.h"
+#include "interactive_user_login_policy.h"
 
 #include "v4_verify_shared.h"
 #include <nlohmann/json.hpp>
@@ -189,6 +190,17 @@ void handle_verify_login_common(const httplib::Request& req,
             return fail(400, "verify failed");
         }
 
+        // Security: Storage Nodes have no local user authority. Enforce the
+        // role policy before alternate external-workspace authentication hooks
+        // so those flows cannot bypass the Node interactive-login boundary.
+        if (!pqnas::require_interactive_user_login(
+                ctx.interactive_user_login_allowed,
+                res
+            )) {
+            audit_fail("interactive_login_disabled");
+            return;
+        }
+
         // ---- external workspace invite mode ----
         //
         // External members are DNA Connect identities, not full DNA-Nexus users.
@@ -294,12 +306,52 @@ void handle_verify_login_common(const httplib::Request& req,
             }
 
             if (!has_enabled_admin && ctx.users && ctx.users_path) {
-                const std::string now_iso = ctx.now_iso_utc ? ctx.now_iso_utc() : "";
+                const std::string now_iso =
+                    ctx.now_iso_utc
+                        ? ctx.now_iso_utc()
+                        : "";
 
-                ctx.users->ensure_present_disabled_user(computed_fp, now_iso);
-                ctx.users->set_role(computed_fp, "admin");
-                ctx.users->set_status(computed_fp, "enabled");
-                ctx.users->save(*ctx.users_path);
+                pqnas::UserRec bootstrap_user;
+
+                if (const auto existing =
+                        ctx.users->get(computed_fp);
+                    existing.has_value()) {
+                    bootstrap_user =
+                        *existing;
+                } else {
+                    bootstrap_user.fingerprint =
+                        computed_fp;
+                    bootstrap_user.added_at =
+                        now_iso;
+                    bootstrap_user.storage_state =
+                        "unallocated";
+                }
+
+                bootstrap_user.role =
+                    "admin";
+                bootstrap_user.status =
+                    "enabled";
+
+                std::string persistence_error;
+
+                // Security: first-admin enablement and its Storage projection
+                // revision are one durable registry commit. Never acknowledge
+                // bootstrap after an in-memory-only or failed users.json write.
+                if (!ctx.users->upsert_persisted(
+                        bootstrap_user,
+                        *ctx.users_path,
+                        nullptr,
+                        &persistence_error
+                    )) {
+                    audit_fail(
+                        "bootstrap_user_persistence_failed"
+                    );
+
+                    return fail(
+                        500,
+                        "server misconfigured"
+                    );
+                }
 
                 // Best-effort: keep policy in sync if available
                 if (ctx.allowlist && ctx.allowlist_path) {

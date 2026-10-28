@@ -145,6 +145,68 @@ Rules:
 - use compare-and-set style state transitions for job/status records
 - do not trust cached authorization or visibility state for later media/file serving
 
+### Crash durability for authoritative security state
+
+Atomic rename alone does not mean a security-sensitive state transition is
+durable across power loss.
+
+For authoritative files such as user registries, credential state, placement
+state, revocation state, or other authorization control-plane records:
+
+- create temporary files exclusively and without following symlinks
+- write the complete new snapshot
+- `fsync()` the temporary file before rename
+- atomically rename the temporary file over the target
+- `fsync()` the parent directory before reporting the transition durable
+- do not emit downstream authorization effects from state whose durability is
+  still uncertain
+
+If rename succeeds but the following directory `fsync()` fails, the new inode
+is already logically visible. Process memory must follow that visible commit;
+do not roll memory back to the old snapshot. Mark durability uncertain and
+re-persist the exact current snapshot before an idempotent persisted operation
+is reported successful or before derived state is sent to another component.
+
+A failure before rename is different: because the replacement never committed,
+the in-memory mutation may safely be rolled back.
+
+
+When durable derived control-plane state carries a monotonic revision copied
+from an authoritative source, startup must validate that the derived revision
+has not advanced beyond the loaded authoritative revision. If a persisted
+confirmed/derived revision is newer than its authoritative source, fail startup
+closed or enter an explicitly designed degraded recovery mode. Do not silently
+start a reconciliation loop that can only reject the older authoritative
+revision.
+
+
+### Physical deletion of authorization principals
+
+Physical user deletion is an authorization-state transition, including
+deletion performed only as error rollback.
+
+Rules:
+
+- production routes and rollback handlers must not call an in-memory-only
+  `UsersRegistry::erase()` primitive
+- use a persisted deletion primitive that re-checks placement while holding
+  the registry mutation lock
+- on Director, serialize physical deletion with Storage projection
+  reconciliation
+- before Director deletion, ensure confirmed projection state is durable and
+  refuse deletion while confirmed Storage authorization remains
+- a user with `home_node` must first transition through the Storage revoke flow
+- rollback code is not exempt merely because the user was created earlier in
+  the same request
+- if cluster policy can block physical deletion, do not destroy login
+  credentials before the authoritative user deletion has been allowed and
+  committed
+
+The fail-closed outcome is to retain an extra Director user record until revoke
+reconciliation can complete. Never delete the Director source of truth while a
+Storage Node may still authorize that fingerprint.
+
+
 Examples where TOCTOU matters:
 
 - share access
@@ -200,6 +262,41 @@ Mutation routes using cookies should also enforce same-origin protection.
 Login attempts must never create users. User creation must be explicit, auditable, and tied to a provisioning flow such as admin user creation, bootstrap, invitation, or future approved onboarding.
 
 Recovery flows must not create users and must not enable disabled or pending users unless a separate explicit admin-approved state transition is performed.
+
+
+### Credential lifecycle and role gates
+
+Routes that mint, renew, expose, or otherwise advance user credential state must
+consult the shared role/login policy at the beginning of the handler. This
+includes session cookies, access tokens, refresh-token renewal, pairing tokens,
+device pairing, and credential-lifecycle state used to create new credentials.
+
+The role/login gate must execute before:
+
+- request-body parsing or expensive authentication work when practical
+- rate-limit/state consumption
+- credential or pairing lookup
+- persistent or in-memory state mutation
+- alternate authentication branches such as workspace/external-session hooks
+- any session, token, pairing token, or other credential minting
+
+Storage Node role must fail closed for Node-local user credential creation,
+renewal, pairing, and legacy credential-management read flows. Standalone and
+Director behavior must be enabled explicitly by the production composition
+root; do not infer permission merely because a legacy credential store exists.
+
+Alternative authentication or onboarding branches must never bypass a
+role-level deny decision.
+
+Revocation and cancellation are different from credential creation. Safe
+credential revocation and pending-pair cancellation should remain available
+when credential minting is disabled, so existing credentials can still be
+invalidated.
+
+Add or extend a regression guard whenever a new credential-minting,
+credential-renewal, pairing, or alternate-authentication route is introduced.
+The guard must verify both the presence and the ordering of the role/login
+policy check.
 
 ---
 
@@ -1690,6 +1787,239 @@ Review question:
 
 If the answer is yes, add a stronger trust boundary.
 
+## 57. Crash consistency is part of security correctness
+
+Every security-sensitive state transition must be designed for process crashes,
+power loss, machine restart, and lost network responses at every step of the
+operation.
+
+Do not reason only about the normal sequence:
+
+    1. update local state
+    2. send remote request
+    3. receive response
+    4. update derived state
+
+Assume the process or either machine may disappear between any two steps.
+
+Rules:
+
+- identify the durable recovery point of every security-sensitive transition
+- persist authoritative intent, revision state, or pending transition state
+  before emitting downstream authorization effects when recovery depends on it
+- never assume that a timeout, disconnect, or missing response means the remote
+  mutation did not happen
+- make retried remote mutations idempotent whenever possible
+- reuse the same operation identity, revision, tombstone, or equivalent durable
+  intent when retrying an operation whose previous remote result is unknown
+- reconstruct pending work from durable state after restart instead of assuming
+  which steps probably completed
+- when several durable files form one logical authorization state, detect and
+  handle partial state explicitly
+- fail closed when crash recovery leaves authorization state ambiguous
+- reconciliation must converge after repeated crashes instead of permanently
+  ratcheting revisions or entering stale/conflict loops
+
+For distributed operations, test at least:
+
+- crash before the remote request
+- crash after sending but before receiving the response
+- remote mutation succeeds but the response is lost
+- crash after receiving success but before the next local durable write
+- restart and retry after each of the above
+
+Review question:
+
+    If either machine loses power on this exact line, what durable state exists
+    after restart, and can the operation be retried safely?
+
+---
+
+## 58. Re-read authoritative state before security side effects
+
+A snapshot is safe for planning only as long as no concurrent mutation can make
+it stale before the side effect occurs.
+
+This matters especially for authorization grants and revocations, credential
+changes, Storage projections, user placement, destructive operations, remote
+control-plane writes, reconciliation, and repair.
+
+Rules:
+
+- treat long-lived snapshots and cached security state as planning data
+- immediately before a security-sensitive external side effect, re-read the
+  authoritative state when concurrent mutation is possible
+- compare the expected identity, revision, placement, account status, or other
+  relevant precondition
+- use compare-and-set semantics for mutations where practical
+- abort or retry from fresh state when the authoritative precondition changed
+- do not send a stale authorization projection merely because it was correct
+  when the reconciliation pass started
+- do not hold broad state locks across slow network I/O merely to preserve an
+  old snapshot; use revisions and explicit precondition checks instead
+
+Security principle:
+
+    validate -> time passes -> side effect
+
+is not equivalent to:
+
+    validate immediately before side effect
+
+when another thread, request, process, or machine can change authority in
+between.
+
+---
+
+## 59. Monotonic revisions need one authoritative owner
+
+Revision numbers used for authorization, replication, synchronization, or
+anti-replay protection are security state.
+
+Rules:
+
+- define one authoritative owner for each monotonic revision domain
+- ordinary callers must not supply arbitrary replacement revisions for records
+  whose revision belongs to the registry or control plane
+- generic full-record update APIs must not silently overwrite owner-managed
+  revision fields from stale snapshots
+- prefer narrow semantic mutation APIs over stale full-record writeback
+- a remote repair must not advance derived revision state beyond what the
+  authoritative source can subsequently continue from
+- if repair requires a remote revision floor above the current authoritative
+  revision, durably advance the authoritative floor before the remote write
+- the next legitimate authoritative mutation must advance beyond every durable
+  repair floor already emitted
+- retries after an uncertain network result should reuse a stable repair
+  revision rather than incrementing it on every retry
+- detect integer overflow before calculating a next revision
+- startup and reconciliation must detect impossible revision ordering and fail
+  closed or enter an explicitly designed recovery path
+
+Dangerous example:
+
+    Director revision = 5
+    Node revision = 9
+
+    repair sends tombstone revision = 10
+    Director remains revision = 5
+
+    later placement becomes revision = 6
+    Node rejects it as stale
+
+Repair must preserve future forward progress of the authoritative source.
+
+---
+
+## 60. Reject ambiguous security protocol input
+
+Security-sensitive parsers must not silently choose between multiple plausible
+credential or identity values.
+
+Ambiguity is itself invalid input.
+
+Examples:
+
+- duplicate Cookie headers
+- duplicate occurrences of the same session-cookie name
+- conflicting Authorization headers
+- repeated security-sensitive query parameters
+- duplicated identity fields where parser layers may disagree
+
+Rules:
+
+- parse security-sensitive headers and tokens with exact boundaries
+- reject duplicate credential values instead of implicit first-wins or
+  last-wins behavior
+- reject conflicting representations even when one value appears valid
+- use one canonical parser for the same credential type across production
+  routes
+- do not depend on proxy, framework, browser, and application parser layers
+  selecting the same duplicate value
+- malformed or ambiguous authentication input must fail closed
+
+Review question:
+
+    Could two components looking at this same request choose different
+    credentials?
+
+If yes, reject the request.
+
+---
+
+## 61. Capability, liveness, and eligibility are different states
+
+Distributed systems must not confuse what a peer supports with whether that
+peer is currently reachable or whether it should participate in the current
+operation.
+
+Keep these concepts separate:
+
+- capability: which authenticated protocol/features the peer supports
+- liveness: whether the peer is currently online and reachable
+- eligibility: whether the peer should participate in this operation
+
+Rules:
+
+- do not erase known protocol capability merely because a peer is temporarily
+  offline
+- an offline modern peer must not silently fall back to an older or weaker
+  protocol
+- protocol downgrade must require evidence that the peer lacks the stronger
+  capability
+- health failures may defer reconciliation or audit work without being treated
+  as proof of authorization mismatch
+- report deferred work separately from actual inconsistency
+- preserve capability knowledge across temporary outages where appropriate
+- test offline, recovery, rolling-upgrade, and mixed-version scenarios
+  separately
+
+Security principles:
+
+    unreachable != legacy
+
+and:
+
+    not eligible right now != not capable
+
+---
+
+## 62. Security regression guards must scale with the protected surface
+
+Security tests and structural guards are themselves security infrastructure.
+
+A guard that silently stops covering new code, or fails only because a
+hard-coded count became stale, creates false confidence or noisy failures that
+developers learn to ignore.
+
+Rules:
+
+- prefer semantic discovery over hard-coded counts of protected APIs, routes,
+  files, or mutation functions
+- when a new security-sensitive API is added, make it automatically enter the
+  relevant guard when practical
+- avoid guards that depend on one exact formatting-sensitive source literal
+  when the intended invariant can be checked structurally
+- validate each discovered security-sensitive function individually where
+  practical
+- keep structural guards in addition to behavioral regression tests
+- aggregate important security and installer regression tests into a command
+  that developers and CI can run consistently
+- automatically include newly added matching tests where practical
+- treat a stale or permanently red security guard as an assurance defect
+- update the guard in the same change when a protected invariant intentionally
+  changes
+
+Review question:
+
+    If a developer adds one more security-sensitive implementation tomorrow,
+    will this guard notice automatically?
+
+If not, document why explicit registration is required.
+
+---
+
+
 ## Summary
 
 New DNA-Nexus / PQ-NAS code should be written with these assumptions:
@@ -1731,6 +2061,19 @@ New DNA-Nexus / PQ-NAS code should be written with these assumptions:
 - every root helper should treat service-writable plans and packages as untrusted input
 - every security fix should include a negative test that proves the old bypass is blocked
 - every SAST suppression should identify whether the code is first-party, bundled, vendor, generated, or test data
+
+- every security-sensitive transition should have an explicit crash/restart and
+  retry story
+- every stale-capable authorization snapshot should be revalidated immediately
+  before its external security side effect
+- every monotonic authorization revision should have one authoritative owner,
+  and repair must preserve future forward progress
+- every ambiguous credential or security-protocol input should be rejected
+  rather than resolved by parser accident
+- every distributed protocol should keep capability, liveness, and current
+  operation eligibility as separate concepts
+- every security regression guard should grow with the protected surface, and
+  important guards should run through an aggregate CI path
 
 The baseline rule is simple:
 

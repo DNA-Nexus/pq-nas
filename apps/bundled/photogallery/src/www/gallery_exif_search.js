@@ -276,8 +276,11 @@
         const isoMatcher = parseIsoMatcher(v.iso);
         if (isoMatcher && !isoMatcher(exif.iso)) return false;
 
-        if (v.gps === "yes" && !item.has_gps) return false;
-        if (v.gps === "no" && item.has_gps) return false;
+        const hasGps = typeof PG.hasUsableGps === "function"
+            ? PG.hasUsableGps(item)
+            : PG.geoScope.hasUsableGps(item);
+        if (v.gps === "yes" && !hasGps) return false;
+        if (v.gps === "no" && hasGps) return false;
 
         const ts = Number(item.capture_time_unix || 0);
         const from = dateStartEpoch(v.from);

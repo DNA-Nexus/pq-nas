@@ -549,8 +549,29 @@ void register_admin_user_storage_routes(
             u.storage_set_by = actor_fp;
             u.storage_pool_id = (pool_id == "default") ? "" : pool_id;
 
-            const bool ok_upsert = c.users->upsert(u);
-            const bool ok_save = ok_upsert ? c.users->save(c.users_path) : false;
+            pqnas::UserStorageMetadataUpdate storage_update;
+            storage_update.storage_state = u.storage_state;
+            storage_update.quota_bytes = u.quota_bytes;
+            storage_update.root_rel = u.root_rel;
+            storage_update.storage_pool_id = u.storage_pool_id;
+            storage_update.storage_set_at = u.storage_set_at;
+            storage_update.storage_set_by = u.storage_set_by;
+
+            // Security: storage metadata and its Director-owned projection
+            // revision are committed atomically inside UsersRegistry.
+            const bool ok_upsert =
+                c.users->set_storage_metadata_persisted(
+                    fp,
+                    storage_update,
+                    c.users_path,
+                    nullptr,
+                    nullptr,
+                    nullptr
+                );
+
+            // Preserve the existing audit/error flow below. Persistence is now
+            // part of the write-through mutation above.
+            const bool ok_save = ok_upsert;
 
             std::map<std::string, std::string> audit_fields = {
                 {"fingerprint", fp},
